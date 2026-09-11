@@ -83,17 +83,24 @@ def project_status() -> dict[str, Any]:
         return {'ok': False, 'error': 'Git状態を確認できませんでした。'}
 
 
+def _searchable_files():
+    skipped = {part.lower() for part in SKIP_PARTS}
+    for directory, dirs, files in os.walk(ROOT):
+        # os.walkの時点で依存/生成ディレクトリを枝刈りし、巨大なnode_modules等へ入らない。
+        dirs[:] = sorted(name for name in dirs if name.lower() not in skipped)
+        base = Path(directory)
+        for name in sorted(files):
+            path = base / name
+            if path.suffix.lower() in SAFE_SUFFIXES:
+                yield path
+
+
 def project_search(query: str) -> dict[str, Any]:
     needle = str(query or '').strip()
     if len(needle) < 2:
         return {'ok': False, 'error': '検索文字列は2文字以上にしてください。'}
     matches = []
-    for path in sorted(ROOT.rglob('*')):
-        if not path.is_file() or path.suffix.lower() not in SAFE_SUFFIXES:
-            continue
-        rel_parts = path.relative_to(ROOT).parts
-        if {part.lower() for part in rel_parts} & {part.lower() for part in SKIP_PARTS}:
-            continue
+    for path in _searchable_files():
         rel = path.relative_to(ROOT).as_posix()
         try:
             _safe_relative(rel)
