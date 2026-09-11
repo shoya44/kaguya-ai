@@ -84,6 +84,14 @@ class DatabaseChecks(unittest.TestCase):
             recalled = store.recall(conn, 'ＧＩＴＨＵＢのアカウント教えて')
         self.assertEqual([row['topic_key'] for row in recalled['wisdom']], ['GitHub'])
 
+    def test_memory_tab_search_ignores_half_and_full_width_spellings(self):
+        with self.connect() as conn:
+            conn.execute('''INSERT INTO wisdom(id,topic_key,summary,kind,support_level,importance,evidence)
+                VALUES (%s,'ＧｉｔＨｕｂ','ＧｉｔＨｕｂのアカウントはshoya44','explicit','stated',3,'[]')''', (uuid4(),))
+        with self.connect() as conn:
+            found = store.list_memories(conn, 'wisdom', 'github')
+        self.assertEqual(len(found['items']), 1)
+
     def test_summary_counts_exactly_what_organizing_would_pick_up(self):
         self.add()
         with self.connect() as conn:

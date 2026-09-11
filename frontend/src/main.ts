@@ -179,6 +179,8 @@ interface HistoryTurn {
   client_id: string;
   partial?: string;
   references?: { label: string; text: string }[];
+  elapsed_ms?: number;
+  first_text_ms?: number;
 }
 
 interface PendingTurn {
@@ -441,6 +443,19 @@ function appendMessage(role: 'user' | 'assistant', text: string, opts?: { pendin
   return el;
 }
 
+// 実測した所要時間だけを出す。サーバーが測っていない回（再接続後の復元など）
+// では何も出さない。
+function appendTiming(turn: HistoryTurn): void {
+  if (!turn.elapsed_ms) return;
+  const seconds = (value: number) => `${(value / 1000).toFixed(1)}秒`;
+  const el = document.createElement('div');
+  el.className = 'msg-timing';
+  el.textContent = turn.first_text_ms
+    ? `書き始めまで ${seconds(turn.first_text_ms)} ／ 全体 ${seconds(turn.elapsed_ms)}`
+    : `全体 ${seconds(turn.elapsed_ms)}`;
+  historyEl.appendChild(el);
+}
+
 // 返答が何を参照したかは、実際に渡した記憶があるときだけ出す。
 function appendReferences(turn: HistoryTurn): void {
   if (!turn.references?.length) return;
@@ -478,6 +493,7 @@ function renderHistoryTurn(turn: HistoryTurn, isLast: boolean): void {
   const userEl = appendMessage('user', turn.text, { id: turn.turn_id });
   if (turn.answer) {
     answerElements.set(turn.turn_id, appendMessage('assistant', turn.answer, { id: turn.turn_id, pending: turn.status === 'pending' }));
+    appendTiming(turn);
     appendReferences(turn);
     appendFollowUps(turn, isLast);
   } else if (turn.status === 'pending') {
@@ -517,7 +533,8 @@ async function loadHistory(older = false): Promise<void> {
   historyLoading = true;
   olderBtn.disabled = true;
   try {
-    const params = new URLSearchParams({ limit: '50' });
+    // 初回は少なく読み、遡るときだけまとめて読む。iPhoneでの起動を軽くする。
+    const params = new URLSearchParams({ limit: older ? '50' : '20' });
     if (older && nextCursor) params.set('cursor', nextCursor);
     const request = async () => {
       const s = await ensureSession();
@@ -545,6 +562,7 @@ async function loadHistory(older = false): Promise<void> {
     for (const [id, turn] of turns) {
       const before = previous.get(id);
       if (before?.references) turn.references = before.references;
+      if (before?.elapsed_ms) { turn.elapsed_ms = before.elapsed_ms; turn.first_text_ms = before.first_text_ms; }
       if (before?.partial && !turn.answer) turn.partial = before.partial;
       if (turn.status === 'pending' || turn.status === 'completed') settleDraft(id);
     }
@@ -800,8 +818,11 @@ function handleServerEvent(data: Record<string, unknown>): void {
         turns.set(turnId, { turn_id: turnId, text: data.text as string, answer: null,
           status: 'pending', client_id: '' });
       }
+      const completed = turns.get(turnId)!;
       const references = data.references as HistoryTurn['references'];
-      if (references?.length) turns.get(turnId)!.references = references;
+      if (references?.length) completed.references = references;
+      completed.elapsed_ms = data.elapsed_ms as number | undefined;
+      completed.first_text_ms = data.first_text_ms as number | undefined;
       settleDraft(turnId);
       markPendingSettled(turnId, data.answer as string);
       chatStatus(null);

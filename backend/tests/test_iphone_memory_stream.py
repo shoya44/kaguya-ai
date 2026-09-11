@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock
 
 from pydantic import SecretStr
 
-from app import memory_store
+from app import memory_store, tools
 from app.controller import Controller
 from app.errors import ChatError
 from app.jobs import Jobs, periods
@@ -103,6 +103,53 @@ class OrganizeTimingTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(controller.started)
 
 
+class ScheduleShortcutTests(unittest.IsolatedAsyncioTestCase):
+    def memory(self, items):
+        return SimpleNamespace(call=AsyncMock(return_value={'items': items}))
+
+    async def test_checking_todays_schedule_answers_without_calling_gemini(self):
+        memory = self.memory([{'title': '歯医者', 'start': '2026-09-12T15:00:00+09:00'}])
+        answer = await tools.direct_reply('今日の予定は？', memory)
+        self.assertIn('歯医者', answer)
+        method, path = memory.call.await_args.args
+        self.assertEqual((method, path), ('GET', '/calendar'))
+
+    async def test_an_empty_day_still_answers_locally(self):
+        self.assertEqual(await tools.direct_reply('明日なにか予定ある？', self.memory([])),
+                         'その期間の予定はないよ。')
+
+    async def test_adding_a_plan_is_left_to_the_model(self):
+        memory = SimpleNamespace(call=AsyncMock())
+        self.assertIsNone(await tools.direct_reply('明日15時に歯医者の予定を入れて', memory))
+        memory.call.assert_not_awaited()
+
+    async def test_the_word_plan_in_small_talk_does_not_open_the_calendar(self):
+        memory = SimpleNamespace(call=AsyncMock())
+        self.assertIsNone(await tools.direct_reply('だいたい予定通りに進んでるよ', memory))
+        memory.call.assert_not_awaited()
+
+    def test_ranges_follow_the_day_the_user_named(self):
+        now = tokyo_now().replace(hour=13, minute=30)
+        today = tools._schedule_range('今日の予定', now)
+        tomorrow = tools._schedule_range('明日の予定', now)
+        self.assertEqual(today[1], tomorrow[0])
+
+
+class ToolGateTests(unittest.TestCase):
+    def names(self, text):
+        return {item['name'] for item in tools.declarations_for(text)}
+
+    def test_a_question_with_only_a_date_is_not_treated_as_a_reminder(self):
+        # 「教えて」＋日付だけでリマインダー定義を渡すと、雑談までストリーミングできなくなる。
+        self.assertEqual(self.names('今日のおすすめの本を教えて'), set())
+
+    def test_a_clock_time_still_registers_a_reminder(self):
+        self.assertIn('set_reminder', self.names('明日9時に薬って教えて'))
+
+    def test_an_explicit_reminder_word_works_without_a_clock_time(self):
+        self.assertIn('set_reminder', self.names('明日リマインドして'))
+
+
 class StreamingTests(unittest.IsolatedAsyncioTestCase):
     async def test_plain_chat_streams_partial_text_before_the_final_answer(self):
         pieces = ['こん', 'にちは', '。元気？']
@@ -165,6 +212,24 @@ class StreamingTests(unittest.IsolatedAsyncioTestCase):
             await llm.reply([], 'これを覚えて：お茶が好き', {}, None, 512,
                             memory=SimpleNamespace(), on_text=collect)
         llm._stream.assert_not_awaited()
+
+
+class SavingPhaseTests(unittest.IsolatedAsyncioTestCase):
+    def test_the_saving_broadcast_carries_the_finished_text(self):
+        # 部分表示は100msごとに間引くので最後の差分が落ちうる。保存フェーズの
+        # 状態通知が完成した本文を運ぶことで、表示が途中で止まらない。
+        temp, store = temp_store()
+        with temp:
+            controller = Controller(SimpleNamespace(), SimpleNamespace(), AsyncMock(), store)
+            controller.active = {'turn_id': 't1', 'text': 'やあ', 'client_id': 'c1'}
+            controller.partial_answer = 'こんにち'
+            controller.phase = 'generating'
+            self.assertEqual(controller.state()['partial'], 'こんにち')
+            controller.partial_answer = 'こんにちは、元気？'
+            controller.phase = 'saving'
+            state = controller.state()
+            self.assertEqual(state['phase'], 'saving')
+            self.assertEqual(state['partial'], 'こんにちは、元気？')
 
 
 class PromptTests(unittest.TestCase):
