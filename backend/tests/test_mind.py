@@ -113,6 +113,22 @@ class MindTests(unittest.TestCase):
         self.assertEqual(self.mind().due_topic(NOW), '')
         self.assertEqual(self.mind(lambda: False).due_topic(NOW), '')
 
+    def test_a_preference_that_never_settled_is_forgotten(self):
+        mind = self.mind()
+        mind.after_reply('ねえ', 'あたしはプリンが好きだよ。', NOW)
+        self.assertEqual(mind.snapshot(NOW)['traits'][0]['name'], 'プリン')
+        # 一度言っただけの好みは覚えていない。何か話した時点で片付く。
+        mind.after_reply('ねえ', 'うん。', NOW + timedelta(days=31))
+        self.assertEqual(mind.snapshot(NOW + timedelta(days=31))['traits'], [])
+
+    def test_a_settled_preference_is_kept(self):
+        mind = self.mind()
+        for day in range(3):
+            mind.after_reply('ねえ', 'あたしはプリンが好きだよ。', NOW + timedelta(days=day))
+        mind.after_reply('ねえ', 'うん。', NOW + timedelta(days=60))
+        traits = mind.snapshot(NOW + timedelta(days=60))['traits']
+        self.assertEqual([row['name'] for row in traits], ['プリン'])
+
     def test_casual_sentences_do_not_become_open_loops(self):
         mind = self.mind()
         for text in ('今日は疲れたな', 'おはよう', '明日も普通に過ごすよ', 'ありがとう'):

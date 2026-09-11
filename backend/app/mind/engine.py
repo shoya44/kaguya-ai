@@ -225,6 +225,7 @@ class KaguyaMind:
             if topic in reply:
                 self.store.mark_asked(topic, now)
         self.store.prune_loops(now)
+        self.store.prune_traits(now)
 
     def before_reply(self, text: str, now: datetime) -> dict:
         return self._safe({}, self._before_reply, text, now)

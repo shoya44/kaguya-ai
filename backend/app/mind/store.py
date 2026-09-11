@@ -248,6 +248,12 @@ class MindStore:
             conn.execute('DELETE FROM open_loops WHERE resolved_at IS NULL AND opened_at<?',
                          ((now - timedelta(days=30)).isoformat(),))
 
+    def prune_traits(self, now: datetime) -> None:
+        """人間は一度口にしただけの好みを覚えていない。定着しなかったものは忘れる。"""
+        with self.lock, self._session() as conn:
+            conn.execute('DELETE FROM traits WHERE confidence<0.5 AND updated_at<?',
+                         ((now - timedelta(days=30)).isoformat(),))
+
     def loop_stats(self) -> dict:
         with self.lock, self._session() as conn:
             row = conn.execute("""SELECT

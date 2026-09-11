@@ -738,6 +738,14 @@ function handleServerEvent(data: Record<string, unknown>): void {
   const type = data.type as string;
   switch (type) {
     case 'state.changed': {
+      // 別の端末で話していた時間も「会っていた」に数える。この端末を開いた直後に
+      // 「ちょっと寝てた」と言わないよう、サーバの最終会話時刻で揃える。
+      if (typeof data.last_activity === 'string') {
+        const at = Date.parse(data.last_activity);
+        if (Number.isFinite(at)) {
+          window.dispatchEvent(new CustomEvent('kaguya-served', { detail: { at, counted: false } }));
+        }
+      }
       activeTurnId = (data.turn_id as string) ?? null;
       chatStatus(data.state === 'thinking' ? (data.phase as string) ?? null : null);
       // 別端末から始まった会話でも、進行中の本文・参照をこの端末へ復元する。
@@ -832,6 +840,9 @@ function handleServerEvent(data: Record<string, unknown>): void {
       chatStatus(null);
       if (pending?.turnId === turnId) pending = null;
       lastConversation = Date.now();
+      // どの端末から送られた会話でも、利用時間の学習を全端末で同じだけ進める。
+      window.dispatchEvent(new CustomEvent('kaguya-served',
+        { detail: { at: lastConversation, counted: true } }));
       talkingState = 'talking';
       talkingUntil = lastConversation + TALKING_MS;
       setBusy(false);

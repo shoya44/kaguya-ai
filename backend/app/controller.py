@@ -121,7 +121,10 @@ class Controller:
                 'phase': self.phase, 'partial': self.partial_answer,
                 'text': self.active['text'] if self.active else None,
                 'client_id': self.active['client_id'] if self.active else None,
-                'references': self.references if self.active else []}
+                'references': self.references if self.active else [],
+                # 端末ごとのlocalStorageではなく、ここを「最後に会った時刻」の基準にする。
+                # PCで話した直後にiPhoneを開いて「ちょっと寝てた」と言わないため。
+                'last_activity': self.proactive.last_activity.isoformat()}
 
     async def progress(self, text):
         self.partial_answer = text

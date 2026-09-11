@@ -61,6 +61,7 @@ function harness(options = {}) {
     emit(event) { this.handlers.message({ data: JSON.stringify(event) }); }
     close(code = 1006) { this.readyState = 3; this.handlers.close?.({ code }); }
   }
+  const dispatched = [];
   const ctx = vm.createContext({
     document: {
       body,
@@ -74,10 +75,14 @@ function harness(options = {}) {
     sessionStorage: storage(sessionData), localStorage: storage(localData),
     WebSocket: Socket, URLSearchParams, AbortSignal, Date, Error,
     crypto: { randomUUID: () => 'new-turn' },
+    // living.tsは別のモジュールスクリプトなので、main.tsとはwindowイベントで繋がる。
+    CustomEvent: class { constructor(type, init = {}) { this.type = type; this.detail = init.detail; } },
     window: {
       setTimeout: callback => timers.push(callback),
       setInterval: () => 0,
       clearTimeout: () => {},
+      addEventListener: () => {},
+      dispatchEvent: event => { dispatched.push(event); return true; },
       matchMedia: query => ({ matches: !!options.touch && query.includes('pointer: coarse') }),
     },
     fetch: async (url, init) => {
@@ -89,7 +94,7 @@ function harness(options = {}) {
   const run = code => vm.runInContext(code, ctx);
   run("saveSession({clientId:'client',sessionToken:'old-token'})");
   const flush = () => new Promise(resolve => setImmediate(resolve));
-  return { run, elements, sockets, timers, calls, sent, localData, flush };
+  return { run, elements, sockets, timers, calls, sent, localData, dispatched, flush };
 }
 const response = (body, status = 200) => ({ ok: status === 200, status, json: async () => body });
 const row = (id, status = 'completed') => ({ turn_id: id, text: id, answer: status === 'completed' ? `answer-${id}` : null, status, client_id: 'client' });
@@ -98,6 +103,36 @@ async function connected(h) {
   h.sockets.at(-1).emit({ type: 'state.changed', state: 'idle' });
   await h.flush();
 }
+
+const served = h => h.dispatched.filter(event => event.type === 'kaguya-served').map(event => event.detail);
+
+test('the server last-activity reaches living so another device does not look away', async () => {
+  const h = harness();
+  await h.run('connectWs()');
+  h.sockets.at(-1).emit({ type: 'state.changed', state: 'idle', last_activity: '2026-09-12T21:00:00+09:00' });
+  await h.flush();
+  const details = served(h);
+  assert.equal(details.length, 1);
+  assert.equal(details[0].at, Date.parse('2026-09-12T21:00:00+09:00'));
+  assert.equal(details[0].counted, false);
+});
+
+test('a completed conversation is counted once for every device', async () => {
+  const h = harness(); await connected(h);
+  h.sockets[0].emit({ type: 'chat.completed', turn_id: 't1', text: 'hello', answer: 'hi' });
+  await h.flush();
+  const counted = served(h).filter(detail => detail.counted);
+  assert.equal(counted.length, 1);
+  assert.ok(Number.isFinite(counted[0].at));
+});
+
+test('a malformed last-activity is ignored instead of resetting the visit', async () => {
+  const h = harness();
+  await h.run('connectWs()');
+  h.sockets.at(-1).emit({ type: 'state.changed', state: 'idle', last_activity: 'not-a-time' });
+  await h.flush();
+  assert.equal(served(h).length, 0);
+});
 
 for (const code of ['timeout', 'rate_limit']) {
   test(`${code}: retry displays exactly one answer, including duplicate completion`, async () => {

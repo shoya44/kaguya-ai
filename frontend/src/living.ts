@@ -4,7 +4,6 @@ type LifeActivity = 'idle' | 'reading' | 'working' | 'playing' | 'snacking' | 'd
 type LifeState = {
   lastSeen: number;
   interactions: number;
-  affection: number;
   hourCounts: number[];
 };
 
@@ -12,7 +11,7 @@ const LIFE_KEY = 'kaguya.life.v1';
 const MINUTE = 60 * 1000;
 
 function fresh(): LifeState {
-  return { lastSeen: Date.now(), interactions: 0, affection: 50,
+  return { lastSeen: Date.now(), interactions: 0,
     hourCounts: Array.from({ length: 24 }, () => 0) };
 }
 
@@ -23,7 +22,6 @@ function load(): LifeState {
     return {
       lastSeen: Number(parsed.lastSeen) || Date.now(),
       interactions: Math.max(0, Number(parsed.interactions) || 0),
-      affection: Math.min(100, Math.max(0, Number(parsed.affection) || 50)),
       hourCounts: Array.isArray(parsed.hourCounts) && parsed.hourCounts.length === 24
         ? parsed.hourCounts.map(value => Math.max(0, Number(value) || 0)) : fresh().hourCounts,
     };
@@ -112,24 +110,16 @@ function emit(reentry = false): void {
     mood: effectiveMood(now.getTime()),
     activity: activityNow,
     energy: energy(now),
-    affection: state.affection,
     reentry,
     learnedHours: [...preferredHours()],
   } }));
   if (reentry && idleMs > 15 * MINUTE) showReentry(activityNow);
 }
 
+// 送信した瞬間の手応え。回数と時間帯は、会話が成立してからkaguya-servedで数える。
 function reactToText(text: string): void {
-  const value = text.trim();
-  if (!value) return;
-  const now = Date.now();
-  state.interactions += 1;
-  state.hourCounts[new Date(now).getHours()] += 1;
-  state.lastSeen = now;
-  if (/(かわいい|好き|ありがとう|助かった|えらい|いい子)/.test(value)) {
-    state.affection = Math.min(100, state.affection + 1);
-  }
-
+  if (!text.trim()) return;
+  state.lastSeen = Date.now();
   save();
   emit(false);
 }
@@ -138,6 +128,24 @@ window.addEventListener('kaguya-mood', event => {
   const value = String((event as CustomEvent).detail?.mood ?? '');
   if (!['normal', 'happy', 'sleepy', 'sulky'].includes(value) || value === serverMood) return;
   serverMood = value as LifeMood;
+  emit(false);
+});
+
+// かぐやはPC上に1人しかいない。別の端末で話していた時間も「会っていた」に数える。
+// 端末ごとのlocalStorageだけで見ていたため、PCで話した直後にiPhoneを開くと
+// 「ちょっと寝てた」と言い、利用時間の学習も端末ごとに分散していた。
+window.addEventListener('kaguya-served', event => {
+  const at = Number((event as CustomEvent).detail?.at);
+  const moment = Number.isFinite(at) && at > 0 ? at : Date.now();
+  const counted = (event as CustomEvent).detail?.counted === true;
+  // state.changedは1ターンに何度も飛ぶ。変化が無い回で保存と再描画をしない。
+  if (!counted && moment <= state.lastSeen) return;
+  if (counted) {
+    state.interactions += 1;
+    state.hourCounts[new Date(moment).getHours()] += 1;
+  }
+  state.lastSeen = Math.max(state.lastSeen, moment);
+  save();
   emit(false);
 });
 
