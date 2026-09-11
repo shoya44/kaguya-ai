@@ -18,11 +18,17 @@ class Element {
     this.tag = tag;
     this.children = [];
     this.dataset = {};
-    this.classList = { contains: () => false, toggle: () => {}, add: () => {}, remove: () => {} };
+    this.classes = new Set();
+    this.classList = {
+      contains: name => this.classes.has(name),
+      toggle: (name, on) => { if (on === undefined ? this.classes.has(name) : !on) this.classes.delete(name); else this.classes.add(name); },
+      add: name => this.classes.add(name), remove: name => this.classes.delete(name),
+    };
     this.handlers = {};
     this.className = '';
     this.textContent = '';
     this.scrollTop = 0;
+    this.clientHeight = 0;
     this.value = '';
     this.hidden = false;
     this.disabled = false;
@@ -31,6 +37,8 @@ class Element {
   get scrollHeight() { return this.children.length * 30; }
   set innerHTML(_) { this.children = []; }
   appendChild(child) { this.children.push(child); }
+  append(...items) { this.children.push(...items); }
+  replaceChildren(...items) { this.children = items; }
   addEventListener(name, callback) { this.handlers[name] = callback; }
   querySelectorAll(tag) {
     return this.children.flatMap(child => [
@@ -42,7 +50,8 @@ class Element {
 function harness(options = {}) {
   const elements = {}, sockets = [], timers = [], calls = [], sent = [];
   const sessionData = new Map(), localData = new Map();
-  const storage = data => ({ getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) });
+  const storage = data => ({ getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value),
+    removeItem: key => data.delete(key) });
   const body = new Element('body');
   class Socket {
     static OPEN = 1;
@@ -59,7 +68,7 @@ function harness(options = {}) {
       createElement: tag => new Element(tag),
       visibilityState: 'visible',
     },
-    location: { hostname: '127.0.0.1' },
+    location: { hostname: '127.0.0.1', port: '5173', origin: 'http://127.0.0.1:5173' },
     Avatar: class { setState() {} }, isTauri: () => !!options.tauri,
     invoke: options.invoke ?? (async () => 'owned'),
     sessionStorage: storage(sessionData), localStorage: storage(localData),
@@ -69,7 +78,7 @@ function harness(options = {}) {
       setTimeout: callback => timers.push(callback),
       setInterval: () => 0,
       clearTimeout: () => {},
-      matchMedia: () => ({ matches: false }),
+      matchMedia: query => ({ matches: !!options.touch && query.includes('pointer: coarse') }),
     },
     fetch: async (url, init) => {
       calls.push({ url, init });
@@ -221,4 +230,95 @@ test('failed reminder acknowledgement leaves notification available to retry', a
   h.elements['proactive-bubble'].handlers.click(); await h.flush();
   assert.equal(h.run('reminderId'), 'one');
   assert.equal(h.elements['proactive-bubble'].hidden, false);
+});
+
+test('streaming updates the pending answer in place and keeps one bubble', async () => {
+  const h = harness(); await connected(h);
+  h.run("sendTurn('hello','t1',false)");
+  h.sockets[0].emit({ type: 'state.changed', state: 'thinking', turn_id: 't1', phase: 'generating' });
+  h.sockets[0].emit({ type: 'chat.progress', turn_id: 't1', partial: 'こん' });
+  h.sockets[0].emit({ type: 'chat.progress', turn_id: 't1', partial: 'こんにちは' });
+  const answers = h.elements.history.children.filter(el => el.className === 'msg assistant pending');
+  assert.equal(answers.length, 1);
+  assert.equal(answers[0].textContent, 'こんにちは');
+  assert.equal(h.elements['chat-status'].textContent, '回答を生成中');
+  h.sockets[0].emit({ type: 'chat.completed', turn_id: 't1', text: 'hello', answer: 'こんにちは、元気？' });
+  assert.equal(h.elements['chat-status'].textContent, '');
+  assert.equal(h.elements.history.children.filter(el => el.className.startsWith('msg assistant')).length, 1);
+});
+
+test('reading older messages is not scrolled to the bottom by streaming', async () => {
+  const h = harness({ fetch: async () => response({ items: Array.from({ length: 50 }, (_, n) => row(`t${n}`)), next_cursor: null }) });
+  await connected(h);
+  const history = h.elements.history;
+  // 過去を読んでいる状態（最下部から離れている）を作る。
+  history.scrollTop = 0; history.clientHeight = 10;
+  h.run("sendTurn('hello','new',false)");
+  assert.equal(history.scrollTop, 0);
+  h.sockets[0].emit({ type: 'chat.progress', turn_id: 'new', partial: 'とても長い返答' });
+  assert.equal(history.scrollTop, 0);
+  assert.equal(h.elements['latest-btn'].hidden, false);
+  h.elements['latest-btn'].handlers.click();
+  assert.equal(history.scrollTop, history.scrollHeight);
+  assert.equal(h.elements['latest-btn'].hidden, true);
+});
+
+test('the draft is kept on the device until the send is accepted', async () => {
+  const h = harness(); await connected(h);
+  h.elements['text-input'].value = 'まだ書きかけ';
+  h.elements['text-input'].handlers.input();
+  assert.equal(JSON.parse(h.localData.get('kaguya.draft.v1')).text, 'まだ書きかけ');
+  h.elements['input-form'].handlers.submit({ preventDefault() {} });
+  const turnId = h.sent.at(-1).turn_id;
+  assert.equal(JSON.parse(h.localData.get('kaguya.draft.v1')).turnId, turnId);
+  h.sockets[0].emit({ type: 'chat.accepted', turn_id: turnId, text: 'まだ書きかけ', client_id: 'client' });
+  assert.equal(h.localData.get('kaguya.draft.v1'), undefined);
+});
+
+test('a rejected send leaves the draft in place for a retry', () => {
+  const h = harness();
+  h.elements['text-input'].value = '送れなかった文';
+  h.elements['text-input'].handlers.input();
+  h.elements['input-form'].handlers.submit({ preventDefault() {} });
+  assert.equal(h.elements['text-input'].value, '送れなかった文');
+  assert.equal(JSON.parse(h.localData.get('kaguya.draft.v1')).text, '送れなかった文');
+});
+
+test('follow-up buttons send fixed text without asking the server for candidates', async () => {
+  const h = harness(); await connected(h);
+  h.run("sendTurn('hello','t1',false)");
+  const before = h.calls.length;
+  h.sockets[0].emit({ type: 'chat.completed', turn_id: 't1', text: 'hello', answer: '短い返事' });
+  const buttons = h.elements.history.querySelectorAll('button');
+  assert.deepEqual(buttons.map(b => b.textContent), ['もっと詳しく', '例をあげて', '短くまとめて']);
+  assert.equal(h.calls.length, before);
+  buttons[0].handlers.click();
+  assert.equal(h.sent.at(-1).text, 'もっと詳しく');
+});
+
+test('references are shown only when memories were actually passed to the model', async () => {
+  const h = harness(); await connected(h);
+  h.run("sendTurn('hello','t1',false)");
+  h.sockets[0].emit({ type: 'chat.completed', turn_id: 't1', text: 'hello', answer: '返事',
+    references: [{ label: 'コーヒー', text: 'ブラックが好き' }] });
+  const box = h.elements.history.children.find(el => el.className === 'msg-references');
+  assert.equal(box.children[0].textContent, '参照した記憶 1件');
+  assert.equal(box.children[1].textContent, 'コーヒー：ブラックが好き');
+});
+
+test('on a touch device the return key inserts a newline instead of sending', async () => {
+  const h = harness({ touch: true }); await connected(h);
+  h.elements['text-input'].value = '一行目';
+  let prevented = false;
+  h.elements['text-input'].handlers.keydown({ key: 'Enter', shiftKey: false, isComposing: false,
+    preventDefault() { prevented = true; } });
+  assert.equal(prevented, false);
+  assert.equal(h.sent.length, 0);
+});
+
+test('the connection state is shown and restored across a reconnect', async () => {
+  const h = harness(); await connected(h);
+  assert.equal(h.elements['connection-status'].textContent, '接続済み');
+  h.sockets[0].close();
+  assert.equal(h.elements['connection-status'].textContent, '未接続（再接続します）');
 });

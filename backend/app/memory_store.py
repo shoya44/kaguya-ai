@@ -2,6 +2,7 @@
 import json
 import hashlib
 import re
+import unicodedata
 from datetime import datetime
 from typing import Literal
 from uuid import UUID, uuid4
@@ -123,23 +124,34 @@ def commit_wisdom(conn, snap, batch):
     return {'processed': len(actual), 'updated': len(result.items)}
 
 
-def recall(conn, text):
+def recall_terms(text):
     # Japanese partial matching without another service or tokenizer.
-    chunks = re.findall(r'[一-龯ぁ-んァ-ヶーA-Za-z0-9]{2,}', text)
+    text = unicodedata.normalize('NFKC', text).casefold()
+    chunks = re.findall(r'[一-龯ぁ-んァ-ヶーa-z0-9]{2,}', text)
     terms = set(chunks)
     for chunk in chunks:
         terms.update(chunk[i:i + 2] for i in range(len(chunk) - 1))
-    # 80語で打ち切る際、単純なsortだと文字コード順（英数→かな→漢字）になり、
-    # いちばん手がかりになる漢字語から捨ててしまう。長い語＝具体的な語を優先する。
-    patterns = ['%' + term + '%' for term in sorted(terms, key=lambda term: (-len(term), term))[:80]]
-    rows = conn.execute('''SELECT * FROM wisdom WHERE topic_key LIKE ANY(%s) OR summary LIKE ANY(%s)
-        ORDER BY importance DESC,last_seen_at DESC NULLS LAST LIMIT 30''', (patterns, patterns)).fetchall() if patterns else []
+    return sorted(terms, key=lambda term: (-len(term), term))[:60]
+
+
+def recall(conn, text, context=''):
+    primary = recall_terms(text)
+    secondary = [term for term in recall_terms(context) if term not in primary][:20]
+    terms = primary + secondary
+    patterns = ['%' + term + '%' for term in terms]
+    current_patterns = ['%' + term + '%' for term in primary]
+    rows = conn.execute('''SELECT * FROM wisdom WHERE topic_key ILIKE ANY(%s) OR summary ILIKE ANY(%s)
+        ORDER BY (topic_key ILIKE ANY(%s) OR summary ILIKE ANY(%s)) DESC,
+        updated_at DESC LIMIT 100''', (patterns, patterns, current_patterns, current_patterns)).fetchall() if patterns else []
 
     def relevance(row):
         # 一致語数だけで並べると、長い要約が偶然当たって上位に来る。重要度と、
         # 明示的に語られた知恵（推測ではない）を加点して順位に反映させる。
-        hits = sum(term in row['topic_key'] or term in row['summary'] for term in terms)
-        return hits * 2 + row['importance'] + (1 if row['kind'] == 'explicit' else 0)
+        value = unicodedata.normalize('NFKC', row['topic_key'] + ' ' + row['summary']).casefold()
+        hits = sum(min(len(term), 8) for term in primary if term in value)
+        context_hits = sum(term in value for term in secondary)
+        return (hits > 0, hits, row['locked'], context_hits, row['kind'] == 'explicit',
+                row['importance'], row['updated_at'])
 
     rows.sort(key=relevance, reverse=True)
     selected = rows[:5]
@@ -147,6 +159,14 @@ def recall(conn, text):
         conn.execute('UPDATE wisdom SET last_used_at=now() WHERE id=ANY(%s)', ([row['id'] for row in selected],))
     persona = conn.execute("SELECT * FROM persona ORDER BY key LIMIT 12").fetchall()
     return {'wisdom': selected, 'persona': persona}
+
+
+def summary(conn):
+    pending = conn.execute("""SELECT count(*) AS n FROM raw_memory
+        WHERE role='user' AND processed_at IS NULL AND status <> 'pending'""").fetchone()['n']
+    recent = conn.execute('''SELECT id,topic_key,summary,updated_at FROM wisdom
+        ORDER BY updated_at DESC,id DESC LIMIT 5''').fetchall()
+    return {'pending': pending, 'recent': recent}
 
 
 def weekly_snapshot(conn):

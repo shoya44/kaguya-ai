@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>かぐやAI</title>
     <link rel="apple-touch-icon" href="/icon-180.png" />
-    <!-- ホーム画面アイコンの名前。apple-mobile-web-app-capable は付けない：
-         iOSのスタンドアロン起動はHTTPS必須で、HTTP接続の本アプリでは
-         「HTTPS-Onlyが有効なHTTP URL」エラーになり起動できないため。
-         付けなければアイコンはSafariのタブとして開き、HTTPのまま動く。 -->
+    <!-- ホーム画面アイコンの名前・色だけをマニフェストから与える。
+         display は "browser" のまま：iOSのスタンドアロン起動はHTTPS必須で、
+         HTTP接続の本アプリでは「HTTPS-Onlyが有効なHTTP URL」エラーになり
+         起動できない。Safariタブとして開けばHTTPのまま動く。
+         同じ理由で apple-mobile-web-app-capable も付けない。 -->
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="apple-mobile-web-app-title" content="かぐや" />
     <meta name="theme-color" content="#14101c" />
     <link rel="stylesheet" href="/src/style.css" />
@@ -18,9 +20,8 @@
       <header class="toolbar">
         <nav aria-label="画面切替">
           <button data-panel="chat" aria-pressed="true">会話</button>
-          <button data-panel="settings">設定</button>
           <button data-panel="memories">記憶</button>
-          <button data-panel="help">使い方</button>
+          <button data-panel="settings">設定</button>
         </nav>
         <div class="button-row">
           <button id="mini-toggle-btn" aria-label="簡易表示に切り替え">簡易表示に切り替え</button>
@@ -28,29 +29,32 @@
         </div>
       </header>
       <div id="controls-status" role="status" aria-live="polite"></div>
+      <div class="chat-status-line"><span id="connection-status" role="status">接続中…</span><span id="chat-status" role="status"></span></div>
       <div id="character-view">
-        <canvas id="avatar" width="256" height="256"></canvas>
+        <div id="avatar-frame"><canvas id="avatar" width="256" height="256"></canvas></div>
         <div id="proactive-bubble" role="status" hidden></div>
       </div>
       <div id="chat">
         <button id="older-btn" type="button" hidden>以前の会話を読み込む</button>
         <div id="history"></div>
+        <button id="latest-btn" type="button" hidden>新しい返答 ↓</button>
         <div id="error" class="error" hidden></div>
         <form id="input-form">
-          <textarea id="text-input" rows="2" maxlength="2000" placeholder="かぐやに話しかける（Enterで送信・Shift+Enterで改行）"></textarea>
+          <textarea id="text-input" rows="2" maxlength="2000" aria-label="かぐやへのメッセージ" placeholder="かぐやに話しかける"></textarea>
           <button type="submit" id="send-btn" aria-label="送信">送信</button>
           <button type="button" id="cancel-btn" aria-label="生成を停止" disabled>生成停止</button>
         </form>
       </div>
       <section id="settings-panel" class="panel" hidden>
         <h1>設定</h1>
+        <button type="button" data-panel="help">使い方</button>
         <form id="options-form">
           <label><input type="checkbox" name="quiet">自発的な声かけを停止する</label>
-          <label><input type="checkbox" name="auto_jobs">記憶を03:00に自動整理する</label>
+          <label><input type="checkbox" name="auto_jobs">会話していない時間に記憶を自動整理する</label>
           <label>声かけの間隔（分）<input type="number" name="proactive_minutes" min="60" max="240" required></label>
           <label>整理APIの1日上限（週次更新を含む）<input type="number" name="daily_call_limit" min="1" max="3" required></label>
           <label>回答の出力上限（トークン）<input type="number" name="reply_tokens" min="256" max="8192" required></label>
-          <label><input type="checkbox" name="always_on_top">ウィンドウを最前面にする</label>
+          <label class="desktop-setting"><input type="checkbox" name="always_on_top">ウィンドウを最前面にする</label>
           <label>文字サイズ<input type="number" name="font_size" min="12" max="22" required></label>
           <button type="submit">設定を保存</button>
         </form>
@@ -58,19 +62,22 @@
         <p class="hint">会話の中で「明日の朝9時に〜と言って」のように頼むと登録されます。時間になるとかぐやが吹き出しで伝えます。</p>
         <div id="reminder-list"></div>
         <h2>記憶の整理</h2>
-        <p>未処理の会話を設定中のGeminiへ送り、知恵としてまとめます。自動整理は03:00のみで、起動時の自動回収はしません。会話が来た場合は会話を優先します。</p>
+        <p>起動・最後の会話から5分以上空くと、未整理の会話を少量ずつ整理します。確認間隔は15分、APIは1日上限内です。会話が来た場合は整理を中断します。</p>
         <button id="organize-btn">今すぐ整理</button>
         <p id="job-status" role="status"></p><p id="model-info"></p>
         <p class="hint">自動整理が有効な場合、処理済みで7日を過ぎた元の会話は削除されます。知恵は残ります。音声入出力は未実装です。</p>
       </section>
       <section id="memories-panel" class="panel" hidden>
-        <h1>DBの記憶</h1>
+        <h1>あなたについて覚えていること</h1>
+        <p id="memory-summary" role="status">記憶の状態を確認中…</p>
+        <details id="recent-memories"><summary>最近覚えた・更新したこと</summary><ul id="recent-memory-list"></ul></details>
         <form id="memory-filter" class="button-row">
-          <select id="memory-layer" aria-label="記憶の種類"><option value="raw">会話の原文</option><option value="wisdom">知恵・好み</option><option value="persona">接し方</option></select>
+          <select id="memory-layer" aria-label="記憶の種類"><option value="wisdom">覚えていること</option><option value="persona">かぐやの接し方</option><option value="raw">会話履歴</option></select>
           <input id="memory-search" maxlength="200" placeholder="部分一致で検索" aria-label="記憶を検索">
           <button type="submit">表示・更新</button>
         </form>
-        <p class="hint">訂正・削除前に、関連する記憶への影響を確認できます。固定性格は変更できません。</p>
+        <p class="hint">覚えていること＝好み・習慣・続いている事情。かぐやの接し方＝呼び方・返答の長さ・相談時の接し方。会話履歴＝過去のやり取りを読み返すためのものです。</p>
+        <p class="hint">訂正・削除の前に、関連する記憶への影響を確認できます。かぐやの基本性格は変更できません。訂正した内容は次の返答から優先されます。</p>
         <div id="memory-list"></div>
         <div class="button-row"><button id="memory-prev" disabled>前へ</button><span id="memory-page"></span><button id="memory-next" disabled>次へ</button></div>
       </section>

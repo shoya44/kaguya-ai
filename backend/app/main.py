@@ -217,6 +217,14 @@ async def memories(layer: Literal['raw', 'wisdom', 'persona'], request: Request,
     return await memory_request(request, 'GET', f'/browse/{layer}', params={'q': q, 'offset': offset})
 
 
+@app.get('/memory-summary')
+async def memory_summary(request: Request, _client_id: UUID = Depends(require_session)):
+    result = await memory_request(request, 'GET', '/summary')
+    controller = request.app.state.controller
+    return {**result, 'running': controller.jobs.running, 'auto': controller.runtime.options.auto_jobs,
+            'status': controller.jobs.status}
+
+
 @app.get('/memories/{layer}/{key}/impact')
 async def memory_impact(layer: Literal['raw', 'wisdom', 'persona'], key: str, request: Request,
                         _client_id: UUID = Depends(require_session)):

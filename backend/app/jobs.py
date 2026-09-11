@@ -1,6 +1,6 @@
 """Bounded daily/weekly jobs. Manual and scheduled runs use the same path."""
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from .errors import ChatError
 from .proactive import tokyo_now
@@ -24,9 +24,15 @@ class Jobs:
         return self.task is not None and not self.task.done()
 
     def due(self, now=None):
-        daily, weekly = periods(now or tokyo_now())
+        now = now or tokyo_now()
         ledger = self.store.data['ledger']
-        return ledger.get('daily_attempt') != daily or ledger.get('weekly_attempt') != weekly
+        used = ledger.get('calls', 0) if ledger.get('call_day') == now.date().isoformat() else 0
+        last = ledger.get('job_attempt_at')
+        return used < self.store.options.daily_call_limit and (not last or
+            now - datetime.fromisoformat(last) >= timedelta(minutes=15))
+
+    def weekly_due(self):
+        return self.store.data['ledger'].get('weekly_done') != periods(tokyo_now())[1]
 
     def start(self, manual=False):
         if self.running or self.controller.active or self.controller.unsaved or self.controller.editing:
@@ -65,9 +71,11 @@ class Jobs:
         try:
             await self.controller.broadcast({'type': 'jobs.changed', 'status': self.status, 'running': True})
             # 同じ自動処理を何度も繰り返さないため、試行日は先に記録する。
-            self.store.record(daily_attempt=daily, weekly_attempt=weekly)
+            self.store.record(daily_attempt=daily, weekly_attempt=weekly, job_attempt_at=now.isoformat())
             processed = 0
             max_batches = max(1, self.store.options.daily_call_limit - int(weekly_due))
+            if not manual:
+                max_batches = 1
             for _ in range(max_batches):
                 if not can_continue():
                     return

@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import time
 from contextlib import suppress
 
 from .errors import ChatError
@@ -29,6 +31,13 @@ class Controller:
         self.presence = {}
         self.periodic_task = None
         self.reminder_ticks = 0
+        self.last_chat_at = time.monotonic()
+        self.next_jobs_check = self.last_chat_at + 300
+        self.partial_answer = ''
+        self.references = []
+        self.first_text_ms = None
+        self.turn_started = 0
+        self.last_progress_at = 0
 
     def start(self):
         self.periodic_task = asyncio.create_task(self.periodic())
@@ -44,15 +53,22 @@ class Controller:
                     await self.broadcast(event)
                 await self.deliver_reminders()
 
-                # 安定性優先：起動後の未処理回収は行わず、自動整理は03:00台だけ。
-                # 日中のチャット中に突然バックグラウンドGemini呼び出しを始めない。
-                wall_now = tokyo_now()
-                if (wall_now.hour == 3 and self.runtime.options.auto_jobs and self.jobs.due(wall_now)
-                        and not self.jobs.running and not self.active and not self.unsaved and not self.editing):
-                    self.jobs.start()
+                await self.maybe_organize()
             except Exception:
                 # Keep the timer alive; details shown by settings/jobs, no raw data logged.
                 self.jobs.status = '定期処理を実行できませんでした。設定・保存先を確認してください。'
+
+    async def maybe_organize(self):
+        now = time.monotonic()
+        if (now < self.next_jobs_check or now - self.last_chat_at < 300
+                or not self.runtime.options.auto_jobs or not self.jobs.due()
+                or self.jobs.running or self.active or self.unsaved or self.editing):
+            return
+        self.next_jobs_check = now + 900
+        summary = await self.memory.call('GET', '/summary')
+        # start() rechecks ownership after the database await.
+        if summary['pending'] or self.jobs.weekly_due():
+            self.jobs.start()
 
     async def deliver_reminders(self):
         """予約された声かけを配信する。静音・非表示に関わらず出す（本人が時刻を
@@ -73,7 +89,21 @@ class Controller:
 
     def state(self):
         return {'type': 'state.changed', 'state': 'thinking' if self.active else 'idle',
-                'turn_id': self.active['turn_id'] if self.active else None}
+                'turn_id': self.active['turn_id'] if self.active else None,
+                'phase': self.phase, 'partial': self.partial_answer,
+                'text': self.active['text'] if self.active else None,
+                'client_id': self.active['client_id'] if self.active else None,
+                'references': self.references if self.active else []}
+
+    async def progress(self, text):
+        self.partial_answer = text
+        now = time.monotonic()
+        if self.first_text_ms is None and text:
+            self.first_text_ms = round((now - self.turn_started) * 1000)
+        if now - self.last_progress_at >= .1:
+            self.last_progress_at = now
+            await self.broadcast({'type': 'chat.progress', 'turn_id': self.active['turn_id'],
+                                  'partial': text})
 
     async def send(self, turn: dict, emit):
         if self.editing:
@@ -94,6 +124,12 @@ class Controller:
 
         # Reserve without yielding; job cancellation happens inside the owned task.
         self.active = dict(turn)
+        self.last_chat_at = time.monotonic()
+        self.turn_started = self.last_chat_at
+        self.partial_answer = ''
+        self.references = []
+        self.first_text_ms = None
+        self.last_progress_at = 0
         self.cancel_requested = False
         self.phase = 'preparing'
         self.task = asyncio.create_task(self._run(dict(turn)))
@@ -135,14 +171,22 @@ class Controller:
             if self.cancel_requested:
                 raise asyncio.CancelledError
             self.phase = 'generating'
+            await self.broadcast(self.state())
             answer = await tools.direct_reply(turn['text'], self.memory)
             if answer is None:
                 context = await self.memory.context()
-                hint = ' '.join([turn['text']] + [row['text'] for row in context[-2:]])[:2000]
-                recalled = await self.memory.call('GET', '/recall', params={'text': hint})
+                hint = ' '.join(row['text'] for row in context[-2:])[:2000]
+                recalled = await self.memory.call('GET', '/recall', params={'text': turn['text'], 'context': hint})
+                self.references = ([{'label': row['topic_key'], 'text': row['summary']}
+                                    for row in recalled.get('wisdom', [])[:5]]
+                                   + [{'label': row['key'], 'text': row['value']}
+                                      for row in recalled.get('persona', []) if row['key'] != 'base_personality'])
+                await self.broadcast(self.state())
                 answer = await self.llm.reply(context, turn['text'], recalled, proactive,
-                                              self.runtime.options.reply_tokens, memory=self.memory)
+                                              self.runtime.options.reply_tokens, memory=self.memory, on_text=self.progress)
+            self.partial_answer = answer
             self.phase = 'saving'
+            await self.broadcast(self.state())
             if self.cancel_requested:
                 raise asyncio.CancelledError
             self.unsaved = (turn, answer)
@@ -154,7 +198,9 @@ class Controller:
             self.unsaved = None
             self.proactive.last_activity = tokyo_now()
             await self.broadcast({'type': 'chat.completed', 'turn_id': turn_id,
-                                  'text': turn['text'], 'answer': answer})
+                                  'text': turn['text'], 'answer': answer, 'references': self.references,
+                                  'elapsed_ms': round((time.monotonic() - self.turn_started) * 1000),
+                                  'first_text_ms': self.first_text_ms})
         except asyncio.CancelledError:
             if admitted and not self.unsaved:
                 await self._mark_failed(turn_id, 'cancelled')
@@ -168,8 +214,12 @@ class Controller:
                 await self._mark_failed(turn_id, 'failed')
             await self.broadcast(ChatError('internal_error', '処理に失敗しました。再試行できます。').event(turn_id))
         finally:
+            logging.getLogger('uvicorn.error').info('chat timing: first_text_ms=%s total_ms=%s',
+                self.first_text_ms, round((time.monotonic() - self.turn_started) * 1000))
+            self.last_chat_at = time.monotonic()
             self.active = None
             self.phase = 'idle'
+            self.partial_answer = ''
             await self.broadcast(self.state())
 
     async def cancel(self, turn_id, client_id, emit):
@@ -200,7 +250,7 @@ class Controller:
             await self.memory.complete(turn_id, answer)
             self.unsaved = None
             await self.broadcast({'type': 'chat.completed', 'turn_id': turn_id,
-                                  'text': turn['text'], 'answer': answer})
+                                  'text': turn['text'], 'answer': answer, 'references': self.references})
         except ChatError:
             await emit(self.unsaved_event())
         finally:

@@ -1,0 +1,12 @@
+{
+  "id": "/",
+  "name": "かぐやAI",
+  "short_name": "かぐや",
+  "lang": "ja",
+  "start_url": "/",
+  "scope": "/",
+  "display": "browser",
+  "background_color": "#14101c",
+  "theme_color": "#14101c",
+  "icons": [{ "src": "/icon-180.png", "sizes": "180x180", "type": "image/png" }]
+}

@@ -6,7 +6,7 @@ type Api = (path: string, init?: RequestInit) => Promise<any>;
 type Row = Record<string, any>;
 
 export class Controls {
-  private layer = 'raw';
+  private layer = 'wisdom';
   private offset = 0;
   private nextOffset: number | null = null;
   private action: (() => Promise<void>) | null = null;
@@ -158,6 +158,7 @@ export class Controls {
   }
 
   async refreshMemories(): Promise<void> {
+    await this.refreshSummary();
     const q = (document.getElementById('memory-search') as HTMLInputElement).value;
     const body = await this.api(`/memories/${this.layer}?${new URLSearchParams({ q, offset: String(this.offset) })}`);
     const list = document.getElementById('memory-list')!;
@@ -165,7 +166,9 @@ export class Controls {
     for (const row of body.items as Row[]) {
       const card = document.createElement('article'); card.className = 'memory-card';
       const title = document.createElement('strong');
-      title.textContent = this.layer === 'raw' ? `${row.role === 'user' ? 'あなた' : 'かぐや'} ／ ${row.status}` : row.topic_key || row.key;
+      const personaLabels: Row = { reply_style: '返答の長さ・話し方', addressing: 'あなたの呼び方', support_style: '相談するときの接し方', base_personality: 'かぐやの基本性格' };
+      title.textContent = this.layer === 'raw' ? `${row.role === 'user' ? 'あなた' : 'かぐや'} ／ ${row.status}`
+        : row.topic_key || personaLabels[row.key] || row.key;
       const value = document.createElement('p'); value.textContent = row.content || row.summary || String(row.value);
       const info = document.createElement('small');
       info.textContent = `${new Date(row.created_at || row.updated_at).toLocaleString('ja-JP')} ／ 更新番号 ${row.revision}${row.locked ? ' ／ 自動更新から保護' : ''}`;
@@ -181,10 +184,14 @@ export class Controls {
       }
       if (row.key !== 'base_personality') {
         const actions = document.createElement('div'); actions.className = 'button-row';
-        if (this.layer !== 'raw' || row.role === 'user') actions.append(this.button('訂正', () => this.edit(row, false)));
-        actions.append(this.button('削除・関連記憶も取消', () => this.edit(row, true)));
+        // 層ごとに役割が違うので操作名も変える。知恵＝訂正／もう当てはまらない、
+        // 接し方＝変更／元に戻す、会話履歴＝訂正／削除。
+        const editLabel = this.layer === 'persona' ? '変更' : '訂正';
+        const dropLabel = this.layer === 'wisdom' ? 'もう当てはまらない' : '削除・関連記憶も取消';
+        if (this.layer !== 'raw' || row.role === 'user') actions.append(this.button(editLabel, () => this.edit(row, false)));
+        if (this.layer !== 'persona') actions.append(this.button(dropLabel, () => this.edit(row, true)));
         if (this.layer === 'persona' && row.previous_value !== null) {
-          actions.append(this.button('直前へ戻す', async () => {
+          actions.append(this.button('元に戻す', async () => {
             this.confirm('直前の接し方へ戻しますか？', `戻す内容：${row.previous_value}。自動更新から保護します。`, async () => {
               await this.api(`/memories/persona/${encodeURIComponent(row.key)}/restore`, {
                 method: 'POST', body: JSON.stringify({ revision: row.revision, confirmed: true }),
@@ -201,6 +208,21 @@ export class Controls {
     (document.getElementById('memory-next') as HTMLButtonElement).disabled = this.nextOffset === null;
     (document.getElementById('memory-prev') as HTMLButtonElement).disabled = this.offset === 0;
     document.getElementById('memory-page')!.textContent = `${this.offset + 1}件目から表示`;
+  }
+
+  async refreshSummary(): Promise<void> {
+    const body = await this.api('/memory-summary');
+    document.getElementById('memory-summary')!.textContent = body.running ? '会話は保存済み。長期記憶へ整理しています。'
+      : body.pending ? `会話は保存済み。${body.pending}件が長期記憶への反映待ちです。${body.auto ? '会話のない時間に整理します。' : '自動整理は停止中です。'}`
+      : '保存された会話の長期記憶への整理は完了しています。';
+    const list = document.getElementById('recent-memory-list')!;
+    list.replaceChildren();
+    for (const row of body.recent) {
+      const item = document.createElement('li');
+      item.textContent = `${row.topic_key}：${row.summary}`;
+      list.appendChild(item);
+    }
+    if (!body.recent.length) list.textContent = '長期記憶はまだありません。「これを覚えて」と話しかけられます。';
   }
 
   private button(label: string, action: () => Promise<void>): HTMLButtonElement {
@@ -227,7 +249,9 @@ export class Controls {
       (layer === 'raw' && !deleting ? '元発言は訂正して未処理に戻し、古い回答と派生記憶を削除します。' :
         '古い情報の復活を防ぐため、根拠の会話・関連する知恵を削除し、派生した接し方と過去値も取り消します。') +
       '\nこの操作は取り消せません。';
-    this.confirm(deleting ? '記憶を削除しますか？' : '記憶を訂正する', description, async () => {
+    const title = deleting ? (layer === 'wisdom' ? 'この記憶はもう当てはまりませんか？' : '記憶を削除しますか？')
+      : layer === 'persona' ? 'かぐやの接し方を変更する' : '記憶を訂正する';
+    this.confirm(title, description, async () => {
       await this.api(`/memories/${layer}/${key}`, { method: 'PATCH', body: JSON.stringify({
         revision: current.revision, confirmed: true, delete: deleting,
         impact_token: effect.impact_token,
