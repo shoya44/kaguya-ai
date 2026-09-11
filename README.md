@@ -224,7 +224,8 @@ iPhoneはPC側と同じFastAPI・Gemini・PostgreSQLを使います。
   `browser` のままです。iOSのスタンドアロン起動はHTTPS必須で、HTTP接続の本アプリでは
   「HTTPS-Onlyが有効なHTTP URL」エラーになり起動できないためです
 
-Living Kaguyaの利用時間学習・感情状態は端末localStorageなので、PCとiPhoneで別々に保持されます。
+Living Kaguyaの表情はPC側のサーバが決めるため、PCとiPhoneで同じになります。
+生活状態と利用時間の学習は端末localStorageなので、端末ごとに別々です。
 
 ---
 
@@ -242,14 +243,20 @@ Living Kaguyaの利用時間学習・感情状態は端末localStorageなので�
 - daydreaming
 - sleeping
 
-感情例：
+表情：
 
 - normal
 - happy
 - sleepy
 - sulky
 
-褒められる、深夜になる、特定の会話をする等で軽く変化します。よく会話する時間帯も端末内で少しずつ学習します。
+褒められる、他のAIと比べられる、深夜になる等で変化します。
+
+**表情はPC側のサーバが決めて全端末へ配信します。** かぐやはPC上に1人しかいないため、
+PCで褒めればiPhone側のかぐやも同じ表情になります。Kaguya MindがONのときはMindの感情モデルが、
+OFFのときは会話の言葉と時刻だけの簡易判定が使われます。
+
+生活状態と、よく会話する時間帯の学習は端末内のままです。
 
 既存PNGにはCanvasの低負荷な上下・呼吸・傾きモーションを付けています。専用の `snack.png` や `sulky.png` 等は将来追加可能ですが、未配置ファイルは参照しません。
 
@@ -271,7 +278,8 @@ Kaguya Mindは既存機能とは別レイヤーで、保存先も分かれてい
 |---|---|---|
 | Memory（3層） | PostgreSQL | ユーザーについて覚えていること |
 | Relationship Memory | `settings.json` | 慣れ・利用日数・話し方フィードバック |
-| Living Kaguya | localStorage | 画面上の生活状態と表情（normal / happy / sleepy / sulky） |
+| かぐやの表情 | サーバ（メモリ上） | normal / happy / sleepy / sulky。全端末で共通 |
+| Living Kaguya | localStorage | 画面上の生活状態と、よく会話する時間帯の学習 |
 | Kaguya Mind | `mind.db` | かぐや自身の感情・好み・未完の話題 |
 
 会話本体との接点は `before_reply` / `after_reply` の2箇所だけです。
@@ -446,7 +454,7 @@ READMEを確認してiPhone対応を教えて
 | 設定/整理回数 | `%LOCALAPPDATA%\KaguyaAI\settings.json` |
 | ローカル予定 | `%LOCALAPPDATA%\KaguyaAI\calendar.json` |
 | 参照資料 | `%LOCALAPPDATA%\KaguyaAI\references` |
-| Living状態 | 各ブラウザ/WebViewのlocalStorage |
+| Living状態（生活状態・利用時間の学習） | 各ブラウザ/WebViewのlocalStorage |
 | Kaguya Mind（実験機能） | `%LOCALAPPDATA%\KaguyaAI\mind.db` |
 | 更新ログ | `%LOCALAPPDATA%\KaguyaAI\update.log` |
 

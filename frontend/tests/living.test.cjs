@@ -71,15 +71,29 @@ test('living module emits local state without network dependencies', () => {
   assert.equal(typeof detail.energy, 'number');
 });
 
-test('praise changes mood locally and records an interaction hour', () => {
+test('praise records an interaction hour and affection without deciding the mood', () => {
   const h = harness();
   h.elements['text-input'].value = 'かぐや、かわいい。ありがとう';
   h.elements['input-form'].handlers.submit();
-  const last = h.emitted.at(-1).detail;
-  assert.equal(last.mood, 'happy');
   const saved = JSON.parse(h.storage.get('kaguya.life.v1'));
   assert.equal(saved.interactions, 1);
   assert.equal(saved.hourCounts.reduce((sum, value) => sum + value, 0), 1);
+  assert.equal(saved.affection, 51);
+  // 表情はサーバが決めるので、この端末の判定では変わらない。
+  assert.ok(!('mood' in saved));
+});
+
+test('the mood comes from the server so every device shows the same face', () => {
+  const h = harness();
+  h.winHandlers['kaguya-mood']({ detail: { mood: 'sulky' } });
+  assert.equal(h.emitted.at(-1).detail.mood, 'sulky');
+
+  const before = h.emitted.length;
+  h.winHandlers['kaguya-mood']({ detail: { mood: 'sulky' } });
+  assert.equal(h.emitted.length, before, '同じ表情の再送では再描画しない');
+
+  h.winHandlers['kaguya-mood']({ detail: { mood: 'unknown' } });
+  assert.equal(h.emitted.at(-1).detail.mood, 'sulky', '未知の値は無視する');
 });
 
 test('pagehide persists state without any server dependency', () => {

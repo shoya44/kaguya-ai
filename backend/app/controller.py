@@ -4,6 +4,7 @@ import time
 from contextlib import suppress
 
 from .errors import ChatError
+from .mood import Mood
 from .proactive import Proactive, tokyo_now
 from .jobs import Jobs
 from . import relationship, tools
@@ -28,6 +29,11 @@ class Controller:
         self.runtime = runtime
         # Optional experimental dependency. Core chat never imports Mind internals.
         self.mind = mind
+        # 表情は端末ではなくここで決める。MindがONならMind、OFFならこの簡易判定。
+        self.mood = Mood()
+        self.mind_face = ''
+        self.last_face = ''
+        self.mood_ticks = 0
         self.proactive = Proactive(runtime)
         self.jobs = Jobs(memory, llm, runtime, self)
         self.presence = {}
@@ -44,6 +50,21 @@ class Controller:
     def start(self):
         self.periodic_task = asyncio.create_task(self.periodic())
 
+    def face(self, now=None) -> str:
+        """いま画面に出すべき表情。MindがONならMindの気分を優先する。"""
+        return self.mind_face or self.mood.current(now or tokyo_now())
+
+    async def emit_mood(self, refresh=False) -> None:
+        """表情が変わったときだけ全端末へ配信する。PCとiPhoneで同じ顔になる。"""
+        now = tokyo_now()
+        if refresh:
+            # Mindの感情は半減期が長いので、毎tick読み直す必要はない。
+            self.mind_face = self.mind.face(now) if self.mind else ''
+        face = self.face(now)
+        if face != self.last_face:
+            self.last_face = face
+            await self.broadcast({'type': 'mood.changed', 'mood': face})
+
     async def periodic(self):
         while True:
             await asyncio.sleep(5)
@@ -53,6 +74,10 @@ class Controller:
                 event = self.proactive.tick(visible, bool(self.active or self.unsaved or self.editing))
                 if event:
                     await self.broadcast(event)
+                self.mood_ticks += 1
+                # Mindの感情は半減期が長いので、読み直しは1分に1回でよい。
+                # 起動直後の1回目は読む（それまではOFF相当の簡易判定になるため）。
+                await self.emit_mood(refresh=self.mood_ticks % 12 == 1)
                 await self.deliver_reminders()
 
                 await self.maybe_organize()
@@ -170,7 +195,9 @@ class Controller:
             await self.broadcast({'type': 'chat.accepted', 'turn_id': turn_id,
                                   'text': turn['text'], 'client_id': turn['client_id']})
             relationship.capture_feedback(self.runtime, turn['text'], tokyo_now())
+            self.mood.react(turn['text'], tokyo_now())
             mind_context = self.mind.before_reply(turn['text'], tokyo_now()) if self.mind else {}
+            await self.emit_mood(refresh=True)
             proactive = self.proactive.activity()
             if self.cancel_requested:
                 raise asyncio.CancelledError

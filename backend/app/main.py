@@ -174,6 +174,8 @@ async def change_settings(body: dict, request: Request, _client_id: UUID = Depen
     except OSError:
         raise HTTPException(503, '設定ファイルを保存できませんでした。') from None
     await controller.broadcast({'type': 'settings.changed', 'options': options.model_dump()})
+    # MindのON/OFFはそのまま表情の出所の切り替えなので、次の定期更新を待たずに反映する。
+    await controller.emit_mood(refresh=True)
     return {'options': options.model_dump(),
             'mind': controller.mind.snapshot(tokyo_now()) if controller.mind else {'enabled': False, 'status': 'off'}}
 
@@ -329,6 +331,8 @@ async def ws_endpoint(ws: WebSocket):
 
     try:
         await emit(controller.state())
+        # 後から開いた端末にも、いまの表情をそろえて渡す。
+        await emit({'type': 'mood.changed', 'mood': controller.face()})
         if controller.unsaved:
             await emit(controller.unsaved_event())
         while True:

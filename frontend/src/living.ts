@@ -6,8 +6,6 @@ type LifeState = {
   interactions: number;
   affection: number;
   hourCounts: number[];
-  mood: LifeMood;
-  moodUntil: number;
 };
 
 const LIFE_KEY = 'kaguya.life.v1';
@@ -15,7 +13,7 @@ const MINUTE = 60 * 1000;
 
 function fresh(): LifeState {
   return { lastSeen: Date.now(), interactions: 0, affection: 50,
-    hourCounts: Array.from({ length: 24 }, () => 0), mood: 'normal', moodUntil: 0 };
+    hourCounts: Array.from({ length: 24 }, () => 0) };
 }
 
 function load(): LifeState {
@@ -28,8 +26,6 @@ function load(): LifeState {
       affection: Math.min(100, Math.max(0, Number(parsed.affection) || 50)),
       hourCounts: Array.isArray(parsed.hourCounts) && parsed.hourCounts.length === 24
         ? parsed.hourCounts.map(value => Math.max(0, Number(value) || 0)) : fresh().hourCounts,
-      mood: ['normal', 'happy', 'sleepy', 'sulky'].includes(String(parsed.mood)) ? parsed.mood as LifeMood : 'normal',
-      moodUntil: Number(parsed.moodUntil) || 0,
     };
   } catch {
     return fresh();
@@ -38,6 +34,9 @@ function load(): LifeState {
 
 let state = load();
 let reentryTimer: number | null = null;
+// 表情はサーバが決める。かぐやはPC上のFastAPIに1人しかいないので、
+// PCとiPhoneで別々に判定すると顔が食い違う。届くまでは時刻だけで暫定表示する。
+let serverMood: LifeMood | null = null;
 
 function save(): void {
   try { localStorage.setItem(LIFE_KEY, JSON.stringify(state)); } catch { /* best effort */ }
@@ -76,7 +75,7 @@ function activity(now: Date, idleMs: number): LifeActivity {
 }
 
 function effectiveMood(now = Date.now()): LifeMood {
-  if (state.moodUntil > now) return state.mood;
+  if (serverMood) return serverMood;
   const hour = new Date(now).getHours();
   return hour < 6 || hour >= 23 ? 'sleepy' : 'normal';
 }
@@ -127,22 +126,20 @@ function reactToText(text: string): void {
   state.interactions += 1;
   state.hourCounts[new Date(now).getHours()] += 1;
   state.lastSeen = now;
-
   if (/(かわいい|好き|ありがとう|助かった|えらい|いい子)/.test(value)) {
-    state.mood = 'happy';
-    state.moodUntil = now + 12 * MINUTE;
     state.affection = Math.min(100, state.affection + 1);
-  } else if (/(Claude|ChatGPT|チャットGPT).*(の方が|より).*(好き|賢い|すごい|良い|いい)/i.test(value)) {
-    state.mood = 'sulky';
-    state.moodUntil = now + 8 * MINUTE;
-  } else if (/(おやすみ|寝るね|寝よう)/.test(value)) {
-    state.mood = 'sleepy';
-    state.moodUntil = now + 30 * MINUTE;
   }
 
   save();
   emit(false);
 }
+
+window.addEventListener('kaguya-mood', event => {
+  const value = String((event as CustomEvent).detail?.mood ?? '');
+  if (!['normal', 'happy', 'sleepy', 'sulky'].includes(value) || value === serverMood) return;
+  serverMood = value as LifeMood;
+  emit(false);
+});
 
 const form = document.getElementById('input-form');
 form?.addEventListener('submit', () => {
