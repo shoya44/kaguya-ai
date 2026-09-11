@@ -3,10 +3,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from app import project_inspector
+from app import project_inspector, tools
 
 
-class ProjectInspectorTests(unittest.TestCase):
+class ProjectInspectorTests(unittest.IsolatedAsyncioTestCase):
     def test_search_returns_context_and_skips_dependencies(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -31,6 +31,19 @@ class ProjectInspectorTests(unittest.TestCase):
             self.assertEqual((result['start_line'], result['end_line']), (5, 8))
             self.assertIn('5: line 5', result['content'])
             self.assertNotIn('9: line 9', result['content'])
+
+    def test_tools_are_registered_explicitly(self):
+        names = {item['name'] for item in tools.DECLARATIONS}
+        self.assertTrue({'project_status', 'project_search', 'project_read'} <= names)
+
+    async def test_tools_run_dispatches_project_read(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / 'README.md').write_text('Kaguya self inspection', encoding='utf-8')
+            with patch.object(project_inspector, 'ROOT', root):
+                result = await tools.run('project_read', {'path': 'README.md'}, None)
+            self.assertTrue(result['ok'])
+            self.assertIn('Kaguya self inspection', result['content'])
 
 
 if __name__ == '__main__':
