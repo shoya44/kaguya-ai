@@ -21,14 +21,25 @@ export class Controls {
       this.perform(async () => {
         const form = new FormData(event.currentTarget as HTMLFormElement);
         const options = {
-          quiet: form.has('quiet'), auto_jobs: form.has('auto_jobs'), always_on_top: form.has('always_on_top'),
+          quiet: form.has('quiet'), auto_jobs: form.has('auto_jobs'), mind_enabled: form.has('mind_enabled'),
+          always_on_top: form.has('always_on_top'),
           proactive_minutes: Number(form.get('proactive_minutes')), daily_call_limit: Number(form.get('daily_call_limit')),
           reply_tokens: Number(form.get('reply_tokens')), font_size: Number(form.get('font_size')),
         };
         const result = await this.api('/settings', { method: 'PATCH', body: JSON.stringify(options) });
         await this.applyOptions(result.options);
+        this.renderMind(result.mind);
         this.message('設定を保存しました。');
       });
+    });
+    document.getElementById('mind-reset-btn')!.addEventListener('click', () => {
+      this.confirm('Kaguya Mindの蓄積を消しますか？',
+        'かぐやの感情・好み・気にかけていることだけを消します。会話・記憶・かぐやの接し方は消えません。',
+        async () => {
+          // 完了メッセージは共通の確認ダイアログ側が出す。
+          const result = await this.api('/mind', { method: 'DELETE' });
+          this.renderMind(result.mind);
+        });
     });
     document.getElementById('quiet-btn')!.addEventListener('click', () => this.toggleQuiet());
     document.getElementById('organize-btn')!.addEventListener('click', () => this.perform(async () => {
@@ -99,10 +110,29 @@ export class Controls {
   async refreshSettings(): Promise<void> {
     const body = await this.api('/settings');
     await this.applyOptions(body.options);
+    this.renderMind(body.mind);
     document.getElementById('job-status')!.textContent = `${body.jobs.running ? '整理中' : body.jobs.last_status || body.jobs.status}（本日 ${body.jobs.calls_today}/${body.options.daily_call_limit} 回）`;
     document.getElementById('model-info')!.textContent = `モデル：${body.model || '未設定'} ／ API設定：${body.configured ? 'あり' : 'なし'}`;
     (document.getElementById('organize-btn') as HTMLButtonElement).disabled = body.jobs.running;
     this.renderReminders(body.reminders ?? []);
+  }
+
+  private renderMind(mind: Row | undefined): void {
+    const target = document.getElementById('mind-status');
+    if (!target) return;
+    if (!mind?.enabled) {
+      target.textContent = 'OFF：従来どおりの会話・記憶・Relationship Memoryで動作します。';
+      return;
+    }
+    if (mind.status !== 'ok') {
+      target.textContent = 'ON：Mindの状態を読み取れませんでした。会話本体はそのまま動作します。';
+      return;
+    }
+    const traits = Array.isArray(mind.traits) ? mind.traits.slice(0, 4).map((item: Row) => `${item.name}=${item.stance}`).join('、') : '';
+    const suffix = traits ? ` ／ 好み：${traits}` : ' ／ 好みはまだ育ち始めたところ';
+    const open = Number(mind.stats?.open_loops ?? 0);
+    const loops = open ? ` ／ 気にかけている話題：${open}件` : '';
+    target.textContent = `ON：${mind.mood ?? 'いつも通り'} ／ ${mind.growth ?? ''}${suffix}${loops}`;
   }
 
   private renderReminders(items: Row[]): void {

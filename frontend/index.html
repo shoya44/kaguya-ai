@@ -51,6 +51,11 @@
         <form id="options-form">
           <label><input type="checkbox" name="quiet">自発的な声かけを停止する</label>
           <label><input type="checkbox" name="auto_jobs">会話していない時間に記憶を自動整理する</label>
+          <label><input type="checkbox" name="mind_enabled">実験機能「Kaguya Mind」を使う</label>
+          <p class="hint">Kaguya Mindは、かぐや自身の感情・好み・個性を別領域で少しずつ育てます。OFFにすると従来仕様へ戻り、既存の会話・記憶・ツール機能には影響しません。</p>
+          <p id="mind-status" class="hint" role="status">OFF：従来仕様で動作します。</p>
+          <button type="button" id="mind-reset-btn">Kaguya Mindの蓄積を消す</button>
+          <p class="hint">かぐやの感情・好み・気にかけていることだけを消します。会話・記憶・かぐやの接し方は消えません。</p>
           <label>声かけの間隔（分）<input type="number" name="proactive_minutes" min="60" max="240" required></label>
           <label>整理APIの1日上限（週次更新を含む）<input type="number" name="daily_call_limit" min="1" max="3" required></label>
           <label>回答の出力上限（トークン）<input type="number" name="reply_tokens" min="256" max="8192" required></label>
