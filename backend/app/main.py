@@ -17,6 +17,7 @@ from .controller import Controller
 from .errors import ChatError
 from .llm import Gemini
 from .memory_api import MemoryClient
+from .mind import KaguyaMind
 from .models import Turn
 from .runtime import RuntimeStore
 from .proactive import tokyo_now
@@ -56,7 +57,10 @@ async def lifespan(app: FastAPI):
         await asyncio.gather(*(send(ws) for ws in tuple(connections)))
 
     runtime = RuntimeStore(settings.data_dir)
-    controller = Controller(memory, llm, broadcast, runtime)
+    # Mind is injected as one optional dependency. Its SQLite store is lazy and
+    # is not touched while mind_enabled=False.
+    mind = KaguyaMind(settings.data_dir / 'mind.db', lambda: runtime.options.mind_enabled)
+    controller = Controller(memory, llm, broadcast, runtime, mind=mind)
     app.state.controller = controller
     app.state.connections = connections
 
@@ -153,6 +157,7 @@ async def get_settings(request: Request, _client_id: UUID = Depends(require_sess
                      'last_status': ledger.get('last_job_status', ''),
                      'calls_today': ledger.get('calls', 0) if ledger.get('call_day') == tokyo_now().date().isoformat() else 0},
             'reminders': reminders,
+            'mind': controller.mind.snapshot(tokyo_now()) if controller.mind else {'enabled': False, 'status': 'off'},
             'model': settings.gemini_model, 'configured': bool(settings.gemini_api_key.get_secret_value())}
 
 
@@ -168,7 +173,8 @@ async def change_settings(body: dict, request: Request, _client_id: UUID = Depen
     except OSError:
         raise HTTPException(503, '設定ファイルを保存できませんでした。') from None
     await controller.broadcast({'type': 'settings.changed', 'options': options.model_dump()})
-    return {'options': options.model_dump()}
+    return {'options': options.model_dump(),
+            'mind': controller.mind.snapshot(tokyo_now()) if controller.mind else {'enabled': False, 'status': 'off'}}
 
 
 @app.delete('/reminders/{reminder_id}')
