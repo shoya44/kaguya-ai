@@ -1,6 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+set "GIT_TERMINAL_PROMPT=0"
 
 where git.exe >nul 2>&1
 if errorlevel 1 (
