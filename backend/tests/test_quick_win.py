@@ -1,8 +1,6 @@
 import tempfile
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import AsyncMock
 
 from app import tools
 from app.personal_store import CalendarStore, ReferenceLibrary
@@ -16,8 +14,9 @@ class ToolRouterTests(unittest.TestCase):
     def test_plain_chat_sends_no_tool_schema(self):
         self.assertEqual(self.names('今日はなんとなく眠いな'), set())
 
-    def test_weather_calendar_and_existing_tools_are_selected(self):
-        self.assertIn('weather', self.names('今日の天気どう？傘いる？'))
+    def test_explicit_weather_skips_function_schema_and_other_tools_still_route(self):
+        # 明示的な天気質問はdirect_replyで処理するためGeminiへschemaを送らない。
+        self.assertNotIn('weather', self.names('今日の天気どう？傘いる？'))
         self.assertIn('calendar', self.names('明日15時の予定を教えて'))
         self.assertIn('set_reminder', self.names('明日9時に薬って教えて'))
         self.assertIn('remember', self.names('コーヒーが好きって覚えておいて'))
