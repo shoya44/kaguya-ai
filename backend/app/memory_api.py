@@ -8,10 +8,12 @@ import httpx
 import psycopg
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from psycopg.rows import dict_row
+from pydantic import ValidationError
 
 from .errors import ChatError
 from .models import Completion, Failure, Turn
 from . import memory_store
+from .personal_store import CalendarStore, ReferenceLibrary
 
 
 def internal_auth(request: Request, x_internal_token: str = Header(default='')):
@@ -173,6 +175,68 @@ class MemoryClient:
         if cursor:
             params['cursor'] = cursor
         return await self.call('GET', '/history', params=params)
+
+
+# Function Callingからのみ使う軽量ローカル機能。外部UIへ新APIは増やさない。
+@router.get('/runtime/settings')
+def runtime_settings(request: Request):
+    return {'options': request.app.state.controller.runtime.options.model_dump()}
+
+
+@router.patch('/runtime/settings')
+async def change_runtime_settings(body: dict, request: Request):
+    controller = request.app.state.controller
+    try:
+        options = controller.runtime.update(body)
+    except ValidationError:
+        raise HTTPException(400, '設定値を確認してください。') from None
+    except OSError:
+        raise HTTPException(503, '設定ファイルを保存できませんでした。') from None
+    if 'quiet' in body or 'proactive_minutes' in body:
+        controller.proactive.reset()
+    await controller.broadcast({'type': 'settings.changed', 'options': options.model_dump()})
+    return {'options': options.model_dump()}
+
+
+@router.post('/calendar')
+def add_calendar_event(body: dict, request: Request):
+    try:
+        return CalendarStore(request.app.state.settings.data_dir).add(
+            str(body.get('title', '')), str(body.get('start', '')),
+            str(body['end']) if body.get('end') else None, str(body.get('note', '')),
+        )
+    except (TypeError, ValueError, OSError):
+        raise HTTPException(400, '予定の日時または内容を確認してください。') from None
+
+
+@router.get('/calendar')
+def list_calendar_events(request: Request, start: str = Query(..., max_length=64),
+                         end: str = Query(..., max_length=64)):
+    try:
+        items = CalendarStore(request.app.state.settings.data_dir).list(start, end)
+    except (TypeError, ValueError, OSError):
+        raise HTTPException(400, '予定の検索期間を確認してください。') from None
+    return {'ok': True, 'items': items}
+
+
+@router.post('/calendar/remove')
+def remove_calendar_event(body: dict, request: Request):
+    try:
+        result = CalendarStore(request.app.state.settings.data_dir).remove(
+            str(body.get('query', '')), str(body['start']) if body.get('start') else None,
+            str(body['end']) if body.get('end') else None,
+        )
+    except (TypeError, ValueError, OSError):
+        raise HTTPException(400, '削除条件を確認してください。') from None
+    return {'ok': result.get('removed', False), **result}
+
+
+@router.get('/references')
+def references(request: Request, q: str = Query('', max_length=200)):
+    try:
+        return {'ok': True, **ReferenceLibrary(request.app.state.settings.data_dir).search(q)}
+    except OSError:
+        raise HTTPException(503, '参照フォルダを読み取れませんでした。') from None
 
 
 @router.get('/recall')
