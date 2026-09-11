@@ -16,7 +16,7 @@ rem Repository updates are performed only by the explicit "最新版を反映" a
 echo Preparing Kaguya AI. No packages will be downloaded and Git will not be changed.
 "backend\.venv\Scripts\python.exe" -B "backend\migrate.py"
 if errorlevel 1 goto failed
-call build.bat nopause
+call "%~dp0kaguya.bat" build nopause
 if errorlevel 1 goto failed
 start "" "frontend\src-tauri\target\debug\app.exe" %*
 exit /b 0

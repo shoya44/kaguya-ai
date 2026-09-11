@@ -3,7 +3,9 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
-$root = Split-Path -Parent $MyInvocation.MyCommand.Path
+# このスクリプトは tools/ に置く。更新対象と start.bat はその1つ上。
+$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+$tools = Split-Path -Parent $MyInvocation.MyCommand.Path
 $logDir = Join-Path $env:LOCALAPPDATA 'KaguyaAI'
 $logPath = Join-Path $logDir 'update.log'
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
@@ -31,7 +33,7 @@ if ($WaitPid -gt 0) {
 Start-Sleep -Milliseconds 500
 Set-Location $root
 
-$update = Join-Path $root 'update_repo.bat'
+$update = Join-Path $tools 'update_repo.bat'
 $start = Join-Path $root 'start.bat'
 
 if (Test-Path $update) {

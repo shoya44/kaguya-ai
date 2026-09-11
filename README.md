@@ -51,7 +51,9 @@ Gemini APIは以下の方針です。
 
 - 確認間隔は15分。整理は1回につき1バッチだけ
 - 未整理の会話が無いときはGemini APIを呼びません（DBの件数を数えるだけ）
-- 1日のAPI上限（設定値）を超えたら、その日は打ち切り
+- 1日のAPI上限（設定値。1〜10回、既定3）を超えたら、その日は打ち切り
+- 1回の整理で生の発言を30件処理します。既定の3なら1日90件ぶん。よく話す日は上限を上げてください
+- 上限に達しても未整理の会話は消えません。知恵への反映が遅れるだけです
 - 会話が始まったら整理を中断し、未処理の原文は保持
 
 会話していない時間に少しずつ進めるので、深夜まで待たずに知恵へ反映されます。逆に、
@@ -501,12 +503,35 @@ PCのみ: Tauri
 
 ---
 
+# リポジトリ直下のbat
+
+日常で使うのは2つだけです。
+
+| ファイル | 用途 |
+|---|---|
+| `start.bat` | 起動。DBマイグレーションとローカルビルドを行います |
+| `stop.bat` | 終了 |
+| `kaguya.bat <command>` | 開発・保守 |
+
+`kaguya.bat` のコマンド：
+
+| コマンド | 内容 |
+|---|---|
+| `build` | frontendとデスクトップアプリを再ビルド |
+| `check` | ローカルの全テスト、ビルド、Cargo check |
+| `check-db` | 使い捨てのローカルPostgreSQLでDB確認（アプリのDBは使いません） |
+| `autostart on` / `off` | Windowsサインイン時の簡易表示起動を登録／解除 |
+
+`tools/` の `update_repo.bat` と `restart_update.ps1` は、PC版の「最新版を反映」から呼ばれる内部用です。直接実行する必要はありません。
+
+---
+
 # テスト
 
 リポジトリ直下：
 
 ```bat
-check.bat
+kaguya.bat check
 ```
 
 実行内容：
@@ -530,7 +555,7 @@ check.bat
 | frontend | Ubuntu | TypeScript型チェック、フロントのテスト、Viteビルド |
 
 backendをWindowsでも回すのは、**使用中のファイルを削除できない等のWindows固有の問題がLinuxでは再現しない**ためです。
-Cargo check（Tauri）はRustツールチェーンとWindows SDKが必要なので対象外です。実機確認は引き続き `check.bat` で行ってください。
+Cargo check（Tauri）はRustツールチェーンとWindows SDKが必要なので対象外です。実機確認は引き続き `kaguya.bat check` で行ってください。
 
 実DBの確認用コードは `backend/tests/run_db_checks.py` にあります。必要な場合だけ、対象DBを確認して実行してください。
 
@@ -547,7 +572,7 @@ cd C:\kaguya-ai
 stop.bat
 git switch main
 git pull --ff-only origin main
-check.bat
+kaguya.bat check
 start.bat
 ```
 

@@ -90,7 +90,7 @@ class LocalCase(unittest.TestCase):
         restarted = RuntimeStore(Path(self.temp.name))
         self.assertFalse(restarted.reserve_call('2026-09-11'))
         self.assertTrue(restarted.reserve_call('2026-09-12'))
-        with self.assertRaises(ValidationError): self.store.update({'daily_call_limit': 4})
+        with self.assertRaises(ValidationError): self.store.update({'daily_call_limit': 11})
         with self.assertRaises(ValidationError): self.store.update({'quiet': 'false'})
         self.assertFalse(list(Path(self.temp.name).glob('*.tmp')))
 

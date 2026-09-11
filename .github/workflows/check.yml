@@ -1,6 +1,6 @@
-# check.bat のうち、実行環境を用意しやすい部分だけをPRごとに回す。
+# kaguya.bat check のうち、実行環境を用意しやすい部分だけをPRごとに回す。
 # Cargo build（Tauri）はRustツールチェーンとWindows SDKが要るため対象外。
-# 実機確認は引き続き check.bat で行う。
+# 実機確認は引き続き kaguya.bat check で行う。
 name: check
 
 on:

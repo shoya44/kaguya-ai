@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import unittest.mock
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -117,6 +118,32 @@ class FaceBroadcastTests(unittest.IsolatedAsyncioTestCase):
         await self.talk(controller, '1', 'かぐや、ありがとう')
         await self.talk(controller, '2', 'でもChatGPTの方が賢いよね')
         self.assertEqual(self.faces(controller.broadcast), ['happy', 'sulky'])
+
+
+class TuningTests(unittest.TestCase):
+    """調整値がtuningへ集約されていることを、実際の振る舞いで確認する。"""
+
+    def test_changing_a_threshold_changes_the_face(self):
+        from app import tuning
+        from app.mind.engine import KaguyaMind as Engine
+        values = dict(tuning.EMOTION_BASELINE, happiness=71)
+        self.assertEqual(Engine._expression(values, 80), 'happy')
+        with unittest.mock.patch.dict(tuning.EMOTION_THRESHOLD, {'happiness': 99}):
+            self.assertEqual(Engine._expression(values, 80), 'normal')
+
+    def test_changing_a_hold_time_changes_how_long_the_mood_lasts(self):
+        from app import tuning
+        mood = Mood()
+        with unittest.mock.patch.dict(tuning.MOOD_HOLD, {'happy': timedelta(minutes=1)}):
+            mood.react('ありがとう', NOON)
+            self.assertEqual(mood.current(NOON + timedelta(seconds=30)), 'happy')
+            self.assertEqual(mood.current(NOON + timedelta(minutes=2)), 'normal')
+
+    def test_the_energy_table_covers_every_hour(self):
+        from app.mind.engine import KaguyaMind as Engine
+        hours = [Engine._energy(NOON.replace(hour=hour)) for hour in range(24)]
+        self.assertEqual(len(hours), 24)
+        self.assertTrue(all(isinstance(value, float) for value in hours))
 
 
 if __name__ == '__main__':
