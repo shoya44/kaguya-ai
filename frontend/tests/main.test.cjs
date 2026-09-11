@@ -24,6 +24,8 @@ class Element {
     this.textContent = '';
     this.scrollTop = 0;
     this.value = '';
+    this.hidden = false;
+    this.disabled = false;
   }
   focus() {}
   get scrollHeight() { return this.children.length * 30; }
@@ -41,6 +43,7 @@ function harness(options = {}) {
   const elements = {}, sockets = [], timers = [], calls = [], sent = [];
   const sessionData = new Map(), localData = new Map();
   const storage = data => ({ getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value) });
+  const body = new Element('body');
   class Socket {
     static OPEN = 1;
     constructor(url) { this.url = url; this.readyState = 1; this.handlers = {}; sockets.push(this); }
@@ -50,15 +53,24 @@ function harness(options = {}) {
     close(code = 1006) { this.readyState = 3; this.handlers.close?.({ code }); }
   }
   const ctx = vm.createContext({
-    document: { getElementById: id => elements[id] ??= new Element(), createElement: tag => new Element(tag),
-      visibilityState: 'visible' },
+    document: {
+      body,
+      getElementById: id => elements[id] ??= new Element(),
+      createElement: tag => new Element(tag),
+      visibilityState: 'visible',
+    },
     location: { hostname: '127.0.0.1' },
     Avatar: class { setState() {} }, isTauri: () => !!options.tauri,
     invoke: options.invoke ?? (async () => 'owned'),
     sessionStorage: storage(sessionData), localStorage: storage(localData),
     WebSocket: Socket, URLSearchParams, AbortSignal, Date, Error,
     crypto: { randomUUID: () => 'new-turn' },
-    window: { setTimeout: callback => timers.push(callback), setInterval: () => 0, clearTimeout: () => {} },
+    window: {
+      setTimeout: callback => timers.push(callback),
+      setInterval: () => 0,
+      clearTimeout: () => {},
+      matchMedia: () => ({ matches: false }),
+    },
     fetch: async (url, init) => {
       calls.push({ url, init });
       return options.fetch ? options.fetch(url, init) : response({ items: [], next_cursor: null });
