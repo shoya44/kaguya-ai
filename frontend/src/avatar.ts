@@ -1,19 +1,28 @@
 export type AvatarState = 'idle' | 'thinking' | 'talking' | 'greeting' | 'sleeping' | 'organizing';
+type TimeSlot = 'morning' | 'day' | 'evening' | 'night';
 
-// 状態ごとに使う画像。待機中だけは「何かして過ごしている」様子を出すため
-// 複数枚を持ち、それ以外は1状態＝1枚で固定する（状態が変わったときにだけ
-// 描き替わるので、意味のない点滅にはならない）。
 const SPRITES: Record<AvatarState, string[]> = {
   idle: ['/sprites/wave.png', '/sprites/book.png', '/sprites/laptop.png', '/sprites/cards.png'],
-  thinking: ['/sprites/think.png'],   // 返事を考えている
-  talking: ['/sprites/talk.png'],     // 返事を表示した直後
-  greeting: ['/sprites/laugh.png'],   // 自発的な声かけ
-  sleeping: ['/sprites/sleep.png'],   // 静音中、または長時間会話がない
-  organizing: ['/sprites/write.png'], // 記憶の整理ジョブを実行中
+  thinking: ['/sprites/think.png'],
+  talking: ['/sprites/talk.png'],
+  greeting: ['/sprites/laugh.png'],
+  sleeping: ['/sprites/sleep.png'],
+  organizing: ['/sprites/write.png'],
 };
-
-// 待機中の切り替え間隔。短いとスライドショーに見えるため、ゆっくり回す。
+const IDLE_BY_TIME: Record<TimeSlot, string[]> = {
+  morning: ['/sprites/wave.png'],
+  day: ['/sprites/laptop.png', '/sprites/book.png'],
+  evening: ['/sprites/cards.png', '/sprites/book.png'],
+  night: ['/sprites/book.png'],
+};
 const IDLE_ROTATE_MS = 45000;
+
+function timeSlot(hour = new Date().getHours()): TimeSlot {
+  if (5 <= hour && hour < 11) return 'morning';
+  if (11 <= hour && hour < 17) return 'day';
+  if (17 <= hour && hour < 23) return 'evening';
+  return 'night';
+}
 
 const images = new Map<string, HTMLImageElement>();
 function loadImage(src: string): HTMLImageElement {
@@ -25,7 +34,6 @@ function loadImage(src: string): HTMLImageElement {
   }
   return img;
 }
-// 状態が変わった瞬間に空白が出ないよう、全画像を先に読み込んでおく。
 for (const frames of Object.values(SPRITES)) for (const src of frames) loadImage(src);
 
 export class Avatar {
@@ -45,19 +53,26 @@ export class Avatar {
   setState(state: AvatarState): void {
     if (this.state === state) return;
     this.state = state;
-    // 会話から戻ったときは必ず1枚目（手を振る）から始める。
     this.frame = 0;
     this.rotate();
     this.draw();
   }
 
-  /** 複数枚を持つ状態のあいだだけタイマーを動かす。 */
+  private frames(): string[] {
+    return this.state === 'idle' ? IDLE_BY_TIME[timeSlot()] : SPRITES[this.state];
+  }
+
   private rotate(): void {
     if (this.timer !== null) window.clearInterval(this.timer);
     this.timer = null;
-    const frames = SPRITES[this.state];
-    if (frames.length < 2) return;
+    if (this.frames().length < 2) {
+      if (this.state === 'idle') {
+        this.timer = window.setInterval(() => { this.frame = 0; this.draw(); }, IDLE_ROTATE_MS);
+      }
+      return;
+    }
     this.timer = window.setInterval(() => {
+      const frames = this.frames();
       this.frame = (this.frame + 1) % frames.length;
       this.draw();
     }, IDLE_ROTATE_MS);
@@ -65,11 +80,9 @@ export class Avatar {
 
   private draw(): void {
     const { ctx, canvas } = this;
-    const frames = SPRITES[this.state];
+    const frames = this.frames();
     const img = loadImage(frames[this.frame] ?? frames[0]);
     const render = () => {
-      // "contain"で収める：スプライトは正方形ではない（例: wave.pngは418x409）ため、
-      // 正方形のcanvasに引き伸ばすと歪む。
       const scale = Math.min(canvas.width / img.naturalWidth, canvas.height / img.naturalHeight);
       const w = img.naturalWidth * scale;
       const h = img.naturalHeight * scale;

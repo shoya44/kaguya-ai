@@ -19,6 +19,8 @@ class Options(BaseModel):
     reply_tokens: int = Field(default=1024, ge=256, le=8192)
     always_on_top: bool = True
     font_size: int = Field(default=14, ge=12, le=22)
+    # 会話から天気を聞かれたときの既定地点。UI項目を増やさず、会話から変更できる。
+    weather_location: str = Field(default='東京', min_length=1, max_length=80)
 
 
 class RuntimeStore:
