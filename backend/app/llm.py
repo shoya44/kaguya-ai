@@ -61,6 +61,22 @@ class Gemini:
                 raise ChatError('empty_response', '回答を取得できませんでした。入力を見直して再試行できます。')
         return response.text.strip()
 
+    def _chat_thinking_config(self):
+        """雑談は速度優先。記憶整理ジョブの推論設定には影響させない。"""
+        model = str(self.settings.gemini_model or '').lower()
+        if 'gemini-3' in model:
+            try:
+                return types.ThinkingConfig(thinking_level='low')
+            except (TypeError, ValueError):
+                # 古いgoogle-genaiでもGemini 3の互換thinking_budgetは送れる。
+                return types.ThinkingConfig(thinking_budget=1024)
+        if 'gemini-2.5-pro' in model:
+            # 2.5 Proはthinkingを無効化できないので最小予算に寄せる。
+            return types.ThinkingConfig(thinking_budget=128)
+        if 'gemini-2.5' in model:
+            return types.ThinkingConfig(thinking_budget=0)
+        return None
+
     async def _generate(self, contents, config):
         return self._text(await self._request(contents, config))
 
@@ -72,6 +88,7 @@ class Gemini:
         config = types.GenerateContentConfig(
             system_instruction=system,
             max_output_tokens=max_tokens or self.settings.max_output_tokens,
+            thinking_config=self._chat_thinking_config(),
         )
         selected_tools = tools.declarations_for(text) if memory is not None else []
         if selected_tools:
@@ -80,11 +97,20 @@ class Gemini:
         calls = getattr(response, 'function_calls', None)
         if not calls:
             return self._text(response)
-        # 道具を使うのは1往復だけに限る（呼び出しの往復が無限に伸びないように）。
+
+        # 最大2件・1ラウンドの制限は維持。単純な1ツールなら結果をローカルで文章化し、
+        # 2回目のLLM呼び出しを省いて体感待ち時間と消費トークンを減らす。
         results = []
+        executed = []
         for call in calls[:2]:
             outcome = await tools.run(call.name, dict(call.args or {}), memory)
+            executed.append((call.name, outcome))
             results.append(types.Part.from_function_response(name=call.name, response=outcome))
+        if len(executed) == 1:
+            quick = tools.fast_reply(executed[0][0], executed[0][1], text)
+            if quick is not None:
+                return quick
+
         contents = contents + [response.candidates[0].content, types.Content(role='user', parts=results)]
         config.tools = None
         return self._text(await self._request(contents, config))
