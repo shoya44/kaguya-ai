@@ -12,6 +12,8 @@ class Options(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     quiet: bool = False
     auto_jobs: bool = True
+    # Experimental Kaguya Mind is opt-in. OFF preserves the pre-Mind behavior.
+    mind_enabled: bool = False
     proactive_minutes: int = Field(default=60, ge=60, le=240)
     daily_call_limit: int = Field(default=3, ge=1, le=3)
     # Thinking-capable models consume this budget before writing the answer,
