@@ -39,9 +39,12 @@ if (Test-Path $update) {
 }
 
 # 更新失敗・オフライン・ローカル変更ありでも、現在の版は必ず起動を試みる。
+# detached実行なのでstart.batの失敗時pauseは無効化する。
 if (Test-Path $start) {
+  $env:KAGUYA_NO_PAUSE = '1'
   & $start *> $null
   $startCode = $LASTEXITCODE
+  Remove-Item Env:KAGUYA_NO_PAUSE -ErrorAction SilentlyContinue
   Write-UpdateLog "start.bat exit=$startCode"
 } else {
   Write-UpdateLog 'start.bat was not found'
