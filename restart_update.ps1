@@ -16,22 +16,26 @@ function Write-UpdateLog([string]$Message) {
 Write-UpdateLog "update helper started; wait_pid=$WaitPid"
 
 if ($WaitPid -gt 0) {
-  try {
-    Wait-Process -Id $WaitPid -ErrorAction SilentlyContinue
-  } catch {
-    Write-UpdateLog "wait failed: $($_.Exception.Message)"
+  # Normally Tauri exits immediately. Poll instead of waiting forever; if the
+  # old instance is stuck, terminate only the exact app PID/tree passed by it.
+  for ($i = 0; $i -lt 40; $i++) {
+    if (-not (Get-Process -Id $WaitPid -ErrorAction SilentlyContinue)) { break }
+    Start-Sleep -Milliseconds 250
+  }
+  if (Get-Process -Id $WaitPid -ErrorAction SilentlyContinue) {
+    Write-UpdateLog 'old app did not exit in 10 seconds; stopping its own process tree'
+    & taskkill.exe /PID $WaitPid /T /F 2>&1 | ForEach-Object { Write-UpdateLog $_ }
   }
 }
 
-# app.exe終了直後のファイルロック解放を少し待つ。
-Start-Sleep -Milliseconds 400
+Start-Sleep -Milliseconds 500
 Set-Location $root
 
 $update = Join-Path $root 'update_repo.bat'
 $start = Join-Path $root 'start.bat'
 
 if (Test-Path $update) {
-  & $update *> $null
+  & $update 2>&1 | ForEach-Object { Write-UpdateLog $_ }
   $updateCode = $LASTEXITCODE
   Write-UpdateLog "update_repo.bat exit=$updateCode"
 } else {
@@ -42,7 +46,7 @@ if (Test-Path $update) {
 # detached実行なのでstart.batの失敗時pauseは無効化する。
 if (Test-Path $start) {
   $env:KAGUYA_NO_PAUSE = '1'
-  & $start *> $null
+  & $start 2>&1 | ForEach-Object { Write-UpdateLog $_ }
   $startCode = $LASTEXITCODE
   Remove-Item Env:KAGUYA_NO_PAUSE -ErrorAction SilentlyContinue
   Write-UpdateLog "start.bat exit=$startCode"
