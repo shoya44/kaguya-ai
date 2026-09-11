@@ -34,6 +34,63 @@ class MindTests(unittest.TestCase):
             self.assertEqual(snap['traits'][0]['name'], 'プリン')
             self.assertGreaterEqual(snap['stats']['edges'], 1)
 
+    def test_negated_quoted_and_hypothetical_preferences_are_not_learned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mind = KaguyaMind(Path(tmp) / 'mind.db', lambda: True)
+            for answer in ('あたしはプリンが好きじゃないよ。',
+                           'あたしはプリンが好きって言ったら変かな。',
+                           '将弥が「あたしは犬が好きだよ」って言ってたね。'):
+                mind.after_reply('ねえ', answer, NOW)
+            self.assertEqual(mind.snapshot(NOW)['traits'], [])
+
+    def test_user_phrases_are_not_offered_as_kaguya_own_wording(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mind = KaguyaMind(Path(tmp) / 'mind.db', lambda: True)
+            for minute in range(3):
+                mind.after_reply('朝のやつ', 'うん。', NOW + timedelta(minutes=minute))
+            context = mind.before_reply('朝のやつ', NOW + timedelta(minutes=3))
+            self.assertNotIn('よく使う言い方', context)
+            self.assertEqual(mind.snapshot(NOW + timedelta(minutes=3))['shortcut_candidates'][0]['text'], '朝のやつ')
+
+    def test_open_loop_is_raised_only_after_the_plan_is_over(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mind = KaguyaMind(Path(tmp) / 'mind.db', lambda: True)
+            mind.after_reply('明日面接があるんだ', 'そっか、頑張ってね。', NOW)
+            same_day = mind.before_reply('ねえ', NOW + timedelta(hours=2))
+            self.assertNotIn('気にかけていること', same_day)
+            later = mind.before_reply('ただいま', NOW + timedelta(days=1, hours=1))
+            self.assertTrue(any('面接' in item for item in later['気にかけていること']))
+
+    def test_open_loop_closes_when_the_user_returns_to_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mind = KaguyaMind(Path(tmp) / 'mind.db', lambda: True)
+            mind.after_reply('明日面接があるんだ', 'うん。', NOW)
+            mind.after_reply('面接、受かったよ', 'よかったね。', NOW + timedelta(days=1, hours=2))
+            context = mind.before_reply('ねえ', NOW + timedelta(days=1, hours=3))
+            self.assertNotIn('気にかけていること', context)
+            self.assertEqual(mind.snapshot(NOW + timedelta(days=1, hours=3))['stats']['open_loops'], 0)
+
+    def test_open_loop_is_not_repeated_forever(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mind = KaguyaMind(Path(tmp) / 'mind.db', lambda: True)
+            mind.after_reply('明日面接があるんだ', 'うん。', NOW)
+            raised = 0
+            for day in range(1, 6):
+                moment = NOW + timedelta(days=day, hours=1)
+                if mind.before_reply('ただいま', moment).get('気にかけていること'):
+                    raised += 1
+                    mind.after_reply('ただいま', '面接どうだった？', moment)
+            # 返事がなくても2回までで諦める。何日も同じことを聞き続けない。
+            self.assertEqual(raised, 2)
+            self.assertNotIn('気にかけていること', mind.before_reply('ねえ', NOW + timedelta(days=9)))
+
+    def test_casual_sentences_do_not_become_open_loops(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mind = KaguyaMind(Path(tmp) / 'mind.db', lambda: True)
+            for text in ('今日は疲れたな', 'おはよう', '明日も普通に過ごすよ', 'ありがとう'):
+                mind.after_reply(text, 'うん。', NOW)
+            self.assertEqual(mind.snapshot(NOW)['stats']['open_loops'], 0)
+
     def test_repeated_short_phrase_becomes_candidate_but_is_not_executed_here(self):
         with tempfile.TemporaryDirectory() as tmp:
             mind = KaguyaMind(Path(tmp) / 'mind.db', lambda: True)
@@ -60,6 +117,7 @@ class MindTests(unittest.TestCase):
         on_prompt = memory_prompt({'mind': {'現在の気分': 'ご機嫌'}})
         self.assertIn('Kaguya Mindの情報がある場合', on_prompt)
         self.assertIn('ご機嫌', on_prompt)
+        self.assertIn('毎回蒸し返さない', on_prompt)
 
 
 if __name__ == '__main__':

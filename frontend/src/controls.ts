@@ -121,7 +121,9 @@ export class Controls {
     }
     const traits = Array.isArray(mind.traits) ? mind.traits.slice(0, 4).map((item: Row) => `${item.name}=${item.stance}`).join('、') : '';
     const suffix = traits ? ` ／ 好み：${traits}` : ' ／ 好みはまだ育ち始めたところ';
-    target.textContent = `ON：${mind.mood ?? 'いつも通り'} ／ ${mind.growth ?? ''}${suffix}`;
+    const open = Number(mind.stats?.open_loops ?? 0);
+    const loops = open ? ` ／ 気にかけている話題：${open}件` : '';
+    target.textContent = `ON：${mind.mood ?? 'いつも通り'} ／ ${mind.growth ?? ''}${suffix}${loops}`;
   }
 
   private renderReminders(items: Row[]): void {
