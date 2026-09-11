@@ -28,32 +28,52 @@ def style_feedback(text: str) -> str | None:
     return None
 
 
+def _ledger(store) -> dict:
+    try:
+        value = store.data.get('ledger', {})
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
 def capture_feedback(store, text: str, now: datetime) -> str | None:
     hint = style_feedback(text)
     if hint:
-        store.record(relationship_style_hint=hint, relationship_style_at=now.isoformat())
+        try:
+            store.record(relationship_style_hint=hint, relationship_style_at=now.isoformat())
+        except (OSError, ValueError, TypeError):
+            pass
     return hint
 
 
 def record_success(store, now: datetime) -> None:
-    ledger = store.data.get('ledger', {})
-    chats = max(0, int(ledger.get('relationship_chats', 0) or 0)) + 1
-    days = [str(day) for day in ledger.get('relationship_days', []) if day]
-    today = now.date().isoformat()
-    if today not in days:
-        days.append(today)
-    # 実利用日だけなので肥大化しにくいが、異常データ対策で上限を持つ。
-    days = days[-1000:]
-    changes = {'relationship_chats': chats, 'relationship_days': days}
-    if not ledger.get('relationship_first_seen'):
-        changes['relationship_first_seen'] = now.isoformat()
-    store.record(**changes)
+    try:
+        ledger = _ledger(store)
+        chats = max(0, int(ledger.get('relationship_chats', 0) or 0)) + 1
+        raw_days = ledger.get('relationship_days', [])
+        days = [str(day) for day in raw_days if day] if isinstance(raw_days, list) else []
+        today = now.date().isoformat()
+        if today not in days:
+            days.append(today)
+        # 実利用日だけなので肥大化しにくいが、異常データ対策で上限を持つ。
+        days = days[-1000:]
+        changes = {'relationship_chats': chats, 'relationship_days': days}
+        if not ledger.get('relationship_first_seen'):
+            changes['relationship_first_seen'] = now.isoformat()
+        store.record(**changes)
+    except (OSError, ValueError, TypeError):
+        # 関係性演出の保存失敗で本体会話を失敗させない。
+        return
 
 
 def context(store) -> dict:
-    ledger = store.data.get('ledger', {})
-    chats = max(0, int(ledger.get('relationship_chats', 0) or 0))
-    days = len({str(day) for day in ledger.get('relationship_days', []) if day})
+    ledger = _ledger(store)
+    try:
+        chats = max(0, int(ledger.get('relationship_chats', 0) or 0))
+    except (TypeError, ValueError):
+        chats = 0
+    raw_days = ledger.get('relationship_days', [])
+    days = len({str(day) for day in raw_days if day}) if isinstance(raw_days, list) else 0
     if chats < 5:
         familiarity = 'まだ知り合ったばかり'
     elif chats < 30:
