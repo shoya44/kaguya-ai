@@ -113,7 +113,11 @@ READMEを確認してiPhone対応を教えて</code></pre>
 <table><tr><th>データ</th><th>保存先</th></tr><tr><td>会話/知恵/接し方/リマインダー</td><td>PostgreSQL</td></tr><tr><td>設定/整理回数</td><td><code>%LOCALAPPDATA%\KaguyaAI\settings.json</code></td></tr><tr><td>ローカル予定</td><td><code>%LOCALAPPDATA%\KaguyaAI\calendar.json</code></td></tr><tr><td>参照資料</td><td><code>%LOCALAPPDATA%\KaguyaAI\references</code></td></tr><tr><td>Living状態（生活状態・利用時間の学習）</td><td>各ブラウザ/WebViewのlocalStorage</td></tr><tr><td>Kaguya Mind（実験機能）</td><td><code>%LOCALAPPDATA%\KaguyaAI\mind.db</code></td></tr><tr><td>更新ログ</td><td><code>%LOCALAPPDATA%\KaguyaAI\update.log</code></td></tr></table>
 <h2>更新手順</h2>
 <p>通常はPC版の「最新版を反映」を使用します。</p>
-<p>手動で更新する場合：</p>
+<p>アプリ内のボタンが動かないときは、コマンドプロンプトから同じことができます。</p>
+<pre><code>cd C:\kaguya-ai
+kaguya.bat update</code></pre>
+<p>終了 → <code>main</code> を <code>--ff-only</code> 更新 → ビルド → 起動 を順に行い、<strong>失敗するとその場に理由を表示して止まります</strong>。アプリ内のボタンと違って画面が残るので、うまくいかないときはこちらを使ってください。</p>
+<p>1つずつ確かめたい場合：</p>
 <pre><code>cd C:\kaguya-ai
 stop.bat
 git switch main
