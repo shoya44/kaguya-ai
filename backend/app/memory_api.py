@@ -299,6 +299,12 @@ def remove_reminder(reminder_id: UUID, request: Request):
         return memory_store.delete_reminder(conn, str(reminder_id))
 
 
+@router.post('/reminders/{reminder_id}/ack')
+def acknowledge_reminder(reminder_id: UUID, request: Request):
+    with connection(request) as conn:
+        return memory_store.acknowledge_reminder(conn, reminder_id)
+
+
 @router.post('/remember')
 def remember(body: dict, request: Request):
     with connection(request) as conn:

@@ -81,9 +81,14 @@ def _weather_location(text: str) -> str:
 async def direct_reply(text: str, memory) -> str | None:
     """Geminiを呼ばずに確定できる軽量リクエストを処理する。"""
     value = str(text or '')
+    # 設定・予約・記憶などの複合依頼は通常のツール選択へ渡す。
+    if (any(item['name'] not in {'weather', 'set_reminder'} for item in declarations_for(value))
+            or re.search(r'リマインド|知らせて|声かけ|\d+\s*分後|\d{1,2}\s*(?:時|:)', value)):
+        return None
     weather_request = (
-        any(word in value for word in ('天気', '気温', '予報', '傘'))
-        or any(word in value for word in ('雨降る', '雨降り', '雪降る', '雪降り'))
+        bool(re.search(r'(?:天気|気温|予報).*(?:[？?]|教えて|知りたい|どう|は$)', value.strip()))
+        or bool(re.search(r'傘.*(?:いる|要る|必要|持って|持つ).*(?:[？?]|かな|教えて|$)', value))
+        or bool(re.search(r'(?:雨|雪)(?:は|が)?降る.*(?:[？?]|かな)', value))
     )
     if not weather_request:
         return None

@@ -68,3 +68,11 @@ class SettingsMemoryApiTests(unittest.TestCase):
         self.assertEqual(self.client.get('/memories/raw/not-a-uuid/impact', headers=self.headers).status_code, 422)
         self.assertEqual(self.client.get('/memories/persona/not-an-item/impact', headers=self.headers).status_code, 422)
         self.controller.memory.call.assert_not_called()
+
+    def test_reminder_ack_requires_session_and_forwards_valid_id(self):
+        reminder_id = str(uuid4())
+        route = f'/reminders/{reminder_id}/ack'
+        self.assertEqual(self.client.post(route).status_code, 401)
+        self.controller.memory.call.assert_not_awaited()
+        self.assertEqual(self.client.post(route, headers=self.headers).status_code, 200)
+        self.controller.memory.call.assert_awaited_once_with('POST', route)

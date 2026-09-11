@@ -306,14 +306,17 @@ def pending_reminders(conn):
 
 
 def take_due_reminders(conn, now):
-    """期限が来た分を取り出し、同時に配信済みにする（二重配信を防ぐ）。
-
-    アプリが止まっていた間に過ぎた分も、次に起動したときここで拾われる。
-    """
-    rows = conn.execute('''UPDATE reminders SET delivered_at=now() WHERE id IN (
-        SELECT id FROM reminders WHERE delivered_at IS NULL AND due_at <= %s
-        ORDER BY due_at LIMIT 5) RETURNING id,due_at,message''', (now,)).fetchall()
+    """最も古い未確認通知を返す。受信先がなくても確認まではDBに残す。"""
+    rows = conn.execute('''SELECT id,due_at,message FROM reminders
+        WHERE delivered_at IS NULL AND due_at <= %s
+        ORDER BY due_at,id LIMIT 1''', (now,)).fetchall()
     return {'items': rows}
+
+
+def acknowledge_reminder(conn, reminder_id):
+    conn.execute('''UPDATE reminders SET delivered_at=now()
+        WHERE id=%s AND delivered_at IS NULL AND due_at <= now()''', (reminder_id,))
+    return {'ok': True}
 
 
 def delete_reminder(conn, reminder_id):

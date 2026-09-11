@@ -264,17 +264,18 @@ const SLEEP_AFTER_MS = 10 * 60 * 1000;
 let quietMode = false;
 let organizing = false;
 let talkingUntil = 0;
+let talkingTimer: number | null = null;
 // 返事（talking）と自発的な声かけ（greeting）で表情を分ける。
 let talkingState: 'talking' | 'greeting' = 'talking';
 let lastConversation = Date.now();
 
 function refreshAvatar(): void {
   const now = Date.now();
-  if (busy) avatar.setState('thinking');
-  else if (organizing) avatar.setState('organizing');
-  else if (now < talkingUntil) avatar.setState(talkingState);
-  else if (quietMode || now - lastConversation > SLEEP_AFTER_MS) avatar.setState('sleeping');
-  else avatar.setState('idle');
+  if (talkingTimer !== null) window.clearTimeout(talkingTimer);
+  talkingTimer = now < talkingUntil ? window.setTimeout(refreshAvatar, talkingUntil - now) : null;
+  const state = busy ? 'thinking' : organizing ? 'organizing' : now < talkingUntil ? talkingState
+    : quietMode || now - lastConversation > SLEEP_AFTER_MS ? 'sleeping' : 'idle';
+  avatar.setState(state, quietMode);
 }
 
 async function api(path: string, init: RequestInit = {}): Promise<any> {
@@ -282,7 +283,7 @@ async function api(path: string, init: RequestInit = {}): Promise<any> {
     const current = await ensureSession();
     return fetch(API_BASE + path, { ...init, headers: {
       'Content-Type': 'application/json', Authorization: `Bearer ${current.sessionToken}`, ...init.headers,
-    } });
+    }, signal: init.signal ?? AbortSignal.timeout(15000) });
   };
   let response = await request();
   if (response.status === 401) { invalidateSession(); response = await request(); }
@@ -322,6 +323,7 @@ async function ensureSession(): Promise<StoredSession> {
     clientId ??= localStorage.getItem(CLIENT_KEY) ?? undefined;
   } catch { /* The current session still works without local storage. */ }
   const res = await fetch(`${API_BASE}/session`, {
+    signal: AbortSignal.timeout(15000),
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ client_id: clientId }),
@@ -383,6 +385,7 @@ async function loadHistory(older = false): Promise<void> {
     const request = async () => {
       const s = await ensureSession();
       return fetch(`${API_BASE}/history?${params}`, {
+        signal: AbortSignal.timeout(15000),
         headers: { Authorization: `Bearer ${s.sessionToken}` },
       });
     };
@@ -464,16 +467,26 @@ function markPendingSettled(turnId: string, answerText: string | null): void {
 }
 
 let miniReplyTimer: number | null = null;
+let reminderId: string | null = null;
 document.getElementById('proactive-bubble')!.addEventListener('click', () => {
+  if (reminderId) {
+    const id = reminderId;
+    api(`/reminders/${encodeURIComponent(id)}/ack`, { method: 'POST' }).then(() => {
+      if (reminderId === id) { reminderId = null; hideBubble(); }
+    }).catch(() => showError('通知の確認を保存できませんでした。もう一度クリックしてください。', null));
+    return;
+  }
   hideBubble();
 });
 
 function hideBubble(): void {
+  if (reminderId) return;
   if (miniReplyTimer !== null) { window.clearTimeout(miniReplyTimer); miniReplyTimer = null; }
   document.getElementById('proactive-bubble')!.hidden = true;
 }
 
 function showMiniReply(text: string): void {
+  if (reminderId) return;
   const bubble = document.getElementById('proactive-bubble')!;
   bubble.textContent = text;
   bubble.hidden = false;
@@ -563,7 +576,7 @@ function handleServerEvent(data: Record<string, unknown>): void {
       break;
     case 'proactive.message': {
       characterVisible().then(visible => {
-        if (!visible) return;
+        if (!visible || reminderId) return;
         const bubble = document.getElementById('proactive-bubble')!;
         bubble.textContent = data.text as string; bubble.hidden = false;
         talkingState = 'greeting';
@@ -576,18 +589,25 @@ function handleServerEvent(data: Record<string, unknown>): void {
       controls?.applyOptions(data.options as Record<string, any>).catch(() => showError('表示設定を反映できませんでした。', null));
       break;
     case 'reminder.due': {
+      if (typeof data.id !== 'string') break;
+      const repeated = reminderId === data.id;
+      reminderId = data.id;
       const bubble = document.getElementById('proactive-bubble')!;
       bubble.textContent = data.text as string;
       bubble.hidden = false;
       if (miniReplyTimer !== null) window.clearTimeout(miniReplyTimer);
       // 声かけと違い自動では消さない。クリックで閉じるまで残す。
       miniReplyTimer = null;
+      if (repeated) break;
       talkingState = 'talking';
       talkingUntil = Date.now() + TALKING_MS;
       refreshAvatar();
       if (isTauri()) invoke('show_window').catch(() => {});
       break;
     }
+    case 'reminder.ack':
+      if (reminderId === data.id) { reminderId = null; hideBubble(); }
+      break;
     case 'jobs.changed':
       organizing = data.running === true;
       refreshAvatar();
@@ -623,6 +643,13 @@ function handleServerEvent(data: Record<string, unknown>): void {
       const turnId = (data.turn_id as string) ?? null;
       const code = data.code as string;
       const message = data.message as string;
+      // 操作拒否は進行中の会話の失敗ではない。
+      if (['saving', 'not_owner', 'busy', 'turn_conflict'].includes(code)) {
+        if (turnId && turnId !== activeTurnId) markPendingSettled(turnId, null);
+        setBusy(activeTurnId !== null);
+        showError(message, null);
+        return;
+      }
       setBusy(false);
       if (code === 'save_failed') {
         // Keep the pending bubble; only a save retry is offered, per spec.

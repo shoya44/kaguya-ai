@@ -180,3 +180,45 @@ test('Tauri child startup error reaches the UI without contacting the occupied p
   assert.match(h.elements.error.children[0].textContent, /ポート8765/);
   assert.equal(h.calls.length, 0);
 });
+
+test('cancel refused during saving preserves active turn and disables sending', async () => {
+  const h = harness(); await connected(h);
+  h.run("sendTurn('hello','t1',false)");
+  h.sockets[0].emit({ type: 'state.changed', state: 'thinking', turn_id: 't1' });
+  h.sockets[0].emit({ type: 'chat.error', code: 'saving', turn_id: 't1', message: 'saving' });
+  assert.equal(h.run('busy'), true);
+  assert.equal(h.run("turns.get('t1').status"), 'pending');
+  assert.equal(h.elements['send-btn'].disabled, true);
+});
+
+test('busy rejection before admission restores input without inventing an active turn', async () => {
+  const h = harness(); await connected(h);
+  h.run("sendTurn('hello','t1',false)");
+  h.sockets[0].emit({ type: 'chat.error', code: 'busy', turn_id: 't1', message: 'editing' });
+  assert.equal(h.run('busy'), false);
+  assert.equal(h.run("turns.get('t1').status"), 'failed');
+});
+
+test('reminder survives duplicates and replies until acknowledgement succeeds', async () => {
+  const h = harness(); await connected(h);
+  const event = { type: 'reminder.due', id: 'reminder-one', text: 'take medicine' };
+  h.sockets[0].emit(event); h.sockets[0].emit(event);
+  h.run("showMiniReply('reply'); hideBubble()");
+  const bubble = h.elements['proactive-bubble'];
+  assert.equal(bubble.textContent, 'take medicine');
+  assert.equal(bubble.hidden, false);
+  bubble.handlers.click(); await h.flush();
+  assert.ok(h.calls.some(call => call.url.endsWith('/reminders/reminder-one/ack')));
+  assert.equal(bubble.hidden, true);
+  assert.equal(h.run('reminderId'), null);
+});
+
+test('failed reminder acknowledgement leaves notification available to retry', async () => {
+  const h = harness({ fetch: async url => url.endsWith('/ack') ? response({}, 502)
+    : response({ items: [], next_cursor: null }) });
+  await connected(h);
+  h.sockets[0].emit({ type: 'reminder.due', id: 'one', text: 'medicine' });
+  h.elements['proactive-bubble'].handlers.click(); await h.flush();
+  assert.equal(h.run('reminderId'), 'one');
+  assert.equal(h.elements['proactive-bubble'].hidden, false);
+});

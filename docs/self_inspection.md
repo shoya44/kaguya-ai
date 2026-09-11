@@ -17,4 +17,6 @@
 
 ## 実装
 
-`backend/project_inspector.py` が読み取り専用の `project_status` / `project_search` / `project_read` を提供します。`backend/sitecustomize.py` がPython起動時に既存の会話ツールへ追加するため、既存の予約・記憶ツールの実装には変更を加えません。
+`backend/app/project_inspector.py` が読み取り専用の `project_status` / `project_search` / `project_read` を提供し、`backend/app/tools.py` が明示的に登録します。
+
+旧仕様・引継書の `kaguya_ai_codex_handoff.md`、`kaguya_ai_handoff_v2.md`、`kaguya_ai_final_spec_and_quickstart.md` は通常検索から除外します。履歴資料として残し、パスを指定した読み取りは可能です。現行仕様はREADMEと実装を優先します。`.test-output` も検索・読み取り対象外です。

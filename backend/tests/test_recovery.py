@@ -1,3 +1,4 @@
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -8,6 +9,30 @@ from app import main, memory_api
 
 
 class RecoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_stalled_socket_does_not_block_other_clients_and_is_closed(self):
+        app = SimpleNamespace(state=SimpleNamespace())
+        client = MagicMock(aclose=AsyncMock())
+        llm = MagicMock(close=AsyncMock())
+        slow = MagicMock(send_json=AsyncMock(side_effect=lambda _: None), close=AsyncMock())
+
+        async def stall(_event):
+            await asyncio.Event().wait()
+
+        slow.send_json.side_effect = stall
+        fast = MagicMock(send_json=AsyncMock(), close=AsyncMock())
+        timeout = asyncio.timeout
+        with (patch.object(main.httpx, 'AsyncClient', return_value=client),
+              patch.object(main, 'Gemini', return_value=llm),
+              patch.object(memory_api, 'recover_pending')):
+            async with main.lifespan(app):
+                app.state.connections.update((slow, fast))
+                with patch.object(main.asyncio, 'timeout', side_effect=lambda seconds: timeout(min(seconds, .01))):
+                    await app.state.controller.broadcast({'type': 'test'})
+                fast.send_json.assert_awaited_once_with({'type': 'test'})
+                slow.close.assert_awaited_once_with(code=1011)
+                self.assertNotIn(slow, app.state.connections)
+                self.assertIn(fast, app.state.connections)
+
     async def test_recovery_finishes_before_lifespan_is_ready(self):
         app = SimpleNamespace(state=SimpleNamespace())
         client = MagicMock(aclose=AsyncMock())

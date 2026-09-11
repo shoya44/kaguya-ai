@@ -30,7 +30,7 @@ class DatabaseChecks(unittest.TestCase):
 
     def setUp(self):
         with self.connect() as conn:
-            conn.execute('TRUNCATE raw_memory,wisdom,persona')
+            conn.execute('TRUNCATE raw_memory,wisdom,persona,reminders')
             conn.execute("INSERT INTO persona(key,value,locked) VALUES ('reply_style','\"短く\"',false)")
 
     def add(self, content='お茶が好き', days=0, processed=False):
@@ -133,6 +133,23 @@ class DatabaseChecks(unittest.TestCase):
             self.assertEqual(wisdom['evidence'], [])
             self.assertEqual(conn.execute('SELECT count(*) AS n FROM raw_memory').fetchone()['n'], 0)
 
+    def test_reminders_survive_poll_and_reconnect_until_acknowledged(self):
+        now = datetime.now(timezone.utc)
+        with self.connect() as conn:
+            store.add_reminder(conn, now - timedelta(minutes=2), 'first')
+            store.add_reminder(conn, now - timedelta(minutes=1), 'second')
+            first = store.take_due_reminders(conn, now)['items'][0]
+            self.assertEqual(first['message'], 'first')
+        with self.connect() as conn:
+            self.assertEqual(store.take_due_reminders(conn, now)['items'][0]['id'], first['id'])
+            store.acknowledge_reminder(conn, first['id'])
+            store.acknowledge_reminder(conn, first['id'])
+        with self.connect() as conn:
+            second = store.take_due_reminders(conn, now)['items'][0]
+            self.assertEqual(second['message'], 'second')
+            store.acknowledge_reminder(conn, second['id'])
+            self.assertEqual(store.take_due_reminders(conn, now)['items'], [])
+
 
 def main():
     global DSN
@@ -150,15 +167,16 @@ def main():
         with socket.socket() as sock:
             sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
         startup = subprocess.run([str(binary / 'pg_ctl.exe'), '-D', str(data), '-l', str(temp / 'postgres.log'), '-w',
-                        '-o', f'-h 127.0.0.1 -p {port} -F', 'start'], capture_output=True, creationflags=flags)
+                        '-o', f'-h 127.0.0.1 -p {port} -F', 'start'],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, creationflags=flags)
         if startup.returncode:
             log = temp / 'postgres.log'
-            print(log.read_text(encoding='utf-8', errors='replace') if log.exists() else startup.stderr.decode(errors='replace'))
+            print(log.read_text(encoding='utf-8', errors='replace') if log.exists() else 'Test PostgreSQL startup failed')
             return 1
         try:
-            DSN = f'host=127.0.0.1 port={port} user=tester dbname=postgres'
+            DSN = f'host=127.0.0.1 port={port} user=tester dbname=postgres connect_timeout=5'
             with psycopg.connect(DSN, autocommit=True) as conn:
-                for name in ['001_init.sql', '002_memory_jobs.sql']:
+                for name in ['001_init.sql', '002_memory_jobs.sql', '003_reminders.sql']:
                     conn.execute((project / 'backend' / 'migrations' / name).read_text(encoding='utf-8'))
             result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(DatabaseChecks))
             return 0 if result.wasSuccessful() else 1

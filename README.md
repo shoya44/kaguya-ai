@@ -12,6 +12,7 @@ Windows PCを母艦にして、PCまたは同じ家庭内Wi-FiのiPhoneから使
 - 「会話原文 → 知恵・好み → 接し方」の長期記憶
 - 「これ覚えておいて」による即時記憶
 - 指定時刻のリマインダー
+- リマインダーは吹き出しをクリックして確認するまで保持（複数件は順に表示、次の通知は最大約30秒後）
 - ローカルカレンダー
 - Open-Meteoによる天気取得
 - `%LOCALAPPDATA%\KaguyaAI\references` の参照ファイル検索
@@ -376,7 +377,9 @@ check.bat
 1. backendの全 `unittest`
 2. `frontend/tests/main.test.cjs`
 3. `frontend/tests/living.test.cjs`
-4. TypeScript compile / Vite build
+4. `frontend/tests/avatar.test.cjs`
+5. TypeScript compile / Vite build
+6. Cargo check（オフライン）
 
 ライブGemini、ライブ天気API、本番DBへの呼び出しは行いません。
 

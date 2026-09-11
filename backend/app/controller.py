@@ -4,6 +4,7 @@ from contextlib import suppress
 from .errors import ChatError
 from .proactive import Proactive, tokyo_now
 from .jobs import Jobs
+from . import tools
 
 
 class Controller:
@@ -68,7 +69,7 @@ class Controller:
             # DBが一時的に落ちているだけなら、次の周回で拾えばよい。
             return
         for item in due['items']:
-            await self.broadcast({'type': 'reminder.due', 'text': item['message']})
+            await self.broadcast({'type': 'reminder.due', 'id': str(item['id']), 'text': item['message']})
 
     def state(self):
         return {'type': 'state.changed', 'state': 'thinking' if self.active else 'idle',
@@ -91,11 +92,7 @@ class Controller:
             await emit(self.unsaved_event())
             return
 
-        # 記憶整理よりユーザー会話を優先。実行中の整理APIを止めてから会話を開始する。
-        if self.jobs.running:
-            await self.jobs.pause_for_chat()
-
-        # Reserve before the first await after this point: no race between clients.
+        # Reserve without yielding; job cancellation happens inside the owned task.
         self.active = dict(turn)
         self.cancel_requested = False
         self.phase = 'preparing'
@@ -119,6 +116,8 @@ class Controller:
         admitted = False
         try:
             await self.broadcast(self.state())
+            if self.jobs.running:
+                await self.jobs.pause_for_chat()
             if '静かにしてて' in turn['text']:
                 self.runtime.update({'quiet': True})
                 await self.broadcast({'type': 'settings.changed', 'options': self.runtime.options.model_dump()})
@@ -132,15 +131,17 @@ class Controller:
             admitted = True
             await self.broadcast({'type': 'chat.accepted', 'turn_id': turn_id,
                                   'text': turn['text'], 'client_id': turn['client_id']})
-            context = await self.memory.context()
-            hint = ' '.join([turn['text']] + [row['text'] for row in context[-2:]])[:2000]
-            recalled = await self.memory.call('GET', '/recall', params={'text': hint})
             proactive = self.proactive.activity()
             if self.cancel_requested:
                 raise asyncio.CancelledError
             self.phase = 'generating'
-            answer = await self.llm.reply(context, turn['text'], recalled, proactive,
-                                          self.runtime.options.reply_tokens, memory=self.memory)
+            answer = await tools.direct_reply(turn['text'], self.memory)
+            if answer is None:
+                context = await self.memory.context()
+                hint = ' '.join([turn['text']] + [row['text'] for row in context[-2:]])[:2000]
+                recalled = await self.memory.call('GET', '/recall', params={'text': hint})
+                answer = await self.llm.reply(context, turn['text'], recalled, proactive,
+                                              self.runtime.options.reply_tokens, memory=self.memory)
             self.phase = 'saving'
             if self.cancel_requested:
                 raise asyncio.CancelledError

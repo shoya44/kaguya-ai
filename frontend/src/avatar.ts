@@ -61,6 +61,8 @@ export class Avatar {
   private lifeMood: LifeMood = 'normal';
   private lifeActivity: LifeActivity = 'idle';
   private lifeEnergy = 60;
+  private quiet = false;
+  private drawVersion = 0;
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
@@ -85,21 +87,18 @@ export class Avatar {
     this.updateMotion();
   }
 
-  setState(state: AvatarState): void {
-    if (this.state === state) return;
+  setState(state: AvatarState, quiet = false): void {
+    if (this.state === state && this.quiet === quiet) return;
     this.state = state;
+    this.quiet = quiet;
     this.frame = 0;
     this.rotate();
     this.draw();
     this.updateMotion();
   }
 
-  private quietEnabled(): boolean {
-    return document.getElementById('quiet-btn')?.getAttribute('aria-pressed') === 'true';
-  }
-
   private livingOverridesSleeping(): boolean {
-    return this.state === 'sleeping' && !this.quietEnabled()
+    return this.state === 'sleeping' && !this.quiet
       && this.lifeMood !== 'sleepy' && this.lifeActivity !== 'sleeping' && this.lifeEnergy >= 20;
   }
 
@@ -145,8 +144,7 @@ export class Avatar {
 
     const apply = () => {
       this.motionFlip = !this.motionFlip;
-      const visuallySleeping = !this.livingOverridesSleeping()
-        && (this.state === 'sleeping' || (this.state === 'idle' && (this.lifeMood === 'sleepy' || this.lifeActivity === 'sleeping')));
+      const visuallySleeping = this.frames()[0] === '/sprites/sleep.png';
       if (visuallySleeping) {
         style.transform = this.motionFlip ? 'translateY(1px) scale(0.995)' : 'translateY(0) scale(1.005)';
       } else if (this.state === 'talking' || this.state === 'greeting' || this.lifeMood === 'happy') {
@@ -167,7 +165,9 @@ export class Avatar {
     const { ctx, canvas } = this;
     const frames = this.frames();
     const img = loadImage(frames[this.frame] ?? frames[0]);
+    const version = ++this.drawVersion;
     const render = () => {
+      if (version !== this.drawVersion || !img.naturalWidth || !img.naturalHeight) return;
       const scale = Math.min(canvas.width / img.naturalWidth, canvas.height / img.naturalHeight);
       const w = img.naturalWidth * scale;
       const h = img.naturalHeight * scale;

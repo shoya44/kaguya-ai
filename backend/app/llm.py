@@ -96,12 +96,6 @@ class Gemini:
 
     async def reply(self, history: list[dict], text: str, recalled=None, proactive=None,
                     max_tokens=None, memory=None) -> str:
-        # 天気などローカルで確定できるものはGeminiを呼ばずに即答する。
-        if memory is not None:
-            direct = await tools.direct_reply(text, memory)
-            if direct is not None:
-                return direct
-
         system = memory_prompt(recalled, proactive)
         contents = [types.Content(role=item['role'], parts=[types.Part(text=item['text'])])
                     for item in conversation_context(history, text, system)]

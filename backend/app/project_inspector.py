@@ -13,7 +13,9 @@ MAX_LINES = 400
 MAX_MATCHES = 12
 CONTEXT_LINES = 5
 SAFE_SUFFIXES = {'.py', '.ts', '.css', '.html', '.rs', '.md', '.json', '.toml', '.bat', '.txt', '.sql'}
-SKIP_PARTS = {'.git', '.venv', 'node_modules', 'target', 'dist', '__pycache__', '.pytest_cache'}
+SKIP_PARTS = {'.git', '.venv', 'node_modules', 'target', 'dist', '__pycache__', '.pytest_cache', '.test-output'}
+LEGACY_DOCS = {'docs/kaguya_ai_codex_handoff.md', 'docs/kaguya_ai_handoff_v2.md',
+               'docs/kaguya_ai_final_spec_and_quickstart.md'}
 
 DECLARATIONS = [
     {
@@ -102,6 +104,8 @@ def project_search(query: str) -> dict[str, Any]:
     matches = []
     for path in _searchable_files():
         rel = path.relative_to(ROOT).as_posix()
+        if rel in LEGACY_DOCS:
+            continue
         try:
             _safe_relative(rel)
             if path.stat().st_size > MAX_FILE_BYTES:

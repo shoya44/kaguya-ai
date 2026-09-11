@@ -42,14 +42,18 @@ async def lifespan(app: FastAPI):
     connections: set[WebSocket] = set()
 
     async def broadcast(event: dict):
-        dead = []
-        for ws in tuple(connections):
+        async def send(ws):
             try:
-                await ws.send_json(event)
+                async with asyncio.timeout(3):
+                    await ws.send_json(event)
             except Exception:
-                dead.append(ws)
-        for ws in dead:
-            connections.discard(ws)
+                connections.discard(ws)
+                try:
+                    async with asyncio.timeout(1):
+                        await ws.close(code=1011)
+                except Exception:
+                    pass
+        await asyncio.gather(*(send(ws) for ws in tuple(connections)))
 
     runtime = RuntimeStore(settings.data_dir)
     controller = Controller(memory, llm, broadcast, runtime)
@@ -179,6 +183,13 @@ async def run_jobs(request: Request, _client_id: UUID = Depends(require_session)
     except ChatError as exc:
         raise HTTPException(409, exc.message) from None
     return {'status': '整理を開始しました。'}
+
+
+@app.post('/reminders/{reminder_id}/ack')
+async def acknowledge_reminder(reminder_id: UUID, request: Request, _client_id: UUID = Depends(require_session)):
+    result = await memory_request(request, 'POST', f'/reminders/{reminder_id}/ack')
+    await request.app.state.controller.broadcast({'type': 'reminder.ack', 'id': str(reminder_id)})
+    return result
 
 
 async def memory_request(request, method, path, **kwargs):
