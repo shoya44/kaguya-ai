@@ -54,6 +54,10 @@ jobs:
       - name: typecheck
         working-directory: frontend
         run: npx tsc --noEmit
+      # READMEが原本。生成物のコミット漏れをここで止める（buildの前に見る）。
+      - name: manual is generated from README
+        working-directory: frontend
+        run: node scripts/build-manual.mjs --check
       - name: tests
         working-directory: frontend
         run: node --test tests/*.test.cjs
