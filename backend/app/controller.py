@@ -33,17 +33,20 @@ class Controller:
         self.periodic_task = asyncio.create_task(self.periodic())
 
     async def periodic(self):
-        started = asyncio.get_running_loop().time()
         while True:
             await asyncio.sleep(5)
             try:
-                now = asyncio.get_running_loop().time()
-                visible = any(until > now for until in self.presence.values())
+                monotonic_now = asyncio.get_running_loop().time()
+                visible = any(until > monotonic_now for until in self.presence.values())
                 event = self.proactive.tick(visible, bool(self.active or self.unsaved or self.editing))
                 if event:
                     await self.broadcast(event)
                 await self.deliver_reminders()
-                if (now - started >= 60 and self.runtime.options.auto_jobs and self.jobs.due()
+
+                # 安定性優先：起動後の未処理回収は行わず、自動整理は03:00台だけ。
+                # 日中のチャット中に突然バックグラウンドGemini呼び出しを始めない。
+                wall_now = tokyo_now()
+                if (wall_now.hour == 3 and self.runtime.options.auto_jobs and self.jobs.due(wall_now)
                         and not self.jobs.running and not self.active and not self.unsaved and not self.editing):
                     self.jobs.start()
             except Exception:
@@ -87,7 +90,12 @@ class Controller:
         if self.unsaved:
             await emit(self.unsaved_event())
             return
-        # Reserve before the first await: no race between clients.
+
+        # 記憶整理よりユーザー会話を優先。実行中の整理APIを止めてから会話を開始する。
+        if self.jobs.running:
+            await self.jobs.pause_for_chat()
+
+        # Reserve before the first await after this point: no race between clients.
         self.active = dict(turn)
         self.cancel_requested = False
         self.phase = 'preparing'
@@ -122,12 +130,9 @@ class Controller:
             if row['status'] in ('failed', 'cancelled'):
                 raise ChatError('retry_required', '前回は完了しませんでした。再試行ボタンで同じ発言を送れます。')
             admitted = True
-            # Share the persisted input so another connected view sees it.
             await self.broadcast({'type': 'chat.accepted', 'turn_id': turn_id,
                                   'text': turn['text'], 'client_id': turn['client_id']})
             context = await self.memory.context()
-            # 「それどう思う？」のように指示語だけの発言でも狙った知恵を引けるよう、
-            # 直前2往復のユーザー発言を手がかりに足す（今回の発言を先頭に置く）。
             hint = ' '.join([turn['text']] + [row['text'] for row in context[-2:]])[:2000]
             recalled = await self.memory.call('GET', '/recall', params={'text': hint})
             proactive = self.proactive.activity()
