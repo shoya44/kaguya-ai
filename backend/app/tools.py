@@ -5,6 +5,7 @@
 """
 from datetime import datetime, timedelta
 
+from . import project_inspector
 from .proactive import JST, tokyo_now
 
 # 遠すぎる予約は誤解釈（年の取り違えなど）の可能性が高いので受け付けない。
@@ -42,7 +43,7 @@ DECLARATIONS = [
             'required': ['topic', 'fact'],
         },
     },
-]
+] + project_inspector.DECLARATIONS
 
 
 def parse_due(value, now=None):
@@ -65,6 +66,8 @@ async def run(name, args, memory, now=None):
     """1つの道具を実行し、モデルへ返す結果を組み立てる。例外は投げない。"""
     args = args or {}
     try:
+        if name in {'project_status', 'project_search', 'project_read'}:
+            return project_inspector.run(name, args)
         if name == 'set_reminder':
             message = str(args.get('message', '')).strip()[:500]
             if not message:
@@ -83,6 +86,6 @@ async def run(name, args, memory, now=None):
     except ValueError as exc:
         return {'ok': False, 'error': str(exc)}
     except Exception:
-        # 保存に失敗しても会話は続ける。モデルには失敗だけ伝える。
-        return {'ok': False, 'error': '保存できませんでした。'}
+        # 保存・読み取りに失敗しても会話は続ける。モデルには失敗だけ伝える。
+        return {'ok': False, 'error': '操作を完了できませんでした。'}
     return {'ok': False, 'error': '未対応の操作です。'}
