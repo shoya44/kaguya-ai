@@ -513,6 +513,18 @@ check.bat
 
 ライブGemini、ライブ天気API、本番DBへの呼び出しは行いません。
 
+## GitHub Actions
+
+`main` へのpushとPRで `.github/workflows/check.yml` が自動実行されます。
+
+| ジョブ | 実行環境 | 内容 |
+|---|---|---|
+| backend | Ubuntu / Windows | backendの全 `unittest` |
+| frontend | Ubuntu | TypeScript型チェック、フロントのテスト、Viteビルド |
+
+backendをWindowsでも回すのは、**使用中のファイルを削除できない等のWindows固有の問題がLinuxでは再現しない**ためです。
+Cargo check（Tauri）はRustツールチェーンとWindows SDKが必要なので対象外です。実機確認は引き続き `check.bat` で行ってください。
+
 実DBの確認用コードは `backend/tests/run_db_checks.py` にあります。必要な場合だけ、対象DBを確認して実行してください。
 
 ---
