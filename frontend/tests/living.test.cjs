@@ -21,7 +21,13 @@ class Element {
 }
 
 function harness() {
-  const elements = {};
+  // living.ts only resolves text-input when the submit handler runs, while the
+  // real page already contains both elements. Pre-create that real DOM shape
+  // so tests do not depend on lazy getElementById side effects.
+  const elements = {
+    'input-form': new Element(),
+    'text-input': new Element(),
+  };
   const storage = new Map();
   const emitted = [];
   const timers = [];
