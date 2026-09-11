@@ -9,6 +9,7 @@ if /i "%~3"=="nopause" set "KAGUYA_NO_PAUSE=1"
 
 set "COMMAND=%~1"
 if "%COMMAND%"=="" goto usage
+if /i "%COMMAND%"=="update" goto update
 if /i "%COMMAND%"=="build" goto build
 if /i "%COMMAND%"=="check" goto check
 if /i "%COMMAND%"=="check-db" goto checkdb
@@ -17,6 +18,31 @@ if /i "%COMMAND%"=="help" goto usage
 echo Unknown command: %COMMAND%
 echo.
 goto usage
+
+:update
+rem アプリ内の「最新版を反映」が動かないときの、目に見える更新手順。
+rem 終了 → mainを--ff-only更新 → ビルド → 起動 を順に行い、失敗はその場に表示する。
+echo Stopping Kaguya AI...
+call "%~dp0stop.bat"
+rem Tauriは通常すぐ終了する。実行ファイルのロックが外れるまで最大20秒待つ。
+rem ロックされたままビルドすると失敗するため、ここで待ってから進める。
+for /l %%i in (1,1,20) do (
+  tasklist /fi "imagename eq app.exe" /nh | find /i "app.exe" >nul || goto ready
+  timeout /t 1 /nobreak >nul
+)
+echo Kaguya AI is still running. Close it from the tray, then run this again.
+goto failed
+
+:ready
+call "%~dp0tools\update_repo.bat"
+set "UPDATE_RESULT=%errorlevel%"
+if "%UPDATE_RESULT%"=="10" echo Update was skipped. See the message above. Starting the current version.
+if "%UPDATE_RESULT%"=="20" echo Could not reach origin/main. Starting the current version.
+rem start.bat がマイグレーション・ビルド・起動をまとめて行う。
+call "%~dp0start.bat"
+if errorlevel 1 goto failed
+echo Update finished. Kaguya AI is starting.
+goto done
 
 :build
 rem 依存関係の自動インストールはしない。既存のnode_modulesとcargoキャッシュを使う。
@@ -77,6 +103,7 @@ goto failed
 :usage
 echo Usage: kaguya.bat ^<command^>
 echo.
+echo   update           Stop, update main, rebuild and start again.
 echo   build            Rebuild the frontend and the desktop app.
 echo   check            Run all local tests, the build and cargo check.
 echo   check-db         Run database checks against a disposable local PostgreSQL.

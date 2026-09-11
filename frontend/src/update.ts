@@ -26,7 +26,7 @@ function setupRepositoryUpdateButton(): void {
       // 成功時はアプリ自体が終了するため、ここに来るのは主に起動失敗時。
       button.disabled = false;
       button.textContent = '最新版を反映';
-      window.alert('更新処理を開始できませんでした。start.batから起動し直してください。');
+      window.alert('更新処理を開始できませんでした。コマンドプロンプトで kaguya.bat update を実行してください。');
     });
   });
 }
