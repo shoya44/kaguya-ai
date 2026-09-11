@@ -71,7 +71,9 @@ export class Avatar {
       if (['normal', 'happy', 'sleepy', 'sulky'].includes(detail.mood)) this.lifeMood = detail.mood;
       if (Object.prototype.hasOwnProperty.call(LIFE_SPRITES, detail.activity)) this.lifeActivity = detail.activity;
       if (Number.isFinite(detail.energy)) this.lifeEnergy = Number(detail.energy);
-      if (this.state === 'idle') {
+      // main.tsの「長時間会話なし=睡眠」より、復帰直後の生活演出を優先する。
+      // ただし静音中は従来どおり睡眠表示のままにする。
+      if (this.state === 'idle' || this.state === 'sleeping') {
         this.frame = 0;
         this.rotate();
         this.draw();
@@ -92,7 +94,22 @@ export class Avatar {
     this.updateMotion();
   }
 
+  private quietEnabled(): boolean {
+    return document.getElementById('quiet-btn')?.getAttribute('aria-pressed') === 'true';
+  }
+
+  private livingOverridesSleeping(): boolean {
+    return this.state === 'sleeping' && !this.quietEnabled()
+      && this.lifeMood !== 'sleepy' && this.lifeActivity !== 'sleeping' && this.lifeEnergy >= 20;
+  }
+
   private frames(): string[] {
+    if (this.state === 'sleeping' && this.livingOverridesSleeping()) {
+      return this.lifeMood === 'happy' ? ['/sprites/laugh.png']
+        : this.lifeMood === 'sulky' ? ['/sprites/book.png']
+        : this.lifeActivity !== 'idle' ? LIFE_SPRITES[this.lifeActivity]
+        : IDLE_BY_TIME[timeSlot()];
+    }
     if (this.state !== 'idle') return SPRITES[this.state];
     if (this.lifeMood === 'happy') return ['/sprites/laugh.png'];
     if (this.lifeMood === 'sleepy' || this.lifeActivity === 'sleeping' || this.lifeEnergy < 20) {
@@ -107,7 +124,7 @@ export class Avatar {
     if (this.timer !== null) window.clearInterval(this.timer);
     this.timer = null;
     if (this.frames().length < 2) {
-      if (this.state === 'idle') {
+      if (this.state === 'idle' || this.livingOverridesSleeping()) {
         this.timer = window.setInterval(() => { this.frame = 0; this.draw(); }, IDLE_ROTATE_MS);
       }
       return;
@@ -128,7 +145,9 @@ export class Avatar {
 
     const apply = () => {
       this.motionFlip = !this.motionFlip;
-      if (this.state === 'sleeping' || (this.state === 'idle' && (this.lifeMood === 'sleepy' || this.lifeActivity === 'sleeping'))) {
+      const visuallySleeping = !this.livingOverridesSleeping()
+        && (this.state === 'sleeping' || (this.state === 'idle' && (this.lifeMood === 'sleepy' || this.lifeActivity === 'sleeping')));
+      if (visuallySleeping) {
         style.transform = this.motionFlip ? 'translateY(1px) scale(0.995)' : 'translateY(0) scale(1.005)';
       } else if (this.state === 'talking' || this.state === 'greeting' || this.lifeMood === 'happy') {
         style.transform = this.motionFlip ? 'translateY(-3px) rotate(-0.4deg)' : 'translateY(0) rotate(0.4deg)';
