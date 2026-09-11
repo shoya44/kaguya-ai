@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from pydantic import ValidationError
 
+from app.controller import Controller
 from app.errors import ChatError
 from app.jobs import Jobs, periods
 from app.memory_store import validate_batch
@@ -35,6 +36,13 @@ class LocalCase(unittest.TestCase):
         self.assertIsNotNone(proactive.activity(self.now + timedelta(minutes=10)))
         self.assertIsNone(proactive.tick(True, False, self.now + timedelta(minutes=69)))
         self.assertIsNotNone(proactive.tick(True, False, self.now + timedelta(minutes=70)))
+
+    def test_state_carries_the_last_conversation_time(self):
+        """端末のlocalStorageではなくここを基準にするので、必ず含める。"""
+        controller = Controller(SimpleNamespace(), SimpleNamespace(), AsyncMock(), self.store)
+        state = controller.state()
+        self.assertIn('last_activity', state)
+        self.assertEqual(datetime.fromisoformat(state['last_activity']).tzinfo, JST)
 
     def test_a_pending_topic_replaces_the_canned_line(self):
         proactive = Proactive(self.store, self.now)

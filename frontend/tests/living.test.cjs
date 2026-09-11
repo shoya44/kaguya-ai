@@ -20,7 +20,7 @@ class Element {
   addEventListener(name, callback) { this.handlers[name] = callback; }
 }
 
-function harness() {
+function harness(seed) {
   // living.ts only resolves text-input when the submit handler runs, while the
   // real page already contains both elements. Pre-create that real DOM shape
   // so tests do not depend on lazy getElementById side effects.
@@ -29,6 +29,9 @@ function harness() {
     'text-input': new Element(),
   };
   const storage = new Map();
+  // 既に使ったことのある端末を再現する。新品の端末はlastSeenが「今」になるため、
+  // サーバ時刻との前後関係がテストごとにぶれる。
+  if (seed) storage.set('kaguya.life.v1', JSON.stringify(seed));
   const emitted = [];
   const timers = [];
   const docHandlers = {};
@@ -71,16 +74,45 @@ test('living module emits local state without network dependencies', () => {
   assert.equal(typeof detail.energy, 'number');
 });
 
-test('praise records an interaction hour and affection without deciding the mood', () => {
+test('sending marks the visit but does not decide the mood or count the turn', () => {
   const h = harness();
+  const before = JSON.parse(h.storage.get('kaguya.life.v1') ?? 'null');
   h.elements['text-input'].value = 'かぐや、かわいい。ありがとう';
   h.elements['input-form'].handlers.submit();
   const saved = JSON.parse(h.storage.get('kaguya.life.v1'));
-  assert.equal(saved.interactions, 1);
-  assert.equal(saved.hourCounts.reduce((sum, value) => sum + value, 0), 1);
-  assert.equal(saved.affection, 51);
-  // 表情はサーバが決めるので、この端末の判定では変わらない。
+  // 回数と時間帯は会話が成立してから数える。表情と親密度はサーバ側が持つ。
+  assert.equal(saved.interactions, 0);
+  assert.equal(saved.hourCounts.reduce((sum, value) => sum + value, 0), 0);
   assert.ok(!('mood' in saved));
+  assert.ok(!('affection' in saved));
+  assert.ok(before === null || saved.lastSeen >= before.lastSeen);
+});
+
+test('a conversation on any device counts once and keeps the visit fresh', () => {
+  const h = harness();
+  const at = Date.now();
+  h.winHandlers['kaguya-served']({ detail: { at, counted: true } });
+  const saved = JSON.parse(h.storage.get('kaguya.life.v1'));
+  assert.equal(saved.interactions, 1);
+  assert.equal(saved.hourCounts[new Date(at).getHours()], 1);
+  assert.equal(saved.lastSeen, at);
+});
+
+test('the server last-activity only refreshes the visit, it does not count a turn', () => {
+  const at = Date.now();
+  const h = harness({ lastSeen: at - 3600_000, interactions: 4, hourCounts: Array(24).fill(0) });
+  h.winHandlers['kaguya-served']({ detail: { at, counted: false } });
+  const saved = JSON.parse(h.storage.get('kaguya.life.v1'));
+  assert.equal(saved.interactions, 4);
+  assert.equal(saved.lastSeen, at);
+});
+
+test('an older timestamp never moves the visit backwards', () => {
+  const now = Date.now();
+  const h = harness({ lastSeen: now - 7200_000, interactions: 0, hourCounts: Array(24).fill(0) });
+  h.winHandlers['kaguya-served']({ detail: { at: now, counted: false } });
+  h.winHandlers['kaguya-served']({ detail: { at: now - 3600_000, counted: false } });
+  assert.equal(JSON.parse(h.storage.get('kaguya.life.v1')).lastSeen, now);
 });
 
 test('the mood comes from the server so every device shows the same face', () => {
