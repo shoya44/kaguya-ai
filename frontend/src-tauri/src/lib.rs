@@ -35,6 +35,43 @@ fn app_quit(app: AppHandle) {
     quit_app(&app);
 }
 
+/// Start the external restart helper before quitting this process. The helper
+/// waits for the current app.exe to exit, then runs start.bat, whose startup
+/// path performs the safe fast-forward update before rebuilding.
+#[tauri::command]
+fn restart_with_update(app: AppHandle) -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .map_err(|_| "更新元のリポジトリを確認できませんでした。")?;
+        let helper = repo_root.join("restart_update.bat");
+        if !helper.is_file() {
+            return Err("更新用スクリプトが見つかりません。".into());
+        }
+
+        let command_line = format!("\"{}\" {}", helper.display(), std::process::id());
+        let mut command = Command::new("cmd.exe");
+        command
+            .args(["/D", "/S", "/C", &command_line])
+            .current_dir(&repo_root)
+            .creation_flags(0x00000010); // CREATE_NEW_CONSOLE: show update/build progress.
+        command
+            .spawn()
+            .map_err(|_| "更新処理を起動できませんでした。")?;
+
+        quit_app(&app);
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        Err("最新版への更新はWindows版でのみ利用できます。".into())
+    }
+}
+
 /// 予約した声かけの時刻になったとき、隠れているウィンドウを前に出す。
 #[tauri::command]
 fn show_window(app: AppHandle) {
@@ -212,7 +249,7 @@ pub fn run() {
             instance: format!("{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()),
             error: None,
         })))
-        .invoke_handler(tauri::generate_handler![backend_status, app_quit, window_topmost, desktop_visible, start_mini, show_window])
+        .invoke_handler(tauri::generate_handler![backend_status, app_quit, restart_with_update, window_topmost, desktop_visible, start_mini, show_window])
         .setup(|app| {
             if std::env::args().any(|arg| arg == "--quit") {
                 app.handle().exit(0);
