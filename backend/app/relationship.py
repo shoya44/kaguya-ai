@@ -23,6 +23,8 @@ def style_feedback(text: str) -> str | None:
         return '普段は簡潔にしつつ、説明が役立つ話題では少し詳しく返す。'
     if re.search(r'(短く|短め|簡潔)', value):
         return '普段は短めに返すが、素っ気なくならないよう親しみのある一言は残す。'
+    if re.search(r'(嫌い|苦手|やめて)', value):
+        return '同じ定型的な言い回しを繰り返さず、簡潔でも自然で親しみのある返し方にする。'
     if re.search(r'(好き|いい感じ|良い感じ|この感じ|その感じ)', value):
         return '今のような、簡潔で親しみのある自然な返し方を基本にする。'
     return None
@@ -41,7 +43,8 @@ def capture_feedback(store, text: str, now: datetime) -> str | None:
     if hint:
         try:
             store.record(relationship_style_hint=hint, relationship_style_at=now.isoformat())
-        except (OSError, ValueError, TypeError):
+        except Exception:
+            # 演出用の学習なので、保存失敗で会話を止めない。
             pass
     return hint
 
@@ -61,7 +64,7 @@ def record_success(store, now: datetime) -> None:
         if not ledger.get('relationship_first_seen'):
             changes['relationship_first_seen'] = now.isoformat()
         store.record(**changes)
-    except (OSError, ValueError, TypeError):
+    except Exception:
         # 関係性演出の保存失敗で本体会話を失敗させない。
         return
 
