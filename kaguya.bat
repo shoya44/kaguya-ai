@@ -7,6 +7,13 @@ rem start.batなど、画面が閉じてしまう呼び出し元はnopauseを付
 if /i "%~2"=="nopause" set "KAGUYA_NO_PAUSE=1"
 if /i "%~3"=="nopause" set "KAGUYA_NO_PAUSE=1"
 
+rem gitはコミット件名をUTF-8で出すため、cp932のコンソールでは化ける。
+rem 自前のechoはすべてASCIIなので、実行中だけUTF-8にしても支障はない。
+rem コードページはプロセスを抜けても戻らないため、終了時に必ず元へ戻す。
+for /f "tokens=2 delims=:" %%C in ('chcp') do set "KAGUYA_CP=%%C"
+set "KAGUYA_CP=%KAGUYA_CP: =%"
+chcp 65001 >nul
+
 set "COMMAND=%~1"
 rem 引数なし（エクスプローラーからのダブルクリック）はメニューを出す。
 if "%COMMAND%"=="" goto menu
@@ -61,6 +68,14 @@ echo   Start the current version with start.bat if you want to use it now.
 goto failed
 
 :build
+rem 起動したままだとapp.exeを掴んでいて、cargoが置き換えられずos error 5で落ちる。
+tasklist /fi "imagename eq app.exe" /nh | find /i "app.exe" >nul || goto build_start
+echo.
+echo   Kaguya AI is running, so the app file cannot be replaced.
+echo   Close it from the tray, or use "update" which stops it first.
+goto failed
+
+:build_start
 rem 依存関係の自動インストールはしない。既存のnode_modulesとcargoキャッシュを使う。
 cd frontend
 call npm.cmd run build
@@ -134,19 +149,27 @@ echo.
 rem set /p ではなくchoiceを使う。Enter不要で、空入力や想定外の文字が入らない。
 rem errorlevelは「以上」で判定されるため、必ず大きい方から見る。
 choice /c 123450 /n /m "Select: "
-if errorlevel 6 exit /b 0
+if errorlevel 6 goto quit
 if errorlevel 5 goto autostart_menu
 if errorlevel 4 goto checkdb
 if errorlevel 3 goto build
 if errorlevel 2 goto check
 if errorlevel 1 goto update
-exit /b 0
+goto quit
 
 :autostart_menu
 set "TASK_NAME=KaguyaAI_AutoStart"
 choice /c yn /m "Start Kaguya AI at Windows sign-in"
 if errorlevel 2 goto autostart_off
 goto autostart_on
+
+:quit
+call :restore
+exit /b 0
+
+:restore
+if defined KAGUYA_CP chcp %KAGUYA_CP% >nul
+exit /b 0
 
 :usage
 echo Usage: kaguya.bat ^<command^>
@@ -159,14 +182,17 @@ echo   autostart on     Start Kaguya AI in mini mode at Windows sign-in.
 echo   autostart off    Remove that auto-start task.
 echo.
 echo   Day to day, use start.bat and stop.bat instead.
+call :restore
 if not defined KAGUYA_NO_PAUSE pause
 exit /b 1
 
 :done
+call :restore
 if not defined KAGUYA_NO_PAUSE pause
 exit /b 0
 
 :failed
 echo The command failed. See the message above.
+call :restore
 if not defined KAGUYA_NO_PAUSE pause
 exit /b 1
