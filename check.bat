@@ -8,6 +8,9 @@ node --test tests\main.test.cjs tests\living.test.cjs
 if errorlevel 1 goto failed
 call npm.cmd run build
 if errorlevel 1 goto failed
+cd src-tauri
+cargo check --offline --locked --features tauri/custom-protocol
+if errorlevel 1 goto failed
 echo All local checks passed. No live Gemini, weather API or production DB calls were made.
 pause
 exit /b 0
