@@ -12,15 +12,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from threading import RLock
 
+from ..tuning import (EMOTION_BASELINE, LOOP_FORGET_DAYS, LOOP_KEEP_RESOLVED_DAYS, LOOP_MAX_ASKS,
+                      LOOP_QUIET, PHRASE_CANDIDATE_COUNT, PHRASE_LENGTH, TRAIT_CONFIDENCE_DOWN,
+                      TRAIT_CONFIDENCE_RANGE, TRAIT_CONFIDENCE_START, TRAIT_CONFIDENCE_UP,
+                      TRAIT_EVIDENCE_WEIGHT_MAX, TRAIT_FORGET_DAYS, TRAIT_SETTLED)
 
-DEFAULT_EMOTIONS = {
-    'happiness': 58.0,
-    'curiosity': 60.0,
-    'boredom': 25.0,
-    'affection': 55.0,
-    'jealousy': 5.0,
-    'concern': 10.0,
-}
+# 既存の呼び出し名は変えず、値だけtuningへ移す。
+DEFAULT_EMOTIONS = EMOTION_BASELINE
 
 
 SCHEMA = """
@@ -148,16 +146,17 @@ class MindStore:
             old = conn.execute('SELECT * FROM traits WHERE name=?', (name,)).fetchone()
             if old:
                 evidence = int(old['evidence']) + 1
-                old_weight = min(int(old['evidence']), 5)
+                old_weight = min(int(old['evidence']), TRAIT_EVIDENCE_WEIGHT_MAX)
                 value = (float(old['valence']) * old_weight + valence) / (old_weight + 1)
                 direction_same = (float(old['valence']) >= .5) == (valence >= .5)
-                confidence = min(.95, float(old['confidence']) + (.12 if direction_same else -.08))
-                confidence = max(.20, confidence)
+                step = TRAIT_CONFIDENCE_UP if direction_same else -TRAIT_CONFIDENCE_DOWN
+                low, high = TRAIT_CONFIDENCE_RANGE
+                confidence = max(low, min(high, float(old['confidence']) + step))
                 conn.execute('''UPDATE traits SET valence=?,confidence=?,evidence=?,updated_at=? WHERE name=?''',
                              (value, confidence, evidence, stamp, name))
             else:
                 conn.execute('INSERT INTO traits(name,valence,confidence,evidence,updated_at) VALUES (?,?,?,?,?)',
-                             (name, valence, .35, 1, stamp))
+                             (name, valence, TRAIT_CONFIDENCE_START, 1, stamp))
 
     def traits_for(self, text: str, limit: int = 5) -> list[dict]:
         normalized = unicodedata.normalize('NFKC', text).casefold()
@@ -176,7 +175,7 @@ class MindStore:
 
     def record_phrase(self, text: str, now: datetime) -> None:
         value = ' '.join(str(text or '').strip().split())
-        if len(value) < 2 or len(value) > 32:
+        if not PHRASE_LENGTH[0] <= len(value) <= PHRASE_LENGTH[1]:
             return
         stamp = now.isoformat()
         with self.lock, self._session() as conn:
@@ -186,8 +185,8 @@ class MindStore:
 
     def shortcut_candidates(self, limit: int = 5) -> list[dict]:
         with self.lock, self._session() as conn:
-            rows = conn.execute('''SELECT text,count,last_seen_at FROM phrases WHERE count>=3
-                ORDER BY count DESC,last_seen_at DESC LIMIT ?''', (limit,)).fetchall()
+            rows = conn.execute('''SELECT text,count,last_seen_at FROM phrases WHERE count>=?
+                ORDER BY count DESC,last_seen_at DESC LIMIT ?''', (PHRASE_CANDIDATE_COUNT, limit)).fetchall()
         return [dict(row) for row in rows]
 
     def upsert_edge(self, subject: str, relation: str, obj: str, strength: float, now: datetime) -> None:
@@ -214,12 +213,12 @@ class MindStore:
     def due_loops(self, now: datetime, limit: int = 2) -> list[dict]:
         """予定時刻を過ぎ、まだ触れていない話題だけを返す。しつこさを避けるため上限つき。"""
         stamp = now.isoformat()
-        quiet = (now - timedelta(hours=12)).isoformat()
+        quiet = (now - LOOP_QUIET).isoformat()
         with self.lock, self._session() as conn:
             rows = conn.execute("""SELECT * FROM open_loops
-                WHERE resolved_at IS NULL AND due_at<=? AND asked<2
+                WHERE resolved_at IS NULL AND due_at<=? AND asked<?
                   AND (last_asked_at IS NULL OR last_asked_at<=?)
-                ORDER BY due_at ASC LIMIT ?""", (stamp, quiet, limit)).fetchall()
+                ORDER BY due_at ASC LIMIT ?""", (stamp, LOOP_MAX_ASKS, quiet, limit)).fetchall()
             for row in rows:
                 conn.execute('UPDATE open_loops SET last_asked_at=? WHERE topic=?', (stamp, row['topic']))
         return [dict(row) for row in rows]
@@ -244,15 +243,15 @@ class MindStore:
         """人間は全部は覚えていない。片付いた話題と、古すぎる未完の話題は忘れる。"""
         with self.lock, self._session() as conn:
             conn.execute('DELETE FROM open_loops WHERE resolved_at IS NOT NULL AND resolved_at<?',
-                         ((now - timedelta(days=14)).isoformat(),))
+                         ((now - timedelta(days=LOOP_KEEP_RESOLVED_DAYS)).isoformat(),))
             conn.execute('DELETE FROM open_loops WHERE resolved_at IS NULL AND opened_at<?',
-                         ((now - timedelta(days=30)).isoformat(),))
+                         ((now - timedelta(days=LOOP_FORGET_DAYS)).isoformat(),))
 
     def prune_traits(self, now: datetime) -> None:
         """人間は一度口にしただけの好みを覚えていない。定着しなかったものは忘れる。"""
         with self.lock, self._session() as conn:
-            conn.execute('DELETE FROM traits WHERE confidence<0.5 AND updated_at<?',
-                         ((now - timedelta(days=30)).isoformat(),))
+            conn.execute('DELETE FROM traits WHERE confidence<? AND updated_at<?',
+                         (TRAIT_SETTLED, (now - timedelta(days=TRAIT_FORGET_DAYS)).isoformat()))
 
     def loop_stats(self) -> dict:
         with self.lock, self._session() as conn:

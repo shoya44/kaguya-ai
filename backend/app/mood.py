@@ -5,7 +5,9 @@ PCで褒めてもiPhoneのかぐやは無反応、という食い違いが起き
 FastAPIへ繋いでいるだけなので、判定はここ1箇所に置く。
 """
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
+
+from .tuning import MOOD_HOLD, NIGHT_FROM_HOUR, NIGHT_UNTIL_HOUR
 
 
 FACES = ('normal', 'happy', 'sleepy', 'sulky')
@@ -14,13 +16,6 @@ FACES = ('normal', 'happy', 'sleepy', 'sulky')
 _COMPARED = re.compile(r'(Claude|ChatGPT|チャットGPT).*(の方が|より).*(好き|賢い|すごい|良い|いい)', re.I)
 _PRAISE = re.compile(r'(かわいい|好き|ありがとう|助かった|えらい|いい子)')
 _GOODNIGHT = re.compile(r'(おやすみ|寝るね|寝よう)')
-
-# living.tsが持っていた継続時間をそのまま引き継ぐ。
-_HOLD = {
-    'happy': timedelta(minutes=12),
-    'sulky': timedelta(minutes=8),
-    'sleepy': timedelta(minutes=30),
-}
 
 
 class Mood:
@@ -42,10 +37,10 @@ class Mood:
             face = 'sleepy'
         else:
             return
-        self.value, self.until = face, now + _HOLD[face]
+        self.value, self.until = face, now + MOOD_HOLD[face]
 
     def current(self, now: datetime) -> str:
         if self.until and now < self.until:
             return self.value
         self.value, self.until = '', None
-        return 'sleepy' if now.hour < 6 or now.hour >= 23 else 'normal'
+        return 'sleepy' if now.hour < NIGHT_UNTIL_HOUR or now.hour >= NIGHT_FROM_HOUR else 'normal'

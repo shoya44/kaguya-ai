@@ -5,6 +5,7 @@ from contextlib import suppress
 
 from .errors import ChatError
 from .mood import Mood
+from .tuning import FACE_REFRESH_TICKS
 from .proactive import Proactive, tokyo_now
 from .jobs import Jobs
 from . import relationship, tools
@@ -78,7 +79,7 @@ class Controller:
                 self.mood_ticks += 1
                 # Mindの感情は半減期が長いので、読み直しは1分に1回でよい。
                 # 起動直後の1回目は読む（それまではOFF相当の簡易判定になるため）。
-                await self.emit_mood(refresh=self.mood_ticks % 12 == 1)
+                await self.emit_mood(refresh=self.mood_ticks % FACE_REFRESH_TICKS == 1)
                 await self.deliver_reminders()
 
                 await self.maybe_organize()

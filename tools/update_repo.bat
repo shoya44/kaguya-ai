@@ -1,6 +1,7 @@
 @echo off
 setlocal
-cd /d "%~dp0"
+rem tools/ に置くので、Git操作の対象は1つ上のリポジトリルート。
+cd /d "%~dp0.."
 set "GIT_TERMINAL_PROMPT=0"
 
 where git.exe >nul 2>&1

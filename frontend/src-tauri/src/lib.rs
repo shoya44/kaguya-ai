@@ -40,7 +40,7 @@ fn restart_with_update(app: AppHandle) -> Result<(), String> {
             .join("../..")
             .canonicalize()
             .map_err(|_| "更新元のリポジトリを確認できませんでした。")?;
-        let helper = repo_root.join("restart_update.ps1");
+        let helper = repo_root.join("tools").join("restart_update.ps1");
         if !helper.is_file() {
             return Err("更新用スクリプトが見つかりません。".into());
         }
