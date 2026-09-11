@@ -11,6 +11,19 @@ if exist "frontend\src-tauri\target\debug\app.exe" (
     exit /b 0
   )
 )
+
+rem When starting from a stopped state, safely fast-forward main before build.
+rem If the repository changes, restart this batch once so an updated start.bat
+rem is also used. Offline/dirty/non-main states only skip update; startup continues.
+if defined KAGUYA_UPDATE_CHECKED goto after_update
+call "%~dp0update_repo.bat"
+set "UPDATE_RESULT=%ERRORLEVEL%"
+if not "%UPDATE_RESULT%"=="5" goto after_update
+set "KAGUYA_UPDATE_CHECKED=1"
+call "%~f0" %*
+exit /b
+
+:after_update
 echo Preparing Kaguya AI. No packages will be downloaded.
 "backend\.venv\Scripts\python.exe" -B "backend\migrate.py"
 if errorlevel 1 goto failed
