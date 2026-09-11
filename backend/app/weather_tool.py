@@ -14,10 +14,13 @@ WEATHER_CODES = {
 }
 _GEO_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 _WEATHER_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+WEATHER_TTL_SECONDS = 1800
+STALE_FALLBACK_SECONDS = 6 * 3600
 
 
 async def _json(url: str, params: dict[str, Any]) -> dict[str, Any]:
-    async with httpx.AsyncClient(timeout=6.0) as client:
+    timeout = httpx.Timeout(5.0, connect=3.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
         response = await client.get(url, params=params)
         response.raise_for_status()
         value = response.json()
@@ -46,30 +49,40 @@ async def _resolve(name: str) -> dict[str, Any]:
 
 async def weather(location: str) -> dict[str, Any]:
     key = location.strip().lower()
+    now = time.monotonic()
     cached = _WEATHER_CACHE.get(key)
-    if cached and cached[0] > time.monotonic():
+    if cached and cached[0] > now:
         return cached[1]
-    place = await _resolve(location)
-    value = await _json('https://api.open-meteo.com/v1/forecast', {
-        'latitude': place['latitude'], 'longitude': place['longitude'], 'timezone': 'Asia/Tokyo',
-        'forecast_days': 2,
-        'current': 'temperature_2m,apparent_temperature,precipitation,weather_code',
-        'daily': 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
-    })
-    current, daily = value.get('current') or {}, value.get('daily') or {}
 
-    def day(index: int) -> dict[str, Any]:
-        def item(key_name: str):
-            rows = daily.get(key_name) or []
-            return rows[index] if index < len(rows) else None
-        code = item('weather_code')
-        return {'天気': WEATHER_CODES.get(code, '不明'), '最高気温C': item('temperature_2m_max'),
-                '最低気温C': item('temperature_2m_min'), '降水確率%': item('precipitation_probability_max')}
+    try:
+        place = await _resolve(location)
+        value = await _json('https://api.open-meteo.com/v1/forecast', {
+            'latitude': place['latitude'], 'longitude': place['longitude'], 'timezone': 'Asia/Tokyo',
+            'forecast_days': 2,
+            'current': 'temperature_2m,apparent_temperature,precipitation,weather_code',
+            'daily': 'weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max',
+        })
+        current, daily = value.get('current') or {}, value.get('daily') or {}
 
-    code = current.get('weather_code')
-    result = {'ok': True, '場所': place['label'],
-              '現在': {'天気': WEATHER_CODES.get(code, '不明'), '気温C': current.get('temperature_2m'),
-                     '体感C': current.get('apparent_temperature'), '降水mm': current.get('precipitation')},
-              '今日': day(0), '明日': day(1), '取得元': 'Open-Meteo'}
-    _WEATHER_CACHE[key] = (time.monotonic() + 1800, result)
-    return result
+        def day(index: int) -> dict[str, Any]:
+            def item(key_name: str):
+                rows = daily.get(key_name) or []
+                return rows[index] if index < len(rows) else None
+            code = item('weather_code')
+            return {'天気': WEATHER_CODES.get(code, '不明'), '最高気温C': item('temperature_2m_max'),
+                    '最低気温C': item('temperature_2m_min'), '降水確率%': item('precipitation_probability_max')}
+
+        code = current.get('weather_code')
+        result = {'ok': True, '場所': place['label'],
+                  '現在': {'天気': WEATHER_CODES.get(code, '不明'), '気温C': current.get('temperature_2m'),
+                         '体感C': current.get('apparent_temperature'), '降水mm': current.get('precipitation')},
+                  '今日': day(0), '明日': day(1), '取得元': 'Open-Meteo'}
+        _WEATHER_CACHE[key] = (now + WEATHER_TTL_SECONDS, result)
+        return result
+    except (httpx.HTTPError, ValueError, KeyError):
+        # 一時的な外部API障害では、直近6時間以内の成功結果があれば会話を失敗させない。
+        if cached and cached[0] + STALE_FALLBACK_SECONDS > now:
+            stale = dict(cached[1])
+            stale['キャッシュ利用'] = True
+            return stale
+        raise
