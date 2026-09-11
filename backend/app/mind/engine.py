@@ -5,6 +5,7 @@ All methods are fail-open so Mind can never make the core chat unavailable.
 """
 from __future__ import annotations
 
+import logging
 import math
 import re
 from datetime import datetime, timedelta
@@ -12,6 +13,9 @@ from pathlib import Path
 from typing import Callable
 
 from .store import DEFAULT_EMOTIONS, MindStore
+
+
+_log = logging.getLogger('uvicorn.error')
 
 
 # 断定された自己申告だけを拾う。文末側の先読みで「好きじゃない」「好きって言ったら」
@@ -89,6 +93,8 @@ class KaguyaMind:
             return value
         except Exception as exc:  # experimental feature must never break chat
             self.last_error = type(exc).__name__
+            # 会話は続けるが、原因が追えないまま黙って無効化されないよう記録する。
+            _log.warning('Kaguya Mind failed in %s', getattr(fn, '__name__', fn), exc_info=True)
             return fallback
 
     @staticmethod
@@ -236,6 +242,19 @@ class KaguyaMind:
             self.store.upsert_trait(name, valence, now)
             relation = 'likes' if valence >= .5 else 'dislikes'
             self.store.upsert_edge('かぐや', relation, name, abs(valence - .5) * 2, now)
+
+    def reset(self) -> None:
+        """育ったものを消して最初からにする。OFFのときも削除できる。"""
+        try:
+            self.store.reset()
+            self.last_error = ''
+        except OSError as exc:
+            self.last_error = type(exc).__name__
+            _log.warning('Kaguya Mind reset failed', exc_info=True)
+            raise
+
+    def close(self) -> None:
+        self.store.close()
 
     def snapshot(self, now: datetime) -> dict:
         if not self.enabled:

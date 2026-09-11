@@ -23,75 +23,102 @@ DEFAULT_EMOTIONS = {
 }
 
 
+SCHEMA = """
+    CREATE TABLE IF NOT EXISTS emotions (
+        name TEXT PRIMARY KEY,
+        value REAL NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS traits (
+        name TEXT PRIMARY KEY,
+        valence REAL NOT NULL,
+        confidence REAL NOT NULL,
+        evidence INTEGER NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS phrases (
+        text TEXT PRIMARY KEY,
+        count INTEGER NOT NULL,
+        last_seen_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS graph_edges (
+        subject TEXT NOT NULL,
+        relation TEXT NOT NULL,
+        object TEXT NOT NULL,
+        strength REAL NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(subject, relation, object)
+    );
+    CREATE TABLE IF NOT EXISTS open_loops (
+        topic TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        quote TEXT NOT NULL,
+        opened_at TEXT NOT NULL,
+        due_at TEXT NOT NULL,
+        last_asked_at TEXT,
+        asked INTEGER NOT NULL DEFAULT 0,
+        resolved_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+"""
+
+
 class MindStore:
+    """1本の接続を使い回す。毎ターンの接続確立をイベントループ上で繰り返さないため。"""
+
     def __init__(self, path: Path):
         self.path = path
         self.lock = RLock()
-        self._ready = False
+        self._conn: sqlite3.Connection | None = None
 
     def _connect(self) -> sqlite3.Connection:
+        if self._conn is not None:
+            return self._conn
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(self.path, timeout=2.0)
+        # 会話は単一のイベントループから来るが、接続を跨いで使うため明示的に許可する。
+        conn = sqlite3.connect(self.path, timeout=2.0, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         conn.execute('PRAGMA journal_mode=WAL')
         conn.execute('PRAGMA busy_timeout=2000')
-        if not self._ready:
-            with self.lock:
-                if not self._ready:
-                    conn.executescript('''
-                        CREATE TABLE IF NOT EXISTS emotions (
-                            name TEXT PRIMARY KEY,
-                            value REAL NOT NULL,
-                            updated_at TEXT NOT NULL
-                        );
-                        CREATE TABLE IF NOT EXISTS traits (
-                            name TEXT PRIMARY KEY,
-                            valence REAL NOT NULL,
-                            confidence REAL NOT NULL,
-                            evidence INTEGER NOT NULL,
-                            updated_at TEXT NOT NULL
-                        );
-                        CREATE TABLE IF NOT EXISTS phrases (
-                            text TEXT PRIMARY KEY,
-                            count INTEGER NOT NULL,
-                            last_seen_at TEXT NOT NULL
-                        );
-                        CREATE TABLE IF NOT EXISTS graph_edges (
-                            subject TEXT NOT NULL,
-                            relation TEXT NOT NULL,
-                            object TEXT NOT NULL,
-                            strength REAL NOT NULL,
-                            updated_at TEXT NOT NULL,
-                            PRIMARY KEY(subject, relation, object)
-                        );
-                        CREATE TABLE IF NOT EXISTS open_loops (
-                            topic TEXT PRIMARY KEY,
-                            kind TEXT NOT NULL,
-                            quote TEXT NOT NULL,
-                            opened_at TEXT NOT NULL,
-                            due_at TEXT NOT NULL,
-                            last_asked_at TEXT,
-                            asked INTEGER NOT NULL DEFAULT 0,
-                            resolved_at TEXT
-                        );
-                        CREATE TABLE IF NOT EXISTS meta (
-                            key TEXT PRIMARY KEY,
-                            value TEXT NOT NULL,
-                            updated_at TEXT NOT NULL
-                        );
-                    ''')
-                    conn.commit()
-                    self._ready = True
+        conn.executescript(SCHEMA)
+        conn.commit()
+        self._conn = conn
         return conn
 
     @contextmanager
     def _session(self):
-        conn = self._connect()
-        try:
-            yield conn
-            conn.commit()
-        finally:
-            conn.close()
+        with self.lock:
+            conn = self._connect()
+            try:
+                yield conn
+                conn.commit()
+            except BaseException:
+                # 壊れたかもしれない接続は捨てる。次の呼び出しで開き直す。
+                try:
+                    conn.rollback()
+                except sqlite3.Error:
+                    pass
+                self.close()
+                raise
+
+    def close(self) -> None:
+        conn, self._conn = self._conn, None
+        if conn is not None:
+            try:
+                conn.close()
+            except sqlite3.Error:
+                pass
+
+    def reset(self) -> None:
+        """mind.dbを完全に削除する。会話・記憶・Relationship Memoryには触れない。"""
+        with self.lock:
+            self.close()
+            for suffix in ('', '-wal', '-shm'):
+                Path(str(self.path) + suffix).unlink(missing_ok=True)
 
     def emotions(self, now: datetime) -> tuple[dict[str, float], datetime]:
         stamp = now.isoformat()

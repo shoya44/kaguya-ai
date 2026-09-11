@@ -100,7 +100,7 @@ class MindTests(unittest.TestCase):
             self.assertEqual(snap['shortcut_candidates'][0]['text'], '朝のやつ')
             self.assertEqual(snap['shortcut_candidates'][0]['count'], 3)
 
-    def test_fail_open_returns_empty_context(self):
+    def test_fail_open_returns_empty_context_and_is_logged(self):
         with tempfile.TemporaryDirectory() as tmp:
             mind = KaguyaMind(Path(tmp) / 'mind.db', lambda: True)
 
@@ -108,8 +108,38 @@ class MindTests(unittest.TestCase):
                 raise RuntimeError('broken experimental store')
 
             mind.store.emotions = broken
-            self.assertEqual(mind.before_reply('こんにちは', NOW), {})
+            with self.assertLogs('uvicorn.error', level='WARNING') as logs:
+                self.assertEqual(mind.before_reply('こんにちは', NOW), {})
             self.assertEqual(mind.last_error, 'RuntimeError')
+            self.assertIn('Kaguya Mind failed', logs.output[0])
+
+    def test_reset_clears_growth_without_touching_anything_else(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'mind.db'
+            mind = KaguyaMind(path, lambda: True)
+            mind.after_reply('明日面接があるんだ', 'あたしはプリンが好きだよ。', NOW)
+            self.assertTrue(path.exists())
+            self.assertEqual(mind.snapshot(NOW)['traits'][0]['name'], 'プリン')
+
+            mind.reset()
+            self.assertFalse(path.exists())
+            fresh = mind.snapshot(NOW)
+            self.assertEqual(fresh['status'], 'ok')
+            self.assertEqual(fresh['traits'], [])
+            self.assertEqual(fresh['stats'], {'traits': 0, 'edges': 0, 'interactions': 0, 'open_loops': 0})
+            # 削除後も同じインスタンスで学習を続けられる。
+            mind.after_reply('ねえ', 'あたしは犬が好きだよ。', NOW)
+            self.assertEqual(mind.snapshot(NOW)['traits'][0]['name'], '犬')
+
+    def test_reset_is_allowed_while_the_feature_is_off(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'mind.db'
+            enabled = {'value': True}
+            mind = KaguyaMind(path, lambda: enabled['value'])
+            mind.after_reply('ねえ', 'あたしはプリンが好きだよ。', NOW)
+            enabled['value'] = False
+            mind.reset()
+            self.assertFalse(path.exists())
 
     def test_mind_guidance_is_only_added_when_context_exists(self):
         off_prompt = memory_prompt({})

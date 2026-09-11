@@ -32,6 +32,15 @@ export class Controls {
         this.message('設定を保存しました。');
       });
     });
+    document.getElementById('mind-reset-btn')!.addEventListener('click', () => {
+      this.confirm('Kaguya Mindの蓄積を消しますか？',
+        'かぐやの感情・好み・気にかけていることだけを消します。会話・記憶・かぐやの接し方は消えません。',
+        async () => {
+          // 完了メッセージは共通の確認ダイアログ側が出す。
+          const result = await this.api('/mind', { method: 'DELETE' });
+          this.renderMind(result.mind);
+        });
+    });
     document.getElementById('quiet-btn')!.addEventListener('click', () => this.toggleQuiet());
     document.getElementById('organize-btn')!.addEventListener('click', () => this.perform(async () => {
       await this.api('/jobs/run', { method: 'POST' });
