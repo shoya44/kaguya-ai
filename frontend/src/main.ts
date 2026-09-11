@@ -49,6 +49,12 @@ function setMiniMode(enabled: boolean): Promise<void> {
   return transition;
 }
 
+// core:window:default に含まれるTauri標準の内部トグルを使う。
+// maximize/unmaximize個別の追加権限を増やさず、現在の最大化状態だけ反転できる。
+async function toggleMaximizedWindow(): Promise<void> {
+  await invoke('plugin:window|internal_toggle_maximize');
+}
+
 async function transitionMiniMode(enabled: boolean): Promise<void> {
   const app = document.getElementById('app')!;
   if (app.classList.contains('mode-mini') === enabled) return;
@@ -63,7 +69,7 @@ async function transitionMiniMode(enabled: boolean): Promise<void> {
     // currentMonitor() が一時的に null になるケースを避ける。
     const monitor = (await currentMonitor().catch(() => null)) ?? (await primaryMonitor().catch(() => null));
     savedNormalMaximized = await win.isMaximized().catch(() => false);
-    if (savedNormalMaximized) await win.unmaximize();
+    if (savedNormalMaximized) await toggleMaximizedWindow();
     savedNormalPosition = await win.outerPosition().catch(() => null);
     // setSize() は内側サイズを設定するAPIなので、復元用も innerSize() で保持する。
     savedNormalSize = await win.innerSize().catch(() => null);
@@ -95,7 +101,7 @@ async function transitionMiniMode(enabled: boolean): Promise<void> {
       await win.setResizable(true).catch(() => {});
       await win.setShadow(true).catch(() => {});
       if (savedNormalMaximized) {
-        await win.maximize().catch(() => {});
+        await toggleMaximizedWindow().catch(() => {});
       } else {
         await win.setSize(savedNormalSize ?? new LogicalSize(NORMAL_SIZE_DEFAULT.width, NORMAL_SIZE_DEFAULT.height)).catch(() => {});
         if (savedNormalPosition) await win.setPosition(savedNormalPosition).catch(() => {});
@@ -106,22 +112,18 @@ async function transitionMiniMode(enabled: boolean): Promise<void> {
     return;
   }
 
-  try {
-    await win.setDecorations(true).catch(() => {});
-    await win.setResizable(true).catch(() => {});
-    await win.setShadow(true).catch(() => {});
-    if (savedNormalMaximized) {
-      await win.maximize();
-    } else {
-      await win.setSize(savedNormalSize ?? new LogicalSize(NORMAL_SIZE_DEFAULT.width, NORMAL_SIZE_DEFAULT.height));
-      if (savedNormalPosition) await win.setPosition(savedNormalPosition);
-    }
-    await win.show().catch(() => {});
-    await win.setFocus().catch(() => {});
-    applyMiniUi(false);
-  } catch (error) {
-    throw error;
+  await win.setDecorations(true).catch(() => {});
+  await win.setResizable(true).catch(() => {});
+  await win.setShadow(true).catch(() => {});
+  if (savedNormalMaximized) {
+    await toggleMaximizedWindow();
+  } else {
+    await win.setSize(savedNormalSize ?? new LogicalSize(NORMAL_SIZE_DEFAULT.width, NORMAL_SIZE_DEFAULT.height));
+    if (savedNormalPosition) await win.setPosition(savedNormalPosition);
   }
+  await win.show().catch(() => {});
+  await win.setFocus().catch(() => {});
+  applyMiniUi(false);
 }
 
 // キャラ画像を右クリックすると、表示切替と終了をまとめた簡易メニューを出す。
