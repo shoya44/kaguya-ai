@@ -1,4 +1,19 @@
 @echo off
+rem Tools such as git print UTF-8, which is garbled on the default cp932
+rem console. Changing the code page while a batch file is running makes cmd
+rem lose its place in the file (the rem lines below are multi-byte), so the
+rem page is switched once here and this file is re-run in a child cmd.
+rem Everything above ":main" is ASCII on purpose. Do not add non-ASCII here.
+if defined KAGUYA_CP goto main
+for /f "tokens=2 delims=:" %%C in ('chcp') do set "KAGUYA_CP=%%C"
+set "KAGUYA_CP=%KAGUYA_CP: =%"
+chcp 65001 >nul
+cmd /d /c ""%~f0" %*"
+set "KAGUYA_RESULT=%errorlevel%"
+chcp %KAGUYA_CP% >nul
+exit /b %KAGUYA_RESULT%
+
+:main
 rem 開発・保守用のコマンドをここ1本にまとめる。日常の起動・終了は start.bat / stop.bat。
 setlocal
 cd /d "%~dp0"
@@ -6,13 +21,6 @@ cd /d "%~dp0"
 rem start.batなど、画面が閉じてしまう呼び出し元はnopauseを付ける。
 if /i "%~2"=="nopause" set "KAGUYA_NO_PAUSE=1"
 if /i "%~3"=="nopause" set "KAGUYA_NO_PAUSE=1"
-
-rem gitはコミット件名をUTF-8で出すため、cp932のコンソールでは化ける。
-rem 自前のechoはすべてASCIIなので、実行中だけUTF-8にしても支障はない。
-rem コードページはプロセスを抜けても戻らないため、終了時に必ず元へ戻す。
-for /f "tokens=2 delims=:" %%C in ('chcp') do set "KAGUYA_CP=%%C"
-set "KAGUYA_CP=%KAGUYA_CP: =%"
-chcp 65001 >nul
 
 set "COMMAND=%~1"
 rem 引数なし（エクスプローラーからのダブルクリック）はメニューを出す。
@@ -164,11 +172,6 @@ if errorlevel 2 goto autostart_off
 goto autostart_on
 
 :quit
-call :restore
-exit /b 0
-
-:restore
-if defined KAGUYA_CP chcp %KAGUYA_CP% >nul
 exit /b 0
 
 :usage
@@ -182,17 +185,14 @@ echo   autostart on     Start Kaguya AI in mini mode at Windows sign-in.
 echo   autostart off    Remove that auto-start task.
 echo.
 echo   Day to day, use start.bat and stop.bat instead.
-call :restore
 if not defined KAGUYA_NO_PAUSE pause
 exit /b 1
 
 :done
-call :restore
 if not defined KAGUYA_NO_PAUSE pause
 exit /b 0
 
 :failed
 echo The command failed. See the message above.
-call :restore
 if not defined KAGUYA_NO_PAUSE pause
 exit /b 1
