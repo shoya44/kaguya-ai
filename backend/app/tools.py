@@ -40,8 +40,10 @@ def declarations_for(text: str) -> list[dict]:
     value = str(text or '')
     lower = value.lower()
     names: set[str] = set()
-    time_hint = bool(re.search(r'\d{1,2}\s*(?:時|:)|\d+\s*分後', value)) or any(
-        word in value for word in ('今日', '明日', '明後日', '来週', '今週', 'あとで', '後で'))
+    clock_hint = bool(re.search(r'\d{1,2}\s*(?:時|:)|\d+\s*分後', value))
+    date_hint = any(word in value for word in ('今日', '明日', '明後日', '来週', '今週', 'あとで', '後で'))
+    time_hint = clock_hint or date_hint
+
     if any(word in value for word in ('覚えて', '覚えといて', '記憶して')):
         names.add('remember')
     if any(word in value for word in ('リマインド', '知らせて', '声かけて', '言って', '教えて')) and time_hint:
@@ -50,7 +52,8 @@ def declarations_for(text: str) -> list[dict]:
         names.add('weather')
     if any(word in value for word in ('設定', '静かに', '声かけ', '文字サイズ', 'フォント', '最前面', '天気の場所')):
         names.add('app_settings')
-    if time_hint or any(word in value for word in ('予定', 'カレンダー', 'スケジュール', '会議')):
+    schedule_hint = any(word in value for word in ('予定', 'カレンダー', 'スケジュール', '会議', '予定に入れ', '予定入れ'))
+    if schedule_hint or clock_hint or (date_hint and any(word in value for word in ('何ある', '何かある'))):
         names.add('calendar')
     if any(word in lower for word in ('references', 'reference')) or any(word in value for word in ('参照資料', '参照ファイル', '手順書', '資料から', 'ファイルから', 'メモから')):
         names.add('reference_search')
