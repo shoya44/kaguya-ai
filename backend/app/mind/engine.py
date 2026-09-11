@@ -247,6 +247,19 @@ class KaguyaMind:
             context['気にかけていること'] = loops
         return context
 
+    def due_topic(self, now: datetime) -> str:
+        """自分から声をかけるための話題を1件だけ引き当てる。
+        引き当てた時点で「聞いた」扱いにするので、同じ話題を会話側と二重に持ち出さない。"""
+        return self._safe('', self._due_topic, now)
+
+    def _due_topic(self, now: datetime) -> str:
+        rows = self.store.due_loops(now, 1)
+        if not rows:
+            return ''
+        topic = rows[0]['topic']
+        self.store.mark_asked(topic, now)
+        return topic
+
     def after_reply(self, text: str, answer: str, now: datetime) -> None:
         self._safe(None, self._after_reply, text, answer, now)
 

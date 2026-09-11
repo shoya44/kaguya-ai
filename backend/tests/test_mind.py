@@ -94,6 +94,25 @@ class MindTests(unittest.TestCase):
         self.assertEqual(raised, 2)
         self.assertNotIn('気にかけていること', mind.before_reply('ねえ', NOW + timedelta(days=9)))
 
+    def test_a_topic_taken_for_a_nudge_is_not_also_raised_in_the_conversation(self):
+        mind = self.mind()
+        mind.after_reply('明日面接があるんだ', 'うん。', NOW)
+        later = NOW + timedelta(days=1, hours=1)
+        self.assertEqual(mind.due_topic(later), '面接')
+        # 声かけで聞いた直後に、会話側でも同じ話題を持ち出さない。
+        self.assertNotIn('気にかけていること', mind.before_reply('ただいま', later))
+        self.assertEqual(mind.due_topic(later), '')
+
+    def test_a_nudge_topic_also_stops_after_two_tries(self):
+        mind = self.mind()
+        mind.after_reply('明日面接があるんだ', 'うん。', NOW)
+        taken = [mind.due_topic(NOW + timedelta(days=day, hours=1)) for day in range(1, 6)]
+        self.assertEqual([value for value in taken if value], ['面接', '面接'])
+
+    def test_no_topic_when_nothing_is_pending(self):
+        self.assertEqual(self.mind().due_topic(NOW), '')
+        self.assertEqual(self.mind(lambda: False).due_topic(NOW), '')
+
     def test_casual_sentences_do_not_become_open_loops(self):
         mind = self.mind()
         for text in ('今日は疲れたな', 'おはよう', '明日も普通に過ごすよ', 'ありがとう'):
