@@ -76,8 +76,8 @@ test('praise changes mood locally and records an interaction hour', () => {
   assert.equal(saved.hourCounts.reduce((sum, value) => sum + value, 0), 1);
 });
 
-test('hiding only persists state and never requires server calls', () => {
+test('pagehide persists state without any server dependency', () => {
   const h = harness();
-  h.docHandlers.visibilitychange();
+  h.winHandlers.pagehide();
   assert.ok(h.storage.has('kaguya.life.v1'));
 });
