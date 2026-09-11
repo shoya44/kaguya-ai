@@ -71,7 +71,8 @@ class Controller:
             try:
                 monotonic_now = asyncio.get_running_loop().time()
                 visible = any(until > monotonic_now for until in self.presence.values())
-                event = self.proactive.tick(visible, bool(self.active or self.unsaved or self.editing))
+                event = self.proactive.tick(visible, bool(self.active or self.unsaved or self.editing),
+                                            topic=lambda: self.mind.due_topic(tokyo_now()) if self.mind else '')
                 if event:
                     await self.broadcast(event)
                 self.mood_ticks += 1

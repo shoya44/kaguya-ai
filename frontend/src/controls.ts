@@ -32,6 +32,23 @@ export class Controls {
         this.message('設定を保存しました。');
       });
     });
+    // この1項目だけは切り替えた時点で反映する。かぐやの内面を動かすスイッチなので、
+    // 保存ボタンを押し忘れて「入れたのに効かない」となるのを避ける。
+    document.getElementById('mind-enabled')!.addEventListener('change', event => {
+      const field = event.currentTarget as HTMLInputElement;
+      const wanted = field.checked;
+      this.perform(async () => {
+        try {
+          const result = await this.api('/settings', { method: 'PATCH', body: JSON.stringify({ mind_enabled: wanted }) });
+          await this.applyOptions(result.options);
+          this.renderMind(result.mind);
+          this.message(wanted ? 'Kaguya Mindを使います。' : 'Kaguya Mindを止めました。');
+        } catch (error) {
+          field.checked = !wanted;
+          throw error;
+        }
+      });
+    });
     document.getElementById('mind-reset-btn')!.addEventListener('click', () => {
       this.confirm('Kaguya Mindの蓄積を消しますか？',
         'かぐやの感情・好み・気にかけていることだけを消します。会話・記憶・かぐやの接し方は消えません。',

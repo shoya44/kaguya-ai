@@ -17,6 +17,11 @@ NUDGES = {
     'evening': ['そろそろ一息つかない？', '今日はもう十分がんばったんじゃない？'],
     'night': ['あんまり夜更かししないでよ。', 'そろそろ休んだら？あたしは付き合うけどさ。'],
 }
+# 前に聞いた話題があるときだけ使う。定型文より「覚えていた」ことが伝わる。
+FOLLOW_UPS = {
+    'greeting': ['おかえり。そういえば{topic}、どうだった？', 'おかえり。{topic}のこと、聞いてもいい？'],
+    'nudge': ['ねえ、{topic}ってその後どう？', 'そういえば{topic}、どうなった？'],
+}
 
 
 def time_slot(now):
@@ -61,7 +66,9 @@ class Proactive:
         self.last_message = None
         self.store.record(proactive_awaiting=False)
 
-    def tick(self, visible: bool, busy: bool, now=None):
+    def tick(self, visible: bool, busy: bool, now=None, topic=None):
+        """topicは「声かけを出すと決まったとき」だけ呼ぶ引き当て関数。
+        送らない回で未完の話題を消費しないよう、判定を全部通ってから呼ぶ。"""
         now = now or tokyo_now()
         options = self.store.options
         if options.quiet or self.awaiting or busy or not visible:
@@ -74,7 +81,11 @@ class Proactive:
             return None
         if not self.greeting_pending and now - self.last_activity < interval:
             return None
-        text = random.choice((GREETINGS if self.greeting_pending else NUDGES)[time_slot(now)])
+        subject = str((topic() if topic else '') or '').strip()
+        if subject:
+            text = random.choice(FOLLOW_UPS['greeting' if self.greeting_pending else 'nudge']).format(topic=subject)
+        else:
+            text = random.choice((GREETINGS if self.greeting_pending else NUDGES)[time_slot(now)])
         self.greeting_pending = False
         self.last_sent = now
         self.awaiting = True

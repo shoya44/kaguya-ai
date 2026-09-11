@@ -13,7 +13,7 @@ from app.errors import ChatError
 from app.jobs import Jobs, periods
 from app.memory_store import validate_batch
 from app.persona import memory_prompt
-from app.proactive import JST, Proactive
+from app.proactive import GREETINGS, JST, Proactive, time_slot
 from app.runtime import RuntimeStore
 
 
@@ -35,6 +35,35 @@ class LocalCase(unittest.TestCase):
         self.assertIsNotNone(proactive.activity(self.now + timedelta(minutes=10)))
         self.assertIsNone(proactive.tick(True, False, self.now + timedelta(minutes=69)))
         self.assertIsNotNone(proactive.tick(True, False, self.now + timedelta(minutes=70)))
+
+    def test_a_pending_topic_replaces_the_canned_line(self):
+        proactive = Proactive(self.store, self.now)
+        event = proactive.tick(True, False, self.now, topic=lambda: '面接')
+        self.assertIn('面接', event['text'])
+
+    def test_a_topic_is_not_consumed_on_a_tick_that_sends_nothing(self):
+        """声かけを出さない回に話題を引き当てると、誰にも聞かないまま消費してしまう。"""
+        proactive = Proactive(self.store, self.now)
+        asked = []
+
+        def topic():
+            asked.append(self.now)
+            return '面接'
+
+        self.assertIsNone(proactive.tick(False, False, self.now, topic=topic))
+        self.assertIsNone(proactive.tick(True, True, self.now, topic=topic))
+        self.store.update({'quiet': True})
+        self.assertIsNone(proactive.tick(True, False, self.now, topic=topic))
+        self.assertEqual(asked, [])
+
+        self.store.update({'quiet': False})
+        self.assertIsNotNone(proactive.tick(True, False, self.now, topic=topic))
+        self.assertEqual(len(asked), 1)
+
+    def test_no_pending_topic_keeps_the_existing_greeting(self):
+        proactive = Proactive(self.store, self.now)
+        event = proactive.tick(True, False, self.now, topic=lambda: '')
+        self.assertIn(event['text'], GREETINGS[time_slot(self.now)])
 
     def test_hidden_busy_and_quiet_suppress_without_burst(self):
         proactive = Proactive(self.store, self.now)

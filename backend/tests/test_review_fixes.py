@@ -79,7 +79,7 @@ class ReviewFixTests(unittest.IsolatedAsyncioTestCase):
 
     def test_search_excludes_legacy_and_test_output_but_explicit_legacy_read_works(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             (root / 'docs').mkdir()
             (root / '.test-output').mkdir()
             (root / 'README.md').write_text('current target', encoding='utf-8')
