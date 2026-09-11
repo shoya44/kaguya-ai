@@ -7,9 +7,12 @@ from app import project_inspector, tools
 
 
 class ProjectInspectorTests(unittest.IsolatedAsyncioTestCase):
+    # 本番のROOTはresolve()済み。差し替えるROOTも同じにしておかないと、Windowsの
+    # 8.3短縮名（C:\Users\RUNNER~1\...）のように解決後の名前が変わる環境で、
+    # リポジトリ外と判定されて全件スキップになる。
     def test_search_returns_context_and_skips_dependencies(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             (root / 'src').mkdir()
             (root / 'src' / 'sample.py').write_text('one\ntwo\ndef target():\n    return 1\nfive\nsix\n', encoding='utf-8')
             (root / 'node_modules').mkdir()
@@ -23,7 +26,7 @@ class ProjectInspectorTests(unittest.IsolatedAsyncioTestCase):
 
     def test_read_limits_requested_range(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             (root / 'notes.md').write_text('\n'.join(f'line {n}' for n in range(1, 30)), encoding='utf-8')
             with patch.object(project_inspector, 'ROOT', root):
                 result = project_inspector.project_read('notes.md', 5, 8)
@@ -38,7 +41,7 @@ class ProjectInspectorTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_tools_run_dispatches_project_read(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             (root / 'README.md').write_text('Kaguya self inspection', encoding='utf-8')
             with patch.object(project_inspector, 'ROOT', root):
                 result = await tools.run('project_read', {'path': 'README.md'}, None)
