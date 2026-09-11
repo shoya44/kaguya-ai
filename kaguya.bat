@@ -8,7 +8,8 @@ if /i "%~2"=="nopause" set "KAGUYA_NO_PAUSE=1"
 if /i "%~3"=="nopause" set "KAGUYA_NO_PAUSE=1"
 
 set "COMMAND=%~1"
-if "%COMMAND%"=="" goto usage
+rem 引数なし（エクスプローラーからのダブルクリック）はメニューを出す。
+if "%COMMAND%"=="" goto menu
 if /i "%COMMAND%"=="update" goto update
 if /i "%COMMAND%"=="build" goto build
 if /i "%COMMAND%"=="check" goto check
@@ -20,7 +21,7 @@ echo.
 goto usage
 
 :update
-rem アプリ内の「最新版を反映」が動かないときの、目に見える更新手順。
+rem 更新の唯一の入口。終了 → mainを--ff-only更新 → ビルド → 起動 を順に行う。
 rem 終了 → mainを--ff-only更新 → ビルド → 起動 を順に行い、失敗はその場に表示する。
 echo Stopping Kaguya AI...
 call "%~dp0stop.bat"
@@ -82,23 +83,58 @@ goto done
 :autostart
 rem Windowsサインイン時に簡易表示で起動するタスク。管理者権限は不要。
 set "TASK_NAME=KaguyaAI_AutoStart"
-if /i "%~2"=="on" (
-  schtasks /Create /TN "%TASK_NAME%" /TR "\"%~dp0start.bat\" --mini" /SC ONLOGON /RL LIMITED /F
-  if errorlevel 1 goto failed
-  echo Registered: KaguyaAI will start minimized on next Windows sign-in.
-  goto done
-)
-if /i "%~2"=="off" (
-  schtasks /Delete /TN "%TASK_NAME%" /F
-  if errorlevel 1 (
-    echo No auto-start task found, or it could not be removed.
-  ) else (
-    echo Removed: KaguyaAI will no longer start automatically at sign-in.
-  )
-  goto done
-)
+if /i "%~2"=="on" goto autostart_on
+if /i "%~2"=="off" goto autostart_off
 echo Usage: kaguya.bat autostart on^|off
 goto failed
+
+:autostart_on
+schtasks /Create /TN "%TASK_NAME%" /TR "\"%~dp0start.bat\" --mini" /SC ONLOGON /RL LIMITED /F
+if errorlevel 1 goto failed
+echo Registered: KaguyaAI will start minimized on next Windows sign-in.
+goto done
+
+:autostart_off
+schtasks /Delete /TN "%TASK_NAME%" /F
+if errorlevel 1 (
+  echo No auto-start task found, or it could not be removed.
+) else (
+  echo Removed: KaguyaAI will no longer start automatically at sign-in.
+)
+goto done
+
+:menu
+rem このファイルはUTF-8なので、echoする文字はASCIIに限る（cp932のコンソールで化けるため）。
+rem 「if COND cmd1 ^& cmd2」は条件に関わらずcmd2が走るため、分岐は1行1ジャンプにする。
+echo.
+echo   Kaguya AI
+echo.
+echo     1  update      Update to the latest version and start again
+echo     2  check       Run all local tests and the build
+echo     3  build       Rebuild only
+echo     4  check-db    Database checks on a disposable local PostgreSQL
+echo     5  autostart   Turn sign-in auto start on or off
+echo     0  exit
+echo.
+set "CHOICE="
+set /p "CHOICE=Enter a number: "
+if "%CHOICE%"=="1" goto update
+if "%CHOICE%"=="2" goto check
+if "%CHOICE%"=="3" goto build
+if "%CHOICE%"=="4" goto checkdb
+if "%CHOICE%"=="5" goto autostart_menu
+if "%CHOICE%"=="0" exit /b 0
+if "%CHOICE%"=="" exit /b 0
+echo No such number.
+goto menu
+
+:autostart_menu
+set "TASK_NAME=KaguyaAI_AutoStart"
+set "SWITCH="
+set /p "SWITCH=Type on or off (Enter to go back): "
+if /i "%SWITCH%"=="on" goto autostart_on
+if /i "%SWITCH%"=="off" goto autostart_off
+goto menu
 
 :usage
 echo Usage: kaguya.bat ^<command^>

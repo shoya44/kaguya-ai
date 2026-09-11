@@ -2,7 +2,7 @@
 // process for the lifetime of the app; only this process's own child is ever
 // stopped, and only from the tray Quit action or app exit.
 use std::net::TcpListener;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -27,50 +27,6 @@ struct BackendProcess(Mutex<BackendState>);
 #[tauri::command]
 fn app_quit(app: AppHandle) {
     quit_app(&app);
-}
-
-/// Launch a detached PowerShell helper, then exit. The helper waits for this
-/// process to disappear, updates main explicitly, builds, and starts the app.
-/// Normal start.bat never changes Git state.
-#[tauri::command]
-fn restart_with_update(app: AppHandle) -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        let repo_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../..")
-            .canonicalize()
-            .map_err(|_| "更新元のリポジトリを確認できませんでした。")?;
-        let helper = repo_root.join("tools").join("restart_update.ps1");
-        if !helper.is_file() {
-            return Err("更新用スクリプトが見つかりません。".into());
-        }
-
-        let pid = std::process::id().to_string();
-        let mut command = Command::new("powershell.exe");
-        command
-            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
-            .arg(&helper)
-            .args(["-WaitPid", &pid])
-            .current_dir(&repo_root)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            // DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP. The helper must
-            // survive app.exit() and cannot inherit the Tauri console/job.
-            .creation_flags(0x00000008 | 0x00000200);
-        command
-            .spawn()
-            .map_err(|_| "更新処理を起動できませんでした。")?;
-
-        quit_app(&app);
-        Ok(())
-    }
-
-    #[cfg(not(windows))]
-    {
-        let _ = app;
-        Err("最新版への更新はWindows版でのみ利用できます。".into())
-    }
 }
 
 #[tauri::command]
@@ -237,7 +193,7 @@ pub fn run() {
             instance: format!("{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()),
             error: None,
         })))
-        .invoke_handler(tauri::generate_handler![backend_status, app_quit, restart_with_update, window_topmost, desktop_visible, start_mini, show_window])
+        .invoke_handler(tauri::generate_handler![backend_status, app_quit, window_topmost, desktop_visible, start_mini, show_window])
         .setup(|app| {
             if std::env::args().any(|arg| arg == "--quit") {
                 app.handle().exit(0);

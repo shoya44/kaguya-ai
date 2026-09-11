@@ -12,7 +12,7 @@ if exist "frontend\src-tauri\target\debug\app.exe" (
 )
 
 rem Stability-first: normal startup never changes the Git working tree.
-rem Repository updates are performed only by the explicit "最新版を反映" action.
+rem Repository updates happen only through kaguya.bat update.
 echo Preparing Kaguya AI. No packages will be downloaded and Git will not be changed.
 "backend\.venv\Scripts\python.exe" -B "backend\migrate.py"
 if errorlevel 1 goto failed
