@@ -100,7 +100,7 @@ class KaguyaMind:
     @staticmethod
     def _energy(now: datetime) -> float:
         hour = now.hour
-        return 24.0 if hour < 6 else 58.0 if hour < 10 else 78.0 if hour < 18 else 64.0 if hour < 23 else 38.0
+        return 24.0 if hour < 6 else 58.0 if hour < 10 else 78.0 if hour < 18 else 64.0 if hour < 23 else 30.0
 
     @staticmethod
     def _decay(values: dict[str, float], updated: datetime, now: datetime) -> dict[str, float]:
@@ -126,10 +126,10 @@ class KaguyaMind:
         value = str(text or '')
         result['boredom'] -= 4
         if re.search(r'(かぐや.{0,8}(かわいい|好き|えらい|いい子)|ありがとう|助かった)', value):
-            result['happiness'] += 8
+            result['happiness'] += 14
             result['affection'] += 1.5
         if re.search(r'(Claude|ChatGPT|チャットGPT).*(の方が|より).*(好き|賢い|すごい|良い|いい)', value, re.I):
-            result['jealousy'] += 12
+            result['jealousy'] += 32
             result['happiness'] -= 2
         if re.search(r'[？?]|教えて|なに|何|どうして|なんで', value):
             result['curiosity'] += 3
@@ -156,6 +156,28 @@ class KaguyaMind:
         if values.get('boredom', 0) >= 55:
             return '少し退屈'
         return 'いつも通り'
+
+    @staticmethod
+    def _expression(values: dict[str, float], energy: float) -> str:
+        """画面のかぐやの表情。スプライトは4種類しかないので、_moodと同じ優先順で、
+        対応する表情が無いものはnormalへ寄せる。眠さの境目はmood.Moodと揃えている。"""
+        if values.get('concern', 0) >= 45:
+            return 'normal'
+        if values.get('jealousy', 0) >= 35:
+            return 'sulky'
+        if energy < 35:
+            return 'sleepy'
+        if values.get('happiness', 0) >= 70:
+            return 'happy'
+        return 'normal'
+
+    def face(self, now: datetime) -> str:
+        """OFF時と失敗時は空文字。画面側は従来どおりローカル判定へ落ちる。"""
+        return self._safe('', self._face, now)
+
+    def _face(self, now: datetime) -> str:
+        emotions, updated = self.store.emotions(now)
+        return self._expression(self._decay(emotions, updated, now), self._energy(now))
 
     @staticmethod
     def _trait_label(row: dict) -> str:

@@ -772,6 +772,10 @@ function handleServerEvent(data: Record<string, unknown>): void {
       });
       break;
     }
+    case 'mood.changed':
+      // 表情の判定はサーバ側にある。ここは受け取ってlivingへ渡すだけ。
+      window.dispatchEvent(new CustomEvent('kaguya-mood', { detail: { mood: data.mood } }));
+      break;
     case 'settings.changed':
       controls?.applyOptions(data.options as Record<string, any>).catch(() => showError('表示設定を反映できませんでした。', null));
       break;
