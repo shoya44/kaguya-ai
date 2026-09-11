@@ -65,7 +65,11 @@ class Gemini:
         """雑談は速度優先。記憶整理ジョブの推論設定には影響させない。"""
         model = str(self.settings.gemini_model or '').lower()
         if 'gemini-3' in model:
-            return types.ThinkingConfig(thinking_level='low')
+            try:
+                return types.ThinkingConfig(thinking_level='low')
+            except (TypeError, ValueError):
+                # 古いgoogle-genaiでもGemini 3の互換thinking_budgetは送れる。
+                return types.ThinkingConfig(thinking_budget=1024)
         if 'gemini-2.5-pro' in model:
             # 2.5 Proはthinkingを無効化できないので最小予算に寄せる。
             return types.ThinkingConfig(thinking_budget=128)
