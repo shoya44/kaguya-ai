@@ -6,7 +6,7 @@ from contextlib import suppress
 from .errors import ChatError
 from .proactive import Proactive, tokyo_now
 from .jobs import Jobs
-from . import tools
+from . import relationship, tools
 
 
 class Controller:
@@ -167,6 +167,7 @@ class Controller:
             admitted = True
             await self.broadcast({'type': 'chat.accepted', 'turn_id': turn_id,
                                   'text': turn['text'], 'client_id': turn['client_id']})
+            relationship.capture_feedback(self.runtime, turn['text'], tokyo_now())
             proactive = self.proactive.activity()
             if self.cancel_requested:
                 raise asyncio.CancelledError
@@ -177,6 +178,7 @@ class Controller:
                 context = await self.memory.context()
                 hint = ' '.join(row['text'] for row in context[-2:])[:2000]
                 recalled = await self.memory.call('GET', '/recall', params={'text': turn['text'], 'context': hint})
+                recalled['relationship'] = relationship.context(self.runtime)
                 self.references = ([{'label': row['topic_key'], 'text': row['summary']}
                                     for row in recalled.get('wisdom', [])[:5]]
                                    + [{'label': row['key'], 'text': row['value']}
@@ -196,6 +198,7 @@ class Controller:
                 await self.broadcast(self.unsaved_event())
                 return
             self.unsaved = None
+            relationship.record_success(self.runtime, tokyo_now())
             self.proactive.last_activity = tokyo_now()
             await self.broadcast({'type': 'chat.completed', 'turn_id': turn_id,
                                   'text': turn['text'], 'answer': answer, 'references': self.references,
@@ -249,6 +252,7 @@ class Controller:
             await self.broadcast(self.state())
             await self.memory.complete(turn_id, answer)
             self.unsaved = None
+            relationship.record_success(self.runtime, tokyo_now())
             await self.broadcast({'type': 'chat.completed', 'turn_id': turn_id,
                                   'text': turn['text'], 'answer': answer, 'references': self.references})
         except ChatError:
