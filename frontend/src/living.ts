@@ -11,7 +11,6 @@ type LifeState = {
 };
 
 const LIFE_KEY = 'kaguya.life.v1';
-const HOUR = 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
 
 function fresh(): LifeState {
@@ -38,6 +37,7 @@ function load(): LifeState {
 }
 
 let state = load();
+let reentryTimer: number | null = null;
 
 function save(): void {
   try { localStorage.setItem(LIFE_KEY, JSON.stringify(state)); } catch { /* best effort */ }
@@ -67,7 +67,7 @@ function deterministicChoice<T>(items: readonly T[], now: Date): T {
 function activity(now: Date, idleMs: number): LifeActivity {
   const hour = now.getHours();
   const learnedAwake = preferredHours().has(hour);
-  if ((hour < 6 || hour >= 1) && idleMs > 25 * MINUTE && !learnedAwake) return 'sleeping';
+  if (hour < 6 && idleMs > 25 * MINUTE && !learnedAwake) return 'sleeping';
   if (idleMs < 3 * MINUTE) return 'idle';
   if (idleMs > 35 * MINUTE) {
     return deterministicChoice(['reading', 'playing', 'snacking', 'daydreaming'] as const, now);
@@ -81,17 +81,43 @@ function effectiveMood(now = Date.now()): LifeMood {
   return hour < 6 || hour >= 23 ? 'sleepy' : 'normal';
 }
 
+function reentryLine(activityNow: LifeActivity): string | null {
+  const lines: Partial<Record<LifeActivity, string>> = {
+    reading: 'あ、おかえり。ちょうど本読んでた。',
+    working: 'おかえり。ちょっと作業してたとこ。',
+    playing: 'あ、来た。暇だったから遊んでた。',
+    snacking: 'おかえり。……今おやつ食べてた。',
+    daydreaming: 'あ、おかえり。ちょっとぼーっとしてた。',
+    sleeping: 'ん……おかえり。ちょっと寝てた。',
+  };
+  return lines[activityNow] ?? null;
+}
+
+function showReentry(activityNow: LifeActivity): void {
+  const bubble = document.getElementById('proactive-bubble') as HTMLDivElement | null;
+  const text = reentryLine(activityNow);
+  if (!bubble || !text || !bubble.hidden) return;
+  bubble.textContent = text;
+  bubble.hidden = false;
+  if (reentryTimer !== null) window.clearTimeout(reentryTimer);
+  reentryTimer = window.setTimeout(() => {
+    if (bubble.textContent === text) bubble.hidden = true;
+  }, 5000);
+}
+
 function emit(reentry = false): void {
   const now = new Date();
   const idleMs = Math.max(0, now.getTime() - state.lastSeen);
+  const activityNow = activity(now, idleMs);
   window.dispatchEvent(new CustomEvent('kaguya-life', { detail: {
     mood: effectiveMood(now.getTime()),
-    activity: activity(now, idleMs),
+    activity: activityNow,
     energy: energy(now),
     affection: state.affection,
     reentry,
     learnedHours: [...preferredHours()],
   } }));
+  if (reentry && idleMs > 15 * MINUTE) showReentry(activityNow);
 }
 
 function reactToText(text: string): void {
