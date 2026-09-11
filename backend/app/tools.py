@@ -49,8 +49,6 @@ def declarations_for(text: str) -> list[dict]:
         names.add('remember')
     if any(word in value for word in ('リマインド', '知らせて', '声かけて', '言って', '教えて')) and time_hint:
         names.add('set_reminder')
-    # 明示的な天気質問はdirect_reply()で先に処理する。ここは「暑い？」「寒い？」等、
-    # 雑談か天気照会かモデル判断が必要な曖昧ケースだけのフォールバック。
     if any(word in value for word in ('暑い？', '暑い?', '寒い？', '寒い?')):
         names.add('weather')
     settings_hint = any(word in value for word in (
@@ -70,11 +68,11 @@ def declarations_for(text: str) -> list[dict]:
 
 def _weather_location(text: str) -> str:
     value = str(text or '').strip()
-    # 「足立区の天気」「東京の明日の天気」のような明示地点だけ拾う。
     match = re.search(r'([一-龯ぁ-んァ-ヶーA-Za-z0-9・\- ]{1,30})の(?:今日の|明日の)?(?:天気|気温|予報)', value)
     if not match:
         return ''
     candidate = match.group(1).strip()
+    candidate = re.sub(r'^(?:今日|明日|明後日)の', '', candidate).strip()
     if candidate in {'今日', '明日', '明後日', '今', '現在', 'こっち', 'ここ'}:
         return ''
     return candidate
@@ -173,7 +171,6 @@ def fast_reply(name: str, outcome: dict, user_text: str = '') -> str | None:
             suffix = ' ほかにもあるよ。' if len(items) > 5 else ''
             return '予定は、' + '／'.join(rows) + '。' + suffix
 
-    # referencesやソース調査は取得結果を読んで回答する必要があるので2回目のLLMへ渡す。
     return None
 
 
