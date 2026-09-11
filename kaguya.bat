@@ -37,13 +37,28 @@ goto failed
 :ready
 call "%~dp0tools\update_repo.bat"
 set "UPDATE_RESULT=%errorlevel%"
-if "%UPDATE_RESULT%"=="10" echo Update was skipped. See the message above. Starting the current version.
-if "%UPDATE_RESULT%"=="20" echo Could not reach origin/main. Starting the current version.
+rem スキップされたまま起動すると、更新できたように見えてしまう。ここで止める。
+if "%UPDATE_RESULT%"=="10" goto blocked
+if "%UPDATE_RESULT%"=="20" goto offline
 rem start.bat がマイグレーション・ビルド・起動をまとめて行う。
 call "%~dp0start.bat"
 if errorlevel 1 goto failed
 echo Update finished. Kaguya AI is starting.
 goto done
+
+:blocked
+echo.
+echo   The update was SKIPPED. Nothing was downloaded.
+echo   See the reason above, then run "git status" to check for local changes.
+echo   Kaguya AI was NOT started. Fix the cause and run update again.
+goto failed
+
+:offline
+echo.
+echo   Could not reach origin/main. Nothing was downloaded.
+echo   Check the network, then run update again.
+echo   Start the current version with start.bat if you want to use it now.
+goto failed
 
 :build
 rem 依存関係の自動インストールはしない。既存のnode_modulesとcargoキャッシュを使う。
