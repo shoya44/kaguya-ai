@@ -50,7 +50,10 @@ def declarations_for(text: str) -> list[dict]:
         names.add('set_reminder')
     if any(word in lower for word in ('天気', '気温', '降水', '予報')) or any(word in value for word in ('雨', '雪', '傘', '暑い', '寒い')):
         names.add('weather')
-    if any(word in value for word in ('設定', '静かに', '声かけ', '文字サイズ', 'フォント', '最前面', '天気の場所')):
+    settings_hint = any(word in value for word in (
+        '設定', '静かに', '文字サイズ', 'フォント', '最前面', '天気の場所',
+        '声かけ間隔', '声かけの間隔', '声かけを停止', '声かけ停止', '声かけを再開'))
+    if settings_hint:
         names.add('app_settings')
     schedule_hint = any(word in value for word in ('予定', 'カレンダー', 'スケジュール', '会議', '予定に入れ', '予定入れ'))
     if schedule_hint or (date_hint and any(word in value for word in ('何ある', '何かある'))):
