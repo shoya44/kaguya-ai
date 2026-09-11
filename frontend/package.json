@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "manual": "node scripts/build-manual.mjs",
+    "prebuild": "node scripts/build-manual.mjs",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },

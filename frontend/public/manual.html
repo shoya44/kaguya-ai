@@ -5,42 +5,133 @@
 body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;max-width:850px;padding:24px;margin:auto}h1,h2{color:#ddc3ff;line-height:1.4}h1{font-size:26px}h2{font-size:21px;margin-top:36px}code{background:#342540;padding:2px 5px;border-radius:4px;overflow-wrap:anywhere}table{width:100%;border-collapse:collapse}td,th{border:1px solid #665070;padding:8px;text-align:left}a{color:#d5b5ff}.note{padding:14px;background:#30203b;border-left:4px solid #c69bed}li{margin:8px 0}@media(max-width:450px){body{padding:12px;font-size:14px}td,th{padding:6px}}
 </style>
 <h1>かぐやAI 操作マニュアル</h1>
-<p>Windows PCを母艦にして、PCまたは同じWi-FiのiPhoneから「かぐや」と会話する個人用アプリです。会話・記憶・予定はPC側に保存し、キャラクターの生活演出は各端末内で軽量に動きます。</p>
-<h2>1. 起動・終了・最新版への更新</h2>
-<ul><li>通常起動は <code>C:\kaguya-ai\start.bat</code>。DBマイグレーションとビルドを行って起動します。</li><li><strong>通常起動ではGitHubから自動更新しません。</strong> 安定性を優先し、使っている版を勝手に変更しない設計です。</li><li>終了はタスクトレイの「終了」または <code>stop.bat</code>。ウィンドウの×は常駐したまま非表示になります。</li><li>PC版の「最新版を反映」は、確認後に本体を終了し、<code>main</code>を安全にfast-forward更新してビルドし、自動で起動し直します。</li><li>更新できない場合（オフライン、main以外、ローカル変更あり等）は現在版の再起動を試みます。更新ログは <code>%LOCALAPPDATA%\KaguyaAI\update.log</code> です。</li></ul>
-<p class="note">iPhone画面には更新ボタンを出しません。PCのソース更新・再ビルドはPC版からだけ実行します。</p>
-<h2>2. 会話する</h2>
-<ul><li>初期画面は「会話」です。「記憶」「設定」は補助画面で、この使い方は設定画面から開きます。</li><li>PCはEnterで送信・Shift+Enterで改行。<strong>iPhoneなどのタッチ端末では改行キーは改行</strong>で、送信は「送信」ボタンだけです。最大2,000文字、同時に1件です。</li><li>入力中はキャラクターが小さな顔表示に縮まり、そのぶん会話履歴が広がります。</li><li>書きかけはこの端末の中だけに保存され、送信が受理された時点で消えます。送信前にタブを閉じても開き直せば戻ります。</li><li>返答は書き終わりを待たず、届いた順に表示されます。画面上部に接続状態を常設し、生成中は「接続中」「回答を生成中」「保存中」を出します。</li><li>過去の会話を読んでいる間は自動で最下部へ移動しません。「新しい返答 ↓」で最新へ戻れます。</li><li>返答のあとの「もっと詳しく」「例をあげて」「短くまとめて」は定型ボタンです。押すと普通の会話として送るだけで、候補を作るための追加のGemini呼び出しはしません。</li><li>返答の下に、実際にかかった時間（書き始めまで／全体）を小さく出します。</li><li>通常会話は速度優先のGemini設定です。一時的なGemini 500系・通信エラーだけ短く1回再試行します。429（利用制限）や長いタイムアウトは自動で繰り返しません。</li><li>「生成停止」で現在の生成を止められます。外部API側の処理・利用枠まで必ず止まるわけではありません。</li><li>失敗した会話は「再送する」で再試行できます。回答生成後のDB保存だけ失敗した場合は「保存のみ再試行」を使います。</li><li>記憶整理中に会話した場合は、<strong>会話を優先して整理を中断</strong>します。未処理の原文は残ります。</li></ul>
-<h2>3. iPhoneから使う</h2>
-<p>PCとiPhoneを同じ家庭内Wi-Fiに接続し、PCのかぐやAIを起動した状態で <code>http://&lt;PCのLAN IP&gt;:8765/</code> を開きます。PC版と同じFastAPI・Gemini・記憶DBを利用します。</p>
-<ul><li>チャット、天気、予定、参照資料、自分の仕様確認はiPhoneからも利用できます。</li><li>ホーム画面へ追加した場合もSafariのタブとして開きます。HTTP接続のためスタンドアロン起動はできません。</li><li>PCが終了・スリープしている間は利用できません。</li><li>HTTPS/Web Pushは未実装です。Safariがバックグラウンドのページを止めても、再表示時に生活状態を再計算します。</li><li>生活時間の学習・軽い感情状態は端末のlocalStorageに保存されるため、PCとiPhoneでは別々に少しずつ馴染みます。</li></ul>
-<h2>4. Living Kaguya</h2>
-<p>追加のLLM呼び出しを使わず、時刻・利用間隔・簡単な会話キーワードだけで「生活している感じ」を演出します。</p>
-<table><tr><th>状態</th><th>例</th></tr><tr><td>生活</td><td>読書、作業、遊び、ぼーっとする、おやつ、睡眠</td></tr><tr><td>表情</td><td>normal / happy / sleepy / sulky。<strong>PC側で決めて全端末へ配信する</strong>ので、PCで褒めればiPhoneのかぐやも同じ表情になります</td></tr><tr><td>復帰</td><td>しばらく離れて戻ると「本読んでた」「ちょっと寝てた」等を表示することがあります。<strong>別の端末で話していた時間も「会っていた」に数える</strong>ので、PCで話した直後にiPhoneを開いても出ません</td></tr><tr><td>学習</td><td>よく会話する時間帯を学習し、その時間は起きている傾向になります。<strong>どの端末で話した分も数えます</strong></td></tr></table>
-<p>キャラクターPNGには低負荷な上下・呼吸・傾きモーションがあります。会話中・考え中・記憶整理中などの既存状態が優先されます。</p>
-<h2>5. Kaguya Mind（実験機能・既定OFF）</h2>
-<p>かぐや自身の感情・好み・気にかけていることを、少しずつ育てる実験機能です。「設定」でONにすると動きます。<strong>OFFのあいだは何も変わりません</strong>（追加のGemini呼び出しも、追加の消費トークンもありません）。</p>
-<table><tr><th>育つもの</th><th>内容</th></tr><tr><td>気分</td><td>褒められた、他のAIと比べられた、つらい話をされた等で変化し、時間が経つと戻ります</td></tr><tr><td>好み</td><td>かぐやが自分で「あたしは○○が好きだよ」と言い切ったときだけ覚えます。繰り返すほど定着し、<strong>一度言っただけで定着しなかった好みは30日で忘れます</strong>。確信度が低いうちは「たぶん」のように曖昧に話します</td></tr><tr><td>気にかけていること</td><td>「明日面接がある」のような予定を覚えておき、<strong>過ぎてから</strong>一度だけ自分から聞きます。返事や自発的な声かけのどちらかで触れます。返事がなければ2回で諦め、しばらく経つと忘れます</td></tr><tr><td>よく使う言い方</td><td>同じ短い言い回しの候補を記録するだけで、自動実行はしません</td></tr></table>
-<p>保存先は <code>%LOCALAPPDATA%\KaguyaAI\mind.db</code> で、会話・記憶（PostgreSQL）とは分かれています。MindがONのあいだは、画面のかぐやの表情もMindの気分に従います。</p>
-<p>最初からにしたいときは「設定 → <strong>Kaguya Mindの蓄積を消す</strong>」を使います。かぐやの感情・好み・気にかけていることだけが消え、会話・記憶・かぐやの接し方は消えません。</p>
-<h2>6. 天気</h2>
-<p>「今日の天気は？」「傘いる？」「足立区の明日の天気」のように聞けます。明示的な天気質問は<strong>Geminiを経由せずOpen-Meteoへ直接問い合わせる</strong>ため、低トークン・低遅延です。</p>
-<ul><li>既定地点は東京。会話で「天気の場所を横浜にして」のように変更できます。</li><li>成功した天気は30分キャッシュします。</li><li>外部APIが一時的に落ちても、直近6時間以内の成功データがあれば「直近の取得結果」として返します。</li><li>「今日は寒いね」のような雑談だけでは、強制的に天気APIへ飛ばしません。</li></ul>
-<h2>7. 予定・リマインダー</h2>
-<p>「今日の予定は？」「明日なにかある？」のような<strong>確認だけ</strong>の質問は、Geminiを呼ばずローカルの予定表から直接答えます。追加・削除・変更や時刻を含む依頼はGeminiが解釈します。</p>
-<p><strong>予定</strong>と<strong>時刻になったら声をかけるリマインダー</strong>は別機能です。</p>
-<ul><li>「明日15時に歯医者の予定を入れて」「今週の予定は？」→ ローカルカレンダー。保存先はPCの <code>%LOCALAPPDATA%\KaguyaAI\calendar.json</code>。</li><li>「明日9時に薬って教えて」→ リマインダー。時刻になると吹き出しで知らせます。</li><li>PC停止中は通知できません。期限を過ぎたリマインダーは起動後の定期確認で拾います。</li></ul>
-<p>リマインダーは吹き出しをクリックして確認するまで保持します。複数件は順に表示し、次の通知は最大約30秒後に届きます。切断中の未確認通知も再接続後に表示します。</p>
-<h2>8. 記憶</h2>
-<p>「記憶」タブでは3つを分けて扱います。</p><table><tr><th>画面上の呼び方</th><th>役割</th><th>できる操作</th></tr><tr><td>あなたについて覚えていること</td><td>好み・習慣・続いている事情</td><td>訂正 / もう当てはまらない</td></tr><tr><td>かぐやの接し方</td><td>呼び方、返答の長さ、相談時の接し方</td><td>変更 / 元に戻す</td></tr><tr><td>会話履歴</td><td>過去のやり取りを読み返す</td><td>訂正 / 削除</td></tr></table><p>タブの先頭に、いま何件が長期記憶への反映待ちかと、最近覚えた・更新した内容が出ます。かぐやが返答で実際に参照した記憶は、その返答の下の「参照した記憶」から確認できます。</p>
-<ul><li>「これ覚えておいて」は、その場で長期記憶へ保存します。</li><li>「今すぐ整理」は未処理会話をGeminiへ送り、長く使う事実・好みを知恵にまとめます。</li><li>自動整理をONにすると、<strong>未整理の会話があり、会話が5分以上途切れているとき</strong>に少量ずつ整理します。確認間隔は15分、1回につき1バッチだけです。</li><li>未整理の会話が無いときはGemini APIを呼びません。</li><li>「今回だけ詳しく」のような一度きりの指示は、長期的な好みとしては保存しません。</li><li>整理中に会話が始まれば整理を中断してチャットを優先します。</li><li>整理にも速度優先の低Thinking設定を適用します。</li><li>失敗時は「利用制限」「タイムアウト」「結果形式不正」「保存失敗」など、分かる範囲で原因を表示します。未処理原文は保持します。</li><li>手動・自動の整理API回数は「設定」の1日上限に含まれます。</li></ul>
-<h2>9. 参照ファイル・自分の仕様確認</h2>
-<ul><li><code>%LOCALAPPDATA%\KaguyaAI\references</code> に <code>.md / .txt / .json / .csv</code> を置くと、「参照資料から○○を探して」のように検索できます。</li><li>「自分の仕様をソースから調べて」「READMEを確認して」のように聞くと、かぐやAI自身のREADME/docs/ソースを読み取り専用で確認します。</li><li>自己仕様検索は <code>.venv / node_modules / target / dist / .git</code> 等へ入らないため、大きな依存フォルダを走査しません。</li><li>自己参照は読み取り専用です。会話から自分のソースを書き換える機能はありません。</li></ul>
-<h2>10. 設定</h2>
-<table><tr><th>設定</th><th>意味</th></tr><tr><td>自発的な声かけを停止</td><td>ONでもユーザーからの会話には応答します</td></tr><tr><td>会話していない時間に記憶を自動整理する</td><td>ONなら、未整理の会話があり会話が5分以上途切れたときに少量ずつ実行します</td></tr><tr><td>実験機能「Kaguya Mind」を使う</td><td>ONにするとかぐや自身の感情・好み・気にかけていることが育ちます。OFFなら従来どおりです。<strong>この項目だけは切り替えた時点で反映され、「設定を保存」は不要です</strong></td></tr><tr><td>Kaguya Mindの蓄積を消す</td><td>育った感情・好み・気にかけていることだけを削除します。会話と記憶は消えません</td></tr><tr><td>声かけ間隔</td><td>60〜240分</td></tr><tr><td>整理APIの1日上限</td><td>1〜10回。1回で生の発言を30件処理します。既定の3なら1日90件ぶん</td></tr><tr><td>回答の出力上限</td><td>256〜8,192トークン</td></tr><tr><td>最前面表示</td><td>PC/Tauri画面に適用（iPhoneでは表示しません）</td></tr><tr><td>文字サイズ</td><td>12〜22</td></tr></table>
-<h2>11. 簡易表示</h2>
-<p>PC版では「簡易表示に切り替え」でキャラクター中心の小型表示にできます。通常表示への復帰はダブルクリックまたは右クリックメニューです。iPhoneは通常のモバイルレイアウトを使用します。</p>
-<h2>12. 困ったとき</h2>
-<table><tr><th>症状</th><th>確認</th></tr><tr><td>返答が失敗する</td><td>エラー表示が利用制限/タイムアウト/DB保存のどれか確認します。429は時間をおいて再送してください。</td></tr><tr><td>「今すぐ整理」が失敗</td><td>設定画面の整理状態に具体的な原因を表示します。原文は消えません。本日のAPI上限も確認してください。</td></tr><tr><td>天気が取得できない</td><td>PCのインターネット接続と地点名を確認。直近キャッシュがあれば自動利用します。</td></tr><tr><td>最新版を反映後に起動しない</td><td><code>%LOCALAPPDATA%\KaguyaAI\update.log</code> を確認。必要なら <code>start.bat</code> で現在版を起動できます。</td></tr><tr><td>DB接続エラー</td><td>PostgreSQLサービスと <code>backend/.env</code> の接続先をPC上で確認してください。</td></tr><tr><td>ポート8765を使用できない</td><td>別のかぐやAI/開発サーバーが残っていないか確認してください。</td></tr></table>
-<h2>13. ローカルチェック</h2>
-<p>更新後の確認はリポジトリ直下の <code>kaguya.bat check</code> を使います。Pythonの全unittest、フロントの通常UIテストとLivingテスト、TypeScript/Viteビルドを実行します。ライブGemini・天気API・本番DBへの呼び出しは行いません。</p>
+<p>この内容は README から自動生成しています。編集は README 側で行ってください。</p>
+<h3>天気</h3>
+<p>「今日の天気は？」「傘いる？」「足立区の明日の天気」のような明示的な天気質問は、Geminiを呼ばずOpen-Meteoへ直接問い合わせます。</p>
+<ul><li>APIキー不要</li><li>30分キャッシュ</li><li>外部API障害時は直近6時間以内の成功結果をフォールバック可能</li><li>「今日は寒いね」のような雑談だけでは強制的に天気APIへ送らない</li></ul>
+<p>既定地点は東京です。会話で「天気の場所を横浜にして」のように変更できます。</p>
+<h2>起動と終了</h2>
+<ul><li>起動は <code>C:\kaguya-ai\start.bat</code>。DBマイグレーションとビルドを行って起動します</li><li><strong>通常起動ではGitHubから自動更新しません。</strong> 使っている版を勝手に変えない設計です</li><li>終了はタスクトレイの「終了」または <code>stop.bat</code>。ウィンドウの×は常駐したまま非表示になります</li><li>iPhone画面には更新ボタンを出しません。PCのソース更新・再ビルドはPC版からだけ実行します</li></ul>
+<h2>設定</h2>
+<table><tr><th>設定</th><th>意味</th></tr><tr><td>自発的な声かけを停止</td><td>ONでもユーザーからの会話には応答します</td></tr><tr><td>会話していない時間に記憶を自動整理する</td><td>ONなら、未整理の会話があり会話が5分以上途切れたときに少量ずつ実行します</td></tr><tr><td>実験機能「Kaguya Mind」を使う</td><td>ONにするとかぐや自身の感情・好み・気にかけていることが育ちます。OFFなら従来どおりです。<strong>この項目だけは切り替えた時点で反映され、「設定を保存」は不要です</strong></td></tr><tr><td>Kaguya Mindの蓄積を消す</td><td>育った感情・好み・気にかけていることだけを削除します。会話と記憶は消えません</td></tr><tr><td>声かけの間隔</td><td>60〜240分</td></tr><tr><td>整理APIの1日上限</td><td>1〜10回。1回で生の発言を30件処理します。既定の3なら1日90件ぶん</td></tr><tr><td>回答の出力上限</td><td>256〜8,192トークン</td></tr><tr><td>最前面表示</td><td>PC/Tauri画面に適用（iPhoneでは表示しません）</td></tr><tr><td>文字サイズ</td><td>12〜22</td></tr></table>
+<h2>基本操作</h2>
+<h3>画面</h3>
+<p>初期画面は「会話」です。「記憶」「設定」は補助画面で、「使い方」は設定画面の中にあります。</p>
+<h3>会話</h3>
+<ul><li>PC: Enterで送信、Shift+Enterで改行</li><li>iPhone等のタッチ端末: <strong>改行キーは改行</strong>。送信は送信ボタンだけ</li><li>入力中はキャラクターが小さな顔表示に縮まり、そのぶん会話履歴が広がります</li><li>書きかけは端末内に保存され、送信が受理された時点で消えます（送信前にタブが閉じても戻ります）</li><li>過去の会話を読んでいる間は自動で最下部へ移動しません。「新しい返答 ↓」で戻ります</li><li>返答は届いた順に表示されます（ストリーミング）</li><li>返答のあとに「もっと詳しく」「例をあげて」「短くまとめて」が出ます。押すと普通の会話として送るだけです</li><li>返答の下に実測の所要時間（書き始めまで / 全体）を小さく出します</li><li>最大2,000文字</li><li>同時生成は1件</li><li>失敗した会話は「再送する」</li><li>回答生成済みで保存だけ失敗した場合は「保存のみ再試行」</li></ul>
+<h3>進捗と接続状態</h3>
+<p>画面上部に接続状態（接続中… / 接続済み / 未接続）を常設し、生成中は「接続中」「回答を生成中」「保存中」を出します。実際には検索していないのに「記憶を探しているよ」のような演出は出しません。</p>
+<h3>終了</h3>
+<ul><li>タスクトレイ → 終了</li><li><code>stop.bat</code></li></ul>
+<p>ウィンドウの×はアプリ終了ではなく非表示です。</p>
+<h3>簡易表示</h3>
+<p>PC版では「簡易表示に切り替え」でキャラクター中心の小型表示へ切り替えられます。通常表示への復帰はダブルクリックまたは右クリックメニューです。</p>
+<h2>iPhoneから使う</h2>
+<p>PCとかぐやAIを起動した状態で、iPhoneを同じWi-Fiへ接続します。</p>
+<pre><code>http://&lt;PCのLAN IP&gt;:8765/</code></pre>
+<p>iPhoneはPC側と同じFastAPI・Gemini・PostgreSQLを使います。別のiPhoneアプリや別DBではありません。</p>
+<p>利用可能：</p>
+<ul><li>通常チャット（ストリーミング表示）</li><li>記憶</li><li>天気</li><li>カレンダー</li><li>リマインダー（画面を開いている間）</li><li>参照ファイル</li><li>自分自身の仕様確認</li><li>Living Kaguya</li></ul>
+<p>制約：</p>
+<ul><li>PCが終了/スリープ中は使えない</li><li>HTTPS未実装</li><li>Web Push未実装</li><li>PC更新ボタン・最前面設定はiPhoneには出さない</li><li>ホーム画面へ追加した場合もSafariのタブとして開きます。マニフェストの <code>display</code> は <code>browser</code> のままです。iOSのスタンドアロン起動はHTTPS必須で、HTTP接続の本アプリでは 「HTTPS-Onlyが有効なHTTP URL」エラーになり起動できないためです</li></ul>
+<p>Living Kaguyaの表情はPC側のサーバが決めるため、PCとiPhoneで同じになります。最後に会った時刻と利用時間の学習も、どの端末で話した分も数えるので揃います。生活状態（読書・睡眠など）の見せ方だけが端末ごとです。</p>
+<h2>Living Kaguya</h2>
+<p>追加のLLM/API呼び出しを使わず、キャラクターがアプリ内で生活しているように見せる軽量レイヤーです。</p>
+<p>状態例：</p>
+<ul><li>idle</li><li>reading</li><li>working</li><li>playing</li><li>snacking</li><li>daydreaming</li><li>sleeping</li></ul>
+<p>表情：</p>
+<ul><li>normal</li><li>happy</li><li>sleepy</li><li>sulky</li></ul>
+<p>褒められる、他のAIと比べられる、深夜になる等で変化します。</p>
+<p><strong>表情はPC側のサーバが決めて全端末へ配信します。</strong> かぐやはPC上に1人しかいないため、PCで褒めればiPhone側のかぐやも同じ表情になります。Kaguya MindがONのときはMindの感情モデルが、OFFのときは会話の言葉と時刻だけの簡易判定が使われます。</p>
+<p>生活状態（読書・睡眠など）の見せ方は端末ごとです。最後に会った時刻と、よく会話する時間帯の学習は、どの端末で話した分も数えます。PCで話した直後にiPhoneを開いても「ちょっと寝てた」とは言いません。</p>
+<p>既存PNGにはCanvasの低負荷な上下・呼吸・傾きモーションを付けています。専用の <code>snack.png</code> や <code>sulky.png</code> 等は将来追加可能ですが、未配置ファイルは参照しません。</p>
+<h2>Kaguya Mind（実験機能）</h2>
+<p>かぐや自身の感情・好み・気にかけていることを、少しずつローカルに育てる実験レイヤーです。<strong>既定はOFF</strong>で、「設定 → 実験機能「Kaguya Mind」を使う」で切り替えます。このチェックだけは切り替えた時点で反映されます（「設定を保存」は不要です）。</p>
+<p>追加のGemini/外部API呼び出しはありません。OFFのときはSQLiteを開かず、プロンプトにも何も足さないため、会話・記憶・ツールの動作と消費トークンはOFF導入前と同じです。</p>
+<h3>既存機能との関係</h3>
+<p>Kaguya Mindは既存機能とは別レイヤーで、保存先も分かれています。</p>
+<table><tr><th></th><th>保存先</th><th>役割</th></tr><tr><td>Memory（3層）</td><td>PostgreSQL</td><td>ユーザーについて覚えていること</td></tr><tr><td>Relationship Memory</td><td><code>settings.json</code></td><td>慣れ・利用日数・話し方フィードバック</td></tr><tr><td>かぐやの表情</td><td>サーバ（メモリ上）</td><td>normal / happy / sleepy / sulky。全端末で共通</td></tr><tr><td>Living Kaguya</td><td>localStorage</td><td>画面上の生活状態と、よく会話する時間帯（どの端末の会話も数える）</td></tr><tr><td>Kaguya Mind</td><td><code>mind.db</code></td><td>かぐや自身の感情・好み・未完の話題</td></tr></table>
+<p>会話本体との接点は <code>before_reply</code> / <code>after_reply</code> の2箇所だけです。Mind内部で例外が起きても会話は止まらず、Mindの寄与だけが無くなります（fail-open）。<code>mind.db</code> を削除しても、会話・記憶・Relationship Memoryは影響を受けません。</p>
+<p>Living Kaguyaの表情とMindの気分は<strong>別々に動きます</strong>。画面のかぐやが <code>sleepy</code> でも、Mindの気分は「ご機嫌」のことがあります。</p>
+<h3>育つもの</h3>
+<p><strong>感情（Emotion Vector）</strong>happiness / curiosity / boredom / affection / jealousy / concern の6つに、時刻から算出するenergyを加えたもの。褒められた、他のAIと比べられた、つらい話をされた等でローカルに変化し、時間が経つと基準値へ戻ります。戻る速さは感情ごとに違い、affectionが最も長く残ります。</p>
+<p><strong>好み（Self Model）</strong>かぐやが自分の回答で「あたしは○○が好きだよ / 苦手かな」と<strong>言い切った</strong>ときだけ、自分の好みとして記録します。「好きじゃない」「好きって言ったら」のような否定・仮定や、ユーザー発言の引用は学習しません。最初は確信度が低く、同じ傾向が重なるほど定着します。<code>かぐや --likes/dislikes--&gt; 話題</code> として内部グラフにも残します。一度言っただけで定着しなかった好みは30日で忘れます。確信度が低いうちは「たぶん」のように曖昧に話します。</p>
+<p><strong>気にかけていること（未完の話題）</strong>「明日面接がある」「熱が出たかも」のような予定・体調を覚えておき、あとから自分で触れます。</p>
+<ul><li>予定が<strong>過ぎてから</strong>触れます。言われた当日には聞きません</li><li>会話の返事のほか、<strong>自発的な声かけ</strong>でも触れます。「おかえり」が「おかえり。そういえば面接、どうだった？」になります</li><li>どちらか一方で聞いたら、もう片方では持ち出しません</li><li>ユーザーが自分でその話題に戻れば、そこで終わりにします</li><li>返事がなくても2回で諦めます</li><li>片付いた話題は14日、動きのない話題は30日で忘れます</li></ul>
+<p>声かけの間隔・停止の設定は従来どおりです。話題が無いときや、Kaguya MindがOFFのときは、これまでの定型文のままです。</p>
+<p>抽出はローカルの規則だけで行い、誤検出を避ける側に倒しています。語尾がひらがなの名詞（「打ち合わせ」「引っ越し」など）は拾えません。</p>
+<p><strong>よく使う言い方（Shortcut候補）</strong>同じ短い言い回しが3回以上現れたら候補として記録します。<strong>現時点では自動実行しません</strong>。設定画面に表示するだけで、プロンプトへは渡しません。</p>
+<h3>設定画面の表示</h3>
+<p>ONのときだけ、現在の気分・育ち具合・上位の好み・気にかけている話題の件数を1行で表示します。内部の数値やテーブル名は会話へ出しません。</p>
+<h3>リセット</h3>
+<p>「設定 → Kaguya Mindの蓄積を消す」で <code>mind.db</code> を削除し、育ったものを最初からにできます。会話・記憶（PostgreSQL）・かぐやの接し方・Relationship Memoryは消えません。</p>
+<h3>制約</h3>
+<ul><li><code>mind.db</code> にはユーザー発話の短い抜粋が残ります。記憶画面の個別「削除」とは連動しないため、消す場合は上記のリセットを使います</li><li>会話・保存の実行中はリセットできません</li></ul>
+<h2>Function Calling / ローカル機能</h2>
+<h3>リマインダー</h3>
+<p>例：</p>
+<pre><code>明日9時に薬って教えて
+30分後に声かけて</code></pre>
+<h3>カレンダー</h3>
+<p>例：</p>
+<pre><code>明日15時に歯医者の予定を入れて
+今週の予定を教えて</code></pre>
+<p>保存先：</p>
+<pre><code>%LOCALAPPDATA%\KaguyaAI\calendar.json</code></pre>
+<h3>設定変更</h3>
+<p>例：</p>
+<pre><code>静かにして
+文字サイズを16にして
+天気の場所を横浜にして</code></pre>
+<h3>参照ファイル</h3>
+<p>以下へファイルを置きます。</p>
+<pre><code>%LOCALAPPDATA%\KaguyaAI\references</code></pre>
+<p>対象：<code>.md</code>, <code>.txt</code>, <code>.json</code>, <code>.csv</code></p>
+<p>例：</p>
+<pre><code>参照資料から勤怠の締め日を探して</code></pre>
+<h3>自分自身の仕様確認</h3>
+<p>読み取り専用でREADME/docs/ソースを確認できます。</p>
+<pre><code>自分の簡易表示の仕様をソースから調べて
+READMEを確認してiPhone対応を教えて</code></pre>
+<p><code>.git</code>, <code>.venv</code>, <code>node_modules</code>, <code>target</code>, <code>dist</code> 等は走査しません。ソースコードを書き換えるFunction Callingはありません。</p>
+<h2>記憶</h2>
+<h3>3層</h3>
+<table><tr><th>層</th><th>画面上の呼び方</th><th>役割</th><th>できる操作</th></tr><tr><td><code>raw_memory</code></td><td>会話履歴</td><td>過去のやり取りを読み返す</td><td>訂正 / 削除</td></tr><tr><td><code>wisdom</code></td><td>あなたについて覚えていること</td><td>好み・習慣・続いている事情</td><td>訂正 / もう当てはまらない</td></tr><tr><td><code>persona</code></td><td>かぐやの接し方</td><td>呼び方、返答の長さ、相談時の接し方</td><td>変更 / 元に戻す</td></tr></table>
+<p>知恵の蓄積（<code>wisdom</code>）と会話履歴の長期保存（<code>raw_memory</code>）は別に設計しています。整理済みで7日を過ぎた会話原文は削除されますが、そこから作られた知恵は残ります。</p>
+<p>「記憶」タブの先頭には、いま何件が長期記憶への反映待ちかと、最近覚えた・更新した内容を出します。かぐやが返答で実際に参照した記憶は、その返答の下の「参照した記憶」から確認できます。</p>
+<h3>即時記憶</h3>
+<pre><code>これ覚えておいて</code></pre>
+<p>と明示すると、その場で知恵へ保存します。</p>
+<h3>検索</h3>
+<p>記憶の呼び出しも、記憶タブの検索も、全角・半角と大文字・小文字を揃えてから部分一致で探します。いまの発言に一致した記憶を、直前の話題にだけ一致した記憶より優先します（直前の話題に引きずられないため）。「今回だけ詳しく」のような一度きりの指示は、長期的な好みとしては保存しません。</p>
+<h3>整理</h3>
+<p>「設定 → 今すぐ整理」で未処理の会話から長期的な情報を抽出します。</p>
+<ul><li>Geminiへ送るのは入力上限内の未処理会話</li><li>結果はPydantic schemaで検証</li><li>根拠IDを検証してからDBへ保存</li><li>失敗時は未処理原文を保持</li><li>会話が始まったら整理を中断</li><li>1日のAPI上限あり</li></ul>
+<p>接し方（<code>persona</code>）の自動更新は従来どおり慎重で、週次かつ「明示された知恵」が3日以上の別々の日で確認できた場合だけ候補にします。手動で変更・保護した項目は上書きしません。</p>
+<p>自動整理の実行タイミングは「安定性優先の動作 → 記憶整理」を参照してください。</p>
+<h2>保存場所</h2>
+<table><tr><th>データ</th><th>保存先</th></tr><tr><td>会話/知恵/接し方/リマインダー</td><td>PostgreSQL</td></tr><tr><td>設定/整理回数</td><td><code>%LOCALAPPDATA%\KaguyaAI\settings.json</code></td></tr><tr><td>ローカル予定</td><td><code>%LOCALAPPDATA%\KaguyaAI\calendar.json</code></td></tr><tr><td>参照資料</td><td><code>%LOCALAPPDATA%\KaguyaAI\references</code></td></tr><tr><td>Living状態（生活状態・利用時間の学習）</td><td>各ブラウザ/WebViewのlocalStorage</td></tr><tr><td>Kaguya Mind（実験機能）</td><td><code>%LOCALAPPDATA%\KaguyaAI\mind.db</code></td></tr><tr><td>更新ログ</td><td><code>%LOCALAPPDATA%\KaguyaAI\update.log</code></td></tr></table>
+<h2>更新手順</h2>
+<p>通常はPC版の「最新版を反映」を使用します。</p>
+<p>手動で更新する場合：</p>
+<pre><code>cd C:\kaguya-ai
+stop.bat
+git switch main
+git pull --ff-only origin main
+kaguya.bat check
+start.bat</code></pre>
+<p><code>start.bat</code> 単体では <code>git pull</code> しません。</p>
+<h2>トラブルシュート</h2>
+<h3>Gemini利用制限</h3>
+<p>429は自動連打しません。表示された待ち時間を目安に再送してください。</p>
+<h3>タイムアウト</h3>
+<p>長いタイムアウト後の自動再試行はしません。手動で再送してください。</p>
+<h3>記憶整理失敗</h3>
+<p>「設定」の整理ステータスを確認してください。未処理原文は保持されます。</p>
+<h3>天気失敗</h3>
+<p>インターネット接続と地点名を確認してください。直近6時間以内の成功キャッシュがあれば自動利用します。</p>
+<h3>更新後に再起動しない</h3>
+<pre><code>%LOCALAPPDATA%\KaguyaAI\update.log</code></pre>
+<p>を確認してください。現在版は <code>start.bat</code> から手動起動できます。</p>
+<h3>ポート8765</h3>
+<p>別のかぐやAI/uvicorn/開発サーバーが8765を使っていないか確認してください。</p>
