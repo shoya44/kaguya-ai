@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import sqlite3
 import unicodedata
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from threading import RLock
@@ -73,9 +74,18 @@ class MindStore:
                     self._ready = True
         return conn
 
+    @contextmanager
+    def _session(self):
+        conn = self._connect()
+        try:
+            yield conn
+            conn.commit()
+        finally:
+            conn.close()
+
     def emotions(self, now: datetime) -> tuple[dict[str, float], datetime]:
         stamp = now.isoformat()
-        with self.lock, self._connect() as conn:
+        with self.lock, self._session() as conn:
             for name, value in DEFAULT_EMOTIONS.items():
                 conn.execute('INSERT OR IGNORE INTO emotions(name,value,updated_at) VALUES (?,?,?)',
                              (name, value, stamp))
@@ -86,7 +96,7 @@ class MindStore:
 
     def save_emotions(self, values: dict[str, float], now: datetime) -> None:
         stamp = now.isoformat()
-        with self.lock, self._connect() as conn:
+        with self.lock, self._session() as conn:
             for name, value in values.items():
                 conn.execute('''INSERT INTO emotions(name,value,updated_at) VALUES (?,?,?)
                     ON CONFLICT(name) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at''',
@@ -97,7 +107,7 @@ class MindStore:
         if not name:
             return
         stamp = now.isoformat()
-        with self.lock, self._connect() as conn:
+        with self.lock, self._session() as conn:
             old = conn.execute('SELECT * FROM traits WHERE name=?', (name,)).fetchone()
             if old:
                 evidence = int(old['evidence']) + 1
@@ -114,18 +124,15 @@ class MindStore:
 
     def traits_for(self, text: str, limit: int = 5) -> list[dict]:
         normalized = unicodedata.normalize('NFKC', text).casefold()
-        with self.lock, self._connect() as conn:
+        with self.lock, self._session() as conn:
             rows = conn.execute('''SELECT * FROM traits
                 ORDER BY confidence DESC,evidence DESC,updated_at DESC LIMIT 50''').fetchall()
-        result = []
         relevant = [row for row in rows if unicodedata.normalize('NFKC', row['name']).casefold() in normalized]
         fallback = [row for row in rows if row not in relevant and float(row['confidence']) >= .55]
-        for row in (relevant + fallback)[:limit]:
-            result.append(dict(row))
-        return result
+        return [dict(row) for row in (relevant + fallback)[:limit]]
 
     def top_traits(self, limit: int = 8) -> list[dict]:
-        with self.lock, self._connect() as conn:
+        with self.lock, self._session() as conn:
             rows = conn.execute('''SELECT * FROM traits
                 ORDER BY confidence DESC,evidence DESC,updated_at DESC LIMIT ?''', (limit,)).fetchall()
         return [dict(row) for row in rows]
@@ -135,20 +142,20 @@ class MindStore:
         if len(value) < 2 or len(value) > 32:
             return
         stamp = now.isoformat()
-        with self.lock, self._connect() as conn:
+        with self.lock, self._session() as conn:
             conn.execute('''INSERT INTO phrases(text,count,last_seen_at) VALUES (?,?,?)
                 ON CONFLICT(text) DO UPDATE SET count=count+1,last_seen_at=excluded.last_seen_at''',
                          (value, 1, stamp))
 
     def shortcut_candidates(self, limit: int = 5) -> list[dict]:
-        with self.lock, self._connect() as conn:
+        with self.lock, self._session() as conn:
             rows = conn.execute('''SELECT text,count,last_seen_at FROM phrases WHERE count>=3
                 ORDER BY count DESC,last_seen_at DESC LIMIT ?''', (limit,)).fetchall()
         return [dict(row) for row in rows]
 
     def upsert_edge(self, subject: str, relation: str, obj: str, strength: float, now: datetime) -> None:
         stamp = now.isoformat()
-        with self.lock, self._connect() as conn:
+        with self.lock, self._session() as conn:
             conn.execute('''INSERT INTO graph_edges(subject,relation,object,strength,updated_at)
                 VALUES (?,?,?,?,?) ON CONFLICT(subject,relation,object)
                 DO UPDATE SET strength=excluded.strength,updated_at=excluded.updated_at''',
@@ -156,7 +163,7 @@ class MindStore:
 
     def increment(self, key: str, now: datetime) -> int:
         stamp = now.isoformat()
-        with self.lock, self._connect() as conn:
+        with self.lock, self._session() as conn:
             row = conn.execute('SELECT value FROM meta WHERE key=?', (key,)).fetchone()
             value = int(row['value']) + 1 if row else 1
             conn.execute('''INSERT INTO meta(key,value,updated_at) VALUES (?,?,?)
@@ -165,7 +172,7 @@ class MindStore:
         return value
 
     def stats(self) -> dict:
-        with self.lock, self._connect() as conn:
+        with self.lock, self._session() as conn:
             traits = conn.execute('SELECT count(*) AS n FROM traits').fetchone()['n']
             edges = conn.execute('SELECT count(*) AS n FROM graph_edges').fetchone()['n']
             row = conn.execute("SELECT value FROM meta WHERE key='interactions'").fetchone()
