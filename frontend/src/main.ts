@@ -26,35 +26,60 @@ const MINI_SIZE = { width: 160, height: 400 };
 const MINI_MARGIN = { x: 12, y: 4 };
 const NORMAL_SIZE_DEFAULT = { width: 420, height: 640 };
 
-// 簡易表示に入る直前の通常ウィンドウの位置・サイズ。戻すときにここへ復元
-// するので、毎回ウィンドウが同じ場所に開く（右下に表示されっぱなしになら
-// ない）。ページ再読み込みをまたぐ保存はしない＝軽量な一時記憶でよい。
+// 簡易表示に入る直前の通常ウィンドウの状態。最大化中に setSize/setPosition を
+// 呼んでもWindows側で反映されないことがあるため、最大化は先に解除し、戻す時に
+// 元の状態へ復元する。切替要求は直列化し、ダブルクリック等でも競合させない。
 let savedNormalPosition: PhysicalPosition | null = null;
 let savedNormalSize: PhysicalSize | null = null;
+let savedNormalMaximized = false;
+let miniModeTransition: Promise<void> = Promise.resolve();
 
-async function setMiniMode(enabled: boolean): Promise<void> {
+function applyMiniUi(enabled: boolean): void {
   document.body.classList.toggle('mini-mode', enabled);
   document.getElementById('app')!.classList.toggle('mode-mini', enabled);
   document.getElementById('app')!.classList.toggle('mode-normal', !enabled);
-  // 簡易版は吹き出し風の見た目にするため、通常版の説明的なプレースホル
-  // ダー文言は消してシンプルにする。
   inputEl.placeholder = enabled ? '' : 'かぐやに話しかける（Enterで送信・Shift+Enterで改行）';
   try { localStorage.setItem(MINI_MODE_KEY, enabled ? '1' : '0'); } catch { /* best effort */ }
-  if (!isTauri()) return;
+}
+
+function setMiniMode(enabled: boolean): Promise<void> {
+  const transition = miniModeTransition.then(() => transitionMiniMode(enabled));
+  // 失敗しても次回の切替要求まで失敗状態を引きずらない。
+  miniModeTransition = transition.catch(() => {});
+  return transition;
+}
+
+// core:window:default に含まれるTauri標準の内部トグルを使う。
+// maximize/unmaximize個別の追加権限を増やさず、現在の最大化状態だけ反転できる。
+async function toggleMaximizedWindow(): Promise<void> {
+  await invoke('plugin:window|internal_toggle_maximize');
+}
+
+async function transitionMiniMode(enabled: boolean): Promise<void> {
+  const app = document.getElementById('app')!;
+  if (app.classList.contains('mode-mini') === enabled) return;
+  if (!isTauri()) {
+    applyMiniUi(enabled);
+    return;
+  }
+
   const win = getCurrentWindow();
-  try {
-    if (enabled) {
-      savedNormalPosition = await win.outerPosition().catch(() => null);
-      savedNormalSize = await win.outerSize().catch(() => null);
-      await win.setDecorations(false);
-      await win.setResizable(false);
-      await win.setShadow(false);
+  if (enabled) {
+    // リサイズ前に対象モニターを確定する。装飾変更・縮小の途中で
+    // currentMonitor() が一時的に null になるケースを避ける。
+    const monitor = (await currentMonitor().catch(() => null)) ?? (await primaryMonitor().catch(() => null));
+    savedNormalMaximized = await win.isMaximized().catch(() => false);
+    if (savedNormalMaximized) await toggleMaximizedWindow();
+    savedNormalPosition = await win.outerPosition().catch(() => null);
+    // setSize() は内側サイズを設定するAPIなので、復元用も innerSize() で保持する。
+    savedNormalSize = await win.innerSize().catch(() => null);
+
+    try {
+      // 見た目だけの操作は失敗しても縮小・移動を続ける。
+      await win.setDecorations(false).catch(() => {});
+      await win.setResizable(false).catch(() => {});
+      await win.setShadow(false).catch(() => {});
       await win.setSize(new LogicalSize(MINI_SIZE.width, MINI_SIZE.height));
-      // currentMonitor()/primaryMonitor() are module-level functions (not
-      // Window methods). workArea is already physical pixels excluding the
-      // taskbar, so position directly in physical space — no logical/scale
-      // conversion needed, which also sidesteps DPI-scaling mistakes.
-      const monitor = (await currentMonitor().catch(() => null)) ?? (await primaryMonitor());
       if (monitor) {
         const scale = monitor.scaleFactor || 1;
         const marginX = MINI_MARGIN.x * scale;
@@ -65,16 +90,40 @@ async function setMiniMode(enabled: boolean): Promise<void> {
         const y = monitor.workArea.position.y + monitor.workArea.size.height - miniHeightPx - marginY;
         await win.setPosition(new PhysicalPosition(Math.round(x), Math.round(y)));
       }
-    } else {
-      await win.setDecorations(true);
-      await win.setResizable(true);
-      await win.setShadow(true);
-      await win.setSize(savedNormalSize ?? new LogicalSize(NORMAL_SIZE_DEFAULT.width, NORMAL_SIZE_DEFAULT.height));
-      if (savedNormalPosition) await win.setPosition(savedNormalPosition);
+      await win.show().catch(() => {});
+      await win.setFocus().catch(() => {});
+      // ネイティブ側の縮小・移動が完了してからDOMを簡易表示へ切り替える。
+      // 途中失敗時に「UIだけ透明な簡易表示」になる状態を防ぐ。
+      applyMiniUi(true);
+    } catch (error) {
+      // 中途半端な枠なし/縮小状態を残さず、通常表示へ戻して呼び出し側へ通知する。
+      await win.setDecorations(true).catch(() => {});
+      await win.setResizable(true).catch(() => {});
+      await win.setShadow(true).catch(() => {});
+      if (savedNormalMaximized) {
+        await toggleMaximizedWindow().catch(() => {});
+      } else {
+        await win.setSize(savedNormalSize ?? new LogicalSize(NORMAL_SIZE_DEFAULT.width, NORMAL_SIZE_DEFAULT.height)).catch(() => {});
+        if (savedNormalPosition) await win.setPosition(savedNormalPosition).catch(() => {});
+      }
+      applyMiniUi(false);
+      throw error;
     }
-  } catch {
-    // ウィンドウ操作に失敗しても会話自体は継続できるため、静かに諦める。
+    return;
   }
+
+  await win.setDecorations(true).catch(() => {});
+  await win.setResizable(true).catch(() => {});
+  await win.setShadow(true).catch(() => {});
+  if (savedNormalMaximized) {
+    await toggleMaximizedWindow();
+  } else {
+    await win.setSize(savedNormalSize ?? new LogicalSize(NORMAL_SIZE_DEFAULT.width, NORMAL_SIZE_DEFAULT.height));
+    if (savedNormalPosition) await win.setPosition(savedNormalPosition);
+  }
+  await win.show().catch(() => {});
+  await win.setFocus().catch(() => {});
+  applyMiniUi(false);
 }
 
 // キャラ画像を右クリックすると、表示切替と終了をまとめた簡易メニューを出す。
