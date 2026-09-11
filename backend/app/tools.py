@@ -1,6 +1,7 @@
 """会話の中からかぐやが使える道具。宣言と実行をここにまとめる。
 
 通常会話の入力トークンを増やさないため、発言に関係する道具だけをGeminiへ渡す。
+天気のようにローカルで意図を確定できるものはGeminiを経由せず直接実行する。
 単純な道具は結果をローカルで短く文章化し、2回目のGemini呼び出しも省く。
 """
 import re
@@ -48,7 +49,9 @@ def declarations_for(text: str) -> list[dict]:
         names.add('remember')
     if any(word in value for word in ('リマインド', '知らせて', '声かけて', '言って', '教えて')) and time_hint:
         names.add('set_reminder')
-    if any(word in lower for word in ('天気', '気温', '降水', '予報')) or any(word in value for word in ('雨', '雪', '傘', '暑い', '寒い')):
+    # 明示的な天気質問はdirect_reply()で先に処理する。ここは「暑い？」「寒い？」等、
+    # 雑談か天気照会かモデル判断が必要な曖昧ケースだけのフォールバック。
+    if any(word in value for word in ('暑い？', '暑い?', '寒い？', '寒い?')):
         names.add('weather')
     settings_hint = any(word in value for word in (
         '設定', '静かに', '文字サイズ', 'フォント', '最前面', '天気の場所',
@@ -63,6 +66,31 @@ def declarations_for(text: str) -> list[dict]:
     if any(word in lower for word in ('readme', 'ソース', 'コード', 'project_inspector')) or any(word in value for word in ('自分の仕様', 'かぐやの仕様', '実装', 'バグ原因')):
         names.update(_PROJECT_NAMES)
     return [_DECLARATION_BY_NAME[name] for name in _DECLARATION_BY_NAME if name in names]
+
+
+def _weather_location(text: str) -> str:
+    value = str(text or '').strip()
+    # 「足立区の天気」「東京の明日の天気」のような明示地点だけ拾う。
+    match = re.search(r'([一-龯ぁ-んァ-ヶーA-Za-z0-9・\- ]{1,30})の(?:今日の|明日の)?(?:天気|気温|予報)', value)
+    if not match:
+        return ''
+    candidate = match.group(1).strip()
+    if candidate in {'今日', '明日', '明後日', '今', '現在', 'こっち', 'ここ'}:
+        return ''
+    return candidate
+
+
+async def direct_reply(text: str, memory) -> str | None:
+    """Geminiを呼ばずに確定できる軽量リクエストを処理する。"""
+    value = str(text or '')
+    weather_request = (
+        any(word in value for word in ('天気', '気温', '予報', '傘'))
+        or any(word in value for word in ('雨降る', '雨降り', '雪降る', '雪降り'))
+    )
+    if not weather_request:
+        return None
+    outcome = await quick_tools.run('weather', {'location': _weather_location(value)}, memory)
+    return fast_reply('weather', outcome, value)
 
 
 def parse_due(value, now=None):
@@ -96,21 +124,22 @@ def fast_reply(name: str, outcome: dict, user_text: str = '') -> str | None:
         return f"うまくできなかった。{outcome.get('error', 'もう一度確認してみて。')}"
 
     if name == 'weather' and outcome.get('現在'):
+        stale = '（直近の取得結果）' if outcome.get('キャッシュ利用') else ''
         if '明日' in user_text and isinstance(outcome.get('明日'), dict):
             day = outcome['明日']
             return (f"明日は{day.get('天気', '不明')}。最高{day.get('最高気温C', '?')}℃、"
-                    f"最低{day.get('最低気温C', '?')}℃、降水確率は{day.get('降水確率%', '?')}%だよ。")
+                    f"最低{day.get('最低気温C', '?')}℃、降水確率は{day.get('降水確率%', '?')}%だよ。{stale}")
         current = outcome['現在']
         today = outcome.get('今日') or {}
         rain = today.get('降水確率%')
         base = (f"{outcome.get('場所', '')}はいま{current.get('天気', '不明')}、"
                 f"{current.get('気温C', '?')}℃くらい。")
         if '傘' in user_text and isinstance(rain, (int, float)):
-            return base + (f"降水確率{rain}%だから、傘は持ってった方がよさそう。" if rain >= 40
-                           else f"降水確率{rain}%だから、傘はたぶん大丈夫そう。")
-        if rain is not None:
+            base += (f"降水確率{rain}%だから、傘は持ってった方がよさそう。" if rain >= 40
+                     else f"降水確率{rain}%だから、傘はたぶん大丈夫そう。")
+        elif rain is not None:
             base += f"今日の降水確率は最大{rain}%だよ。"
-        return base
+        return base + stale
 
     if name == 'set_reminder':
         return f"{outcome.get('予約時刻', '')}に「{outcome.get('内容', '')}」って声かけるね。"
