@@ -17,6 +17,7 @@ class Jobs:
         self.memory, self.llm, self.store, self.controller = memory, llm, store, controller
         self.task = None
         self.status = '待機中'
+        self.cancel_reason = None
 
     @property
     def running(self):
@@ -30,7 +31,19 @@ class Jobs:
     def start(self, manual=False):
         if self.running or self.controller.active or self.controller.unsaved or self.controller.editing:
             raise ChatError('busy', '会話・保存・整理の完了を待ってください。')
+        self.cancel_reason = None
         self.task = asyncio.create_task(self.run(manual))
+
+    async def pause_for_chat(self):
+        """ユーザー会話を最優先にし、実行中の整理APIをキャンセルして待つ。"""
+        if not self.running:
+            return
+        self.cancel_reason = '会話を優先して記憶整理を中断しました。未処理の原文は保持しています。'
+        self.task.cancel()
+        try:
+            await self.task
+        except asyncio.CancelledError:
+            pass
 
     async def run(self, manual=False):
         now = tokyo_now()
@@ -44,20 +57,16 @@ class Jobs:
                 self.status = '自動整理を停止しました。未処理の原文は保持しています。'
                 return False
             if self.controller.active or self.controller.unsaved or self.controller.editing:
-                # A conversation that starts during a snapshot fetch takes priority.
                 self.store.record(daily_attempt=ledger.get('daily_attempt'), weekly_attempt=ledger.get('weekly_attempt'))
-                self.status = '会話のため整理を保留しました。自動整理は会話後に再開します。'
+                self.status = '会話のため整理を保留しました。未処理の原文は保持しています。'
                 return False
             return True
 
         try:
-            # Tell the UI that a run started; only the end was announced before,
-            # so the screen (and the character) could not show work in progress.
             await self.controller.broadcast({'type': 'jobs.changed', 'status': self.status, 'running': True})
-            # Persist attempts before work. Failures are not retried automatically.
+            # 同じ自動処理を何度も繰り返さないため、試行日は先に記録する。
             self.store.record(daily_attempt=daily, weekly_attempt=weekly)
             processed = 0
-            # Leave one call available for a due weekly update.
             max_batches = max(1, self.store.options.daily_call_limit - int(weekly_due))
             for _ in range(max_batches):
                 if not can_continue():
@@ -91,13 +100,16 @@ class Jobs:
             self.store.record(daily_done=daily)
             self.status = f'整理完了：{processed}件のユーザー発言を処理しました。'
         except asyncio.CancelledError:
-            self.status = '整理を中断しました。未確定の原文は保持しています。'
+            self.status = self.cancel_reason or '整理を中断しました。未処理の原文は保持しています。'
             raise
         except ChatError as exc:
             self.status = f'整理失敗：{exc.message} 未処理の原文は保持しています。'
+        except ValueError:
+            self.status = '整理失敗：Geminiの整理結果が規定形式ではありませんでした。未処理の原文は保持しています。'
         except Exception:
-            self.status = '整理結果の検証または保存に失敗しました。未処理の原文は保持しています。'
+            self.status = '整理失敗：内部処理または保存に失敗しました。未処理の原文は保持しています。'
         finally:
+            self.cancel_reason = None
             self.store.record(last_job_status=self.status)
             await self.controller.broadcast({'type': 'jobs.changed', 'status': self.status, 'running': False})
 

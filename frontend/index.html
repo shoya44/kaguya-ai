@@ -46,7 +46,7 @@
         <h1>設定</h1>
         <form id="options-form">
           <label><input type="checkbox" name="quiet">自発的な声かけを停止する</label>
-          <label><input type="checkbox" name="auto_jobs">記憶を自動整理する（日次03:00・起動後の回収）</label>
+          <label><input type="checkbox" name="auto_jobs">記憶を03:00に自動整理する</label>
           <label>声かけの間隔（分）<input type="number" name="proactive_minutes" min="60" max="240" required></label>
           <label>整理APIの1日上限（週次更新を含む）<input type="number" name="daily_call_limit" min="1" max="3" required></label>
           <label>回答の出力上限（トークン）<input type="number" name="reply_tokens" min="256" max="8192" required></label>
@@ -58,7 +58,7 @@
         <p class="hint">会話の中で「明日の朝9時に〜と言って」のように頼むと登録されます。時間になるとかぐやが吹き出しで伝えます。</p>
         <div id="reminder-list"></div>
         <h2>記憶の整理</h2>
-        <p>未処理の会話を設定中のGeminiへ送り、知恵としてまとめます。手動実行も1日上限に含まれます。</p>
+        <p>未処理の会話を設定中のGeminiへ送り、知恵としてまとめます。自動整理は03:00のみで、起動時の自動回収はしません。会話が来た場合は会話を優先します。</p>
         <button id="organize-btn">今すぐ整理</button>
         <p id="job-status" role="status"></p><p id="model-info"></p>
         <p class="hint">自動整理が有効な場合、処理済みで7日を過ぎた元の会話は削除されます。知恵は残ります。音声入出力は未実装です。</p>
