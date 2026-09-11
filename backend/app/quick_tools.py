@@ -76,7 +76,10 @@ async def run(name: str, args: dict[str, Any], memory) -> dict[str, Any]:
             if not location:
                 body = await memory.call('GET', '/runtime/settings')
                 location = str(body['options'].get('weather_location') or '東京')
-            return await fetch_weather(location)
+            try:
+                return await fetch_weather(location)
+            except Exception:
+                return {'ok': False, 'error': f'{location}の天気を取得できませんでした。通信状態や地点名を確認してね。'}
         if name == 'app_settings':
             action = str(args.get('action', '')).lower()
             if action == 'get':
