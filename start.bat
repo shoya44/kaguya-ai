@@ -22,5 +22,5 @@ start "" "frontend\src-tauri\target\debug\app.exe" %*
 exit /b 0
 :failed
 echo Startup failed. See the message above and the user manual.
-pause
+if not defined KAGUYA_NO_PAUSE pause
 exit /b 1
