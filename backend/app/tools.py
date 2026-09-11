@@ -1,7 +1,7 @@
 """会話の中からかぐやが使える道具。宣言と実行をここにまとめる。
 
 通常会話の入力トークンを増やさないため、発言に関係する道具だけをGeminiへ渡す。
-道具が呼ばれた回だけGeminiへの往復が1回増える。
+単純な道具は結果をローカルで短く文章化し、2回目のGemini呼び出しも省く。
 """
 import re
 from datetime import datetime, timedelta
@@ -53,7 +53,7 @@ def declarations_for(text: str) -> list[dict]:
     if any(word in value for word in ('設定', '静かに', '声かけ', '文字サイズ', 'フォント', '最前面', '天気の場所')):
         names.add('app_settings')
     schedule_hint = any(word in value for word in ('予定', 'カレンダー', 'スケジュール', '会議', '予定に入れ', '予定入れ'))
-    if schedule_hint or clock_hint or (date_hint and any(word in value for word in ('何ある', '何かある'))):
+    if schedule_hint or (date_hint and any(word in value for word in ('何ある', '何かある'))):
         names.add('calendar')
     if any(word in lower for word in ('references', 'reference')) or any(word in value for word in ('参照資料', '参照ファイル', '手順書', '資料から', 'ファイルから', 'メモから')):
         names.add('reference_search')
@@ -75,6 +75,74 @@ def parse_due(value, now=None):
     if stamp > now + MAX_AHEAD:
         raise ValueError('1年より先は予約できません。')
     return stamp
+
+
+def _when(value):
+    try:
+        stamp = datetime.fromisoformat(str(value))
+        return f'{stamp.month}/{stamp.day} {stamp:%H:%M}'
+    except (TypeError, ValueError):
+        return str(value or '')
+
+
+def fast_reply(name: str, outcome: dict, user_text: str = '') -> str | None:
+    """考察不要なtool結果だけローカルで短く返す。NoneならGeminiに文章化させる。"""
+    if not isinstance(outcome, dict):
+        return None
+    if outcome.get('ok') is False:
+        return f"うまくできなかった。{outcome.get('error', 'もう一度確認してみて。')}"
+
+    if name == 'weather' and outcome.get('現在'):
+        if '明日' in user_text and isinstance(outcome.get('明日'), dict):
+            day = outcome['明日']
+            return (f"明日は{day.get('天気', '不明')}。最高{day.get('最高気温C', '?')}℃、"
+                    f"最低{day.get('最低気温C', '?')}℃、降水確率は{day.get('降水確率%', '?')}%だよ。")
+        current = outcome['現在']
+        today = outcome.get('今日') or {}
+        rain = today.get('降水確率%')
+        base = (f"{outcome.get('場所', '')}はいま{current.get('天気', '不明')}、"
+                f"{current.get('気温C', '?')}℃くらい。")
+        if '傘' in user_text and isinstance(rain, (int, float)):
+            return base + (f"降水確率{rain}%だから、傘は持ってった方がよさそう。" if rain >= 40
+                           else f"降水確率{rain}%だから、傘はたぶん大丈夫そう。")
+        if rain is not None:
+            base += f"今日の降水確率は最大{rain}%だよ。"
+        return base
+
+    if name == 'set_reminder':
+        return f"{outcome.get('予約時刻', '')}に「{outcome.get('内容', '')}」って声かけるね。"
+    if name == 'remember':
+        return f"うん、「{outcome.get('内容', '')}」って覚えておく。"
+
+    if name == 'app_settings':
+        if 'name' in outcome:
+            labels = {'quiet': '静音', 'proactive_minutes': '声かけ間隔', 'always_on_top': '最前面',
+                      'font_size': '文字サイズ', 'weather_location': '天気の場所'}
+            label = labels.get(str(outcome['name']), str(outcome['name']))
+            return f"{label}を「{outcome.get('value')}」に変えたよ。"
+        settings = outcome.get('settings')
+        if isinstance(settings, dict):
+            shown = '、'.join(f'{key}={value}' for key, value in list(settings.items())[:5])
+            return f"今の設定は {shown} だよ。"
+
+    if name == 'calendar':
+        event = outcome.get('event')
+        if isinstance(event, dict):
+            return f"{_when(event.get('start'))}に「{event.get('title', '予定')}」を入れたよ。"
+        if outcome.get('removed') is True and isinstance(outcome.get('item'), dict):
+            return f"「{outcome['item'].get('title', '予定')}」は消したよ。"
+        if outcome.get('removed') is False and outcome.get('error'):
+            return str(outcome['error'])
+        items = outcome.get('items')
+        if isinstance(items, list):
+            if not items:
+                return 'その期間の予定はないよ。'
+            rows = [f"{_when(item.get('start'))} {item.get('title', '予定')}" for item in items[:5] if isinstance(item, dict)]
+            suffix = ' ほかにもあるよ。' if len(items) > 5 else ''
+            return '予定は、' + '／'.join(rows) + '。' + suffix
+
+    # referencesやソース調査は取得結果を読んで回答する必要があるので2回目のLLMへ渡す。
+    return None
 
 
 async def run(name, args, memory, now=None):
