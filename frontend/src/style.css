@@ -1,0 +1,948 @@
+:root {
+  color-scheme: dark;
+  --bg: #14101c;
+  --panel: #1f1830;
+  --accent: #8b6fd1;
+  --text: #f2eefc;
+  --muted: #a89bc4;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  width: 100%;
+  min-height: var(--app-height, 100dvh);
+  background: var(--bg);
+  color: var(--text);
+  /* 設定画面の「文字サイズ」。em指定の各要素がこれに追従する。 */
+  font-size: var(--font-size, 14px);
+  font-family: "Yu Gothic UI", "Hiragino Sans", sans-serif;
+  display: flex;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* 通常版レイアウト：ウィンドウの高さいっぱいに固定し、ヘッダー（タブ・
+   ボタン）とキャラは常に上部、入力欄は常に下部に固定。伸縮するのは
+   #chat（会話タブ表示時）・各.panel（設定/記憶/使い方タブ表示時）の
+   内側だけで、ウィンドウ自体はスクロールしない。 */
+#app {
+  width: 100%;
+  max-width: 480px;
+  height: var(--app-height, 100dvh);
+  max-height: var(--app-height, 100dvh);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  min-height: 0;
+  overflow: hidden;
+}
+
+.toolbar {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  row-gap: 8px;
+}
+
+.toolbar nav, .toolbar .button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* ツールバーは全ボタンを同じ見た目にし、色の違いは「ON/選択中」だけを表す。
+   表示中のタブと静音中の「静音中（解除）」がアクセント色になる。 */
+.toolbar button[aria-pressed="true"] {
+  background: var(--accent);
+  color: #1a1428;
+  border-color: transparent;
+}
+
+#controls-status {
+  flex: none;
+}
+
+#character-view {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+#proactive-bubble {
+  max-width: 100%;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid rgba(242, 238, 252, 0.3);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: pointer;
+}
+
+#avatar {
+  image-rendering: pixelated;
+}
+
+#chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#history {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 12px;
+  /* スクロールバーが右端に食い込んで右上・右下の角丸が欠けて見えるのを防ぐ。 */
+  scrollbar-gutter: stable;
+}
+
+#history::-webkit-scrollbar {
+  width: 8px;
+}
+
+#history::-webkit-scrollbar-track {
+  background: transparent;
+  margin-block: 12px;
+}
+
+#history::-webkit-scrollbar-thumb {
+  background: rgba(242, 238, 252, 0.25);
+  border-radius: 8px;
+}
+
+#memory-list pre {
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 4px 0 0;
+}
+
+#older-btn, #error, #input-form {
+  flex: none;
+}
+
+#controls-status {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+/* 空のときに余白だけが残らないようにする。 */
+#controls-status:empty {
+  display: none;
+}
+
+/* --- 設定・記憶・使い方パネル共通 --- */
+.panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  /* スクロールバーと内容が触れないように。 */
+  padding-right: 4px;
+}
+
+.panel h1 {
+  font-size: 1.2em;
+  margin: 0;
+}
+
+.panel h2 {
+  font-size: 1.05em;
+  margin: 4px 0 0;
+}
+
+.panel p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+/* 横並びのボタン群（記憶カードの操作・ページ送り・確認ダイアログ）。
+   従来はツールバー内にしか定義がなく、素のまま詰まって並んでいた。 */
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+/* フォーム部品はブラウザ標準のままだと明るい配色で浮くため、画面に合わせる。 */
+input[type="number"],
+input[type="text"],
+select,
+textarea {
+  font: inherit;
+  color: var(--text);
+  background: #0f0c17;
+  border: 1px solid #3a3050;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+input[type="number"] {
+  width: 5.5em;
+  text-align: right;
+}
+
+input[type="checkbox"] {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+#options-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+/* 「項目名 …… 入力欄」で左右に振り分ける。チェックボックスの行だけは
+   四角とラベルが離れると押しにくいので左寄せのままにする。 */
+#options-form label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  line-height: 1.5;
+}
+
+#options-form label:has(input[type="checkbox"]) {
+  justify-content: flex-start;
+}
+
+#options-form button[type="submit"],
+#organize-btn {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+#job-status, #model-info {
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+#reminder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.reminder-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.reminder-row span {
+  flex: 1;
+  word-break: break-word;
+}
+
+.reminder-row button {
+  padding: 6px 10px;
+  font-size: 0.9em;
+}
+
+/* --- 記憶タブ --- */
+#memory-search {
+  flex: 1;
+  min-width: 8em;
+}
+
+#memory-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.memory-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.memory-card p {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.memory-card small {
+  color: var(--muted);
+}
+
+.memory-card summary {
+  color: var(--muted);
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.memory-card button {
+  padding: 6px 10px;
+  font-size: 0.9em;
+}
+
+#memory-page {
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+/* --- 使い方タブ --- */
+/* iframeは既定サイズ(300x150)のままだと極端に小さく表示される。 */
+#help-panel {
+  padding-right: 0;
+}
+
+#help-panel iframe {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: none;
+  border-radius: 12px;
+}
+
+/* --- 確認ダイアログ --- */
+#memory-dialog {
+  max-width: min(420px, 90vw);
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid #3a3050;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+#memory-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}
+
+#memory-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 1.05em;
+}
+
+/* 影響範囲の説明は改行込みで組み立てられるため、そのまま折り返す。 */
+#memory-dialog p {
+  margin: 0 0 10px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+#memory-value {
+  width: 100%;
+  resize: vertical;
+}
+
+#memory-lock-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+#dialog-error {
+  color: #ffb3c1;
+  font-size: 0.9em;
+}
+
+#dialog-error:empty {
+  display: none;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.msg {
+  padding: 8px 12px;
+  border-radius: 10px;
+  max-width: 85%;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msg.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: #1a1428;
+}
+
+.msg.assistant {
+  align-self: flex-start;
+  background: #2c2440;
+}
+
+.msg.pending {
+  opacity: 0.6;
+}
+
+#input-form {
+  display: flex;
+  gap: 8px;
+  /* 入力欄が複数行に伸びてもボタンは下端に揃える。 */
+  align-items: flex-end;
+}
+
+#text-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #3a3050;
+  background: #0f0c17;
+  color: var(--text);
+  /* textareaは既定が等幅フォント・固定サイズなので本文設定に合わせる。 */
+  font: inherit;
+  line-height: 1.4;
+  resize: none;
+}
+
+/* iOS Safariは16px未満の入力欄へフォーカスすると自動ズームするため、
+   タッチ端末では入力欄だけ16px以上を保証する。 */
+@media (hover: none) and (pointer: coarse) {
+  #text-input,
+  input[type="number"],
+  input[type="text"],
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  #app {
+    width: 100%;
+    max-width: none;
+  }
+
+  #history {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* iPhoneでソフトウェアキーボードが出ている間だけ、固定要素をコンパクト化する。
+     Header / キャラクター / 入力欄は残し、縮めた分を会話履歴へ渡す。 */
+  body.keyboard-open #app.mode-normal {
+    gap: 6px;
+    padding-top: max(6px, env(safe-area-inset-top));
+    padding-right: max(10px, env(safe-area-inset-right));
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
+    padding-left: max(10px, env(safe-area-inset-left));
+  }
+
+  body.keyboard-open #app.mode-normal .toolbar {
+    gap: 5px;
+    row-gap: 5px;
+  }
+
+  body.keyboard-open #app.mode-normal .toolbar nav,
+  body.keyboard-open #app.mode-normal .toolbar .button-row {
+    gap: 5px;
+  }
+
+  body.keyboard-open #app.mode-normal .toolbar button {
+    padding: 6px 9px;
+    font-size: 14px;
+    border-radius: 7px;
+  }
+
+  body.keyboard-open #app.mode-normal #character-view {
+    gap: 2px;
+  }
+
+  body.keyboard-open #app.mode-normal #avatar {
+    width: 112px;
+    height: 112px;
+  }
+
+  body.keyboard-open #app.mode-normal #proactive-bubble {
+    max-height: 64px;
+    overflow-y: auto;
+    padding: 4px 8px;
+    font-size: 13px;
+  }
+
+  body.keyboard-open #app.mode-normal #chat {
+    gap: 5px;
+  }
+
+  body.keyboard-open #app.mode-normal #history {
+    padding: 8px;
+    gap: 6px;
+    min-height: 80px;
+  }
+
+  body.keyboard-open #app.mode-normal #input-form {
+    gap: 5px;
+  }
+
+  body.keyboard-open #app.mode-normal #input-form button {
+    padding: 8px 10px;
+  }
+
+  body.keyboard-open #app.mode-normal #text-input {
+    min-height: 42px;
+    max-height: 58px;
+    padding: 8px 10px;
+  }
+}
+
+/* 既定は控えめな見た目。アクセント色は各画面の主要動作だけに使い、
+   「押せる場所」ではなく「いま何が有効か」を色で示す。 */
+button {
+  padding: 9px 14px;
+  border-radius: 8px;
+  border: 1px solid #3a3050;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#send-btn,
+#organize-btn,
+#dialog-confirm,
+#options-form button[type="submit"],
+#memory-filter button[type="submit"] {
+  background: var(--accent);
+  color: #1a1428;
+  border-color: transparent;
+}
+
+.error {
+  background: #4a1f2b;
+  color: #ffd7de;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.9em;
+}
+
+.error button {
+  margin-top: 6px;
+  background: #ffd7de;
+  color: #1a1428;
+  border-color: transparent;
+}
+
+/* iPhone Safari: ソフトウェアキーボード表示時はVisual Viewportが
+   レイアウトViewport内を上下に移動する。可視領域のtop/left/heightへ
+   #appを直接固定し、入力欄フォーカス時に画面全体が上へずれるのを防ぐ。 */
+@supports (-webkit-touch-callout: none) {
+  body:not(.mini-mode) {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+  }
+
+  #app.mode-normal {
+    position: fixed;
+    top: var(--app-top, 0px);
+    left: var(--app-left, 0px);
+    right: auto;
+    bottom: auto;
+    width: 100%;
+    height: var(--app-height, 100dvh);
+    max-height: var(--app-height, 100dvh);
+  }
+}
+
+/* --- 簡易版UI（デスクトップマスコット表示） ---
+   キャラクター画像を右下に固定表示し、小さな吹き出し入力欄だけを出す。
+   ウィンドウ自体はTauri側でtransparent + decorations:false + 右下配置に
+   切り替える（main.ts）。ここでは中身のレイアウトのみを切り替える。
+   html/body両方をtransparentにしないと、Windows側の既定背景（黒）が
+   隙間に透けて見えてしまうため両方指定する。 */
+html:has(body.mini-mode) {
+  background: transparent;
+  height: 100%;
+}
+
+body.mini-mode {
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  height: 100%;
+  display: block;
+  overflow: hidden;
+}
+
+#app.mode-mini {
+  max-width: none;
+  width: 160px;
+  height: 100%;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 0;
+}
+
+#app.mode-mini > .toolbar,
+#app.mode-mini > #controls-status,
+#app.mode-mini #older-btn,
+#app.mode-mini #history,
+#app.mode-mini .panel {
+  display: none;
+}
+
+/* 入力欄をキャラの上に見せるため、DOM順はそのままに表示順だけ入れ替える。 */
+#app.mode-mini #chat {
+  order: 1;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  flex: none;
+}
+
+#app.mode-mini #character-view {
+  order: 2;
+  position: relative;
+  flex: none;
+}
+
+#app.mode-mini #avatar {
+  width: 160px;
+  height: 160px;
+  background: transparent;
+  border-radius: 0;
+  display: block;
+  cursor: context-menu;
+}
+
+/* 枠・背景なしのシンプルな1行入力欄。送信ボタンは出さずEnterキーで送信する
+   （既存のform submitイベントがそのまま拾うため、ボタンを消すだけでよい）。 */
+#app.mode-mini #input-form {
+  order: 2;
+  background: transparent;
+  border-radius: 0;
+  padding: 0 4px;
+  margin: 0 0 4px;
+}
+
+/* 返答の吹き出し（#proactive-bubble）が表示中は、同じ位置に重なる入力欄を
+   隠す。両方ともキャラの真上に絶対/通常配置しているため、同時に出すと
+   重なって読みにくくなるのを防ぐ。 */
+#app.mode-mini:has(#proactive-bubble:not([hidden])) #input-form {
+  display: none;
+}
+
+/* 簡易表示は吹き出し1行に収める（通常表示のrows=2ぶんの高さを打ち消す）。 */
+#app.mode-mini #text-input {
+  min-width: 0;
+  width: 100%;
+  height: 2.2em;
+  padding: 6px 10px;
+  font-size: 0.85em;
+  background: rgba(20, 16, 28, 0.55);
+  border: 1px solid rgba(242, 238, 252, 0.3);
+  border-radius: 8px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+#app.mode-mini #text-input::placeholder {
+  color: rgba(242, 238, 252, 0.6);
+}
+
+#app.mode-mini #send-btn,
+#app.mode-mini #cancel-btn {
+  display: none;
+}
+
+/* かぐやの返答をキャラ上部に一時表示する吹き出し（自発的な声かけと共用）。
+   #character-viewはflexコンテナではないため絶対配置でキャラの真上に置く。 */
+#app.mode-mini #proactive-bubble {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: 148px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 6px;
+  padding: 6px 10px;
+  background: rgba(20, 16, 28, 0.55);
+  border: 1px solid rgba(242, 238, 252, 0.3);
+  border-radius: 8px;
+  font-size: 0.78em;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#app.mode-mini #error {
+  order: 1;
+  max-width: 156px;
+  margin: 0 4px 4px;
+  font-size: 0.75em;
+  padding: 6px 8px;
+}
+
+/* --- iPhone / touch UI optimization ---
+   PC/Tauri版はそのままに、狭いタッチ画面だけ操作密度を上げる。 */
+@media (max-width: 600px) and (hover: none) and (pointer: coarse) {
+  #app.mode-normal {
+    gap: 8px;
+    padding-top: max(8px, env(safe-area-inset-top));
+    padding-right: max(10px, env(safe-area-inset-right));
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+    padding-left: max(10px, env(safe-area-inset-left));
+  }
+
+  /* 4タブ + 静音を1段に収める。簡易表示はデスクトップ専用。 */
+  #app.mode-normal .toolbar {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+  }
+
+  #app.mode-normal .toolbar nav {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  #app.mode-normal .toolbar nav button {
+    min-width: 0;
+    min-height: 44px;
+    padding: 6px 4px;
+    font-size: 15px;
+    white-space: nowrap;
+  }
+
+  #app.mode-normal .toolbar .button-row {
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 0;
+  }
+
+  #app.mode-normal #mini-toggle-btn {
+    display: none;
+  }
+
+  #app.mode-normal #quiet-btn {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    overflow: hidden;
+    font-size: 0;
+    border-radius: 12px;
+  }
+
+  #app.mode-normal #quiet-btn::before {
+    content: "静";
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  /* キャラクターは存在感を残しつつ、履歴領域を圧迫しすぎないサイズに。 */
+  #app.mode-normal #character-view {
+    gap: 4px;
+  }
+
+  #app.mode-normal #avatar {
+    width: min(210px, 54vw);
+    height: min(210px, 54vw);
+  }
+
+  #app.mode-normal #proactive-bubble {
+    max-height: 84px;
+    overflow-y: auto;
+    font-size: 14px;
+  }
+
+  #app.mode-normal #chat {
+    gap: 6px;
+  }
+
+  #app.mode-normal #history {
+    padding: 10px;
+    gap: 7px;
+    min-height: 96px;
+    scrollbar-gutter: auto;
+  }
+
+  #app.mode-normal .msg {
+    max-width: 90%;
+    padding: 8px 10px;
+  }
+
+  /* LINE等に近い「入力 + 1アクション」。送信中は停止ボタンへ差し替える。 */
+  #app.mode-normal #input-form {
+    gap: 7px;
+    align-items: flex-end;
+  }
+
+  #app.mode-normal #text-input {
+    min-height: 46px;
+    height: 46px;
+    max-height: 92px;
+    padding: 11px 12px;
+    border-radius: 14px;
+    line-height: 1.4;
+    overflow-y: auto;
+  }
+
+  #app.mode-normal #send-btn,
+  #app.mode-normal #cancel-btn {
+    flex: 0 0 46px;
+    width: 46px;
+    height: 46px;
+    min-width: 46px;
+    min-height: 46px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 0;
+  }
+
+  #app.mode-normal #send-btn::before {
+    content: "↑";
+    font-size: 24px;
+    line-height: 1;
+    font-weight: 700;
+  }
+
+  #app.mode-normal #cancel-btn::before {
+    content: "■";
+    font-size: 15px;
+    line-height: 1;
+  }
+
+  #app.mode-normal #cancel-btn {
+    display: none;
+  }
+
+  body.chat-busy #app.mode-normal #send-btn {
+    display: none;
+  }
+
+  body.chat-busy #app.mode-normal #cancel-btn {
+    display: block;
+  }
+
+  /* 設定・記憶画面も指で押しやすい最小サイズを確保。 */
+  #app.mode-normal .panel button,
+  #app.mode-normal .panel select,
+  #app.mode-normal .panel input[type="number"],
+  #app.mode-normal .panel input[type="text"] {
+    min-height: 44px;
+  }
+
+  #app.mode-normal .panel {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* キーボード中は固定UIをさらに縮退し、履歴を最低限確保する。 */
+  body.keyboard-open #app.mode-normal {
+    gap: 4px;
+    padding-top: max(4px, env(safe-area-inset-top));
+    padding-bottom: max(4px, env(safe-area-inset-bottom));
+  }
+
+  body.keyboard-open #app.mode-normal .toolbar nav button,
+  body.keyboard-open #app.mode-normal #quiet-btn {
+    min-height: 38px;
+    height: 38px;
+  }
+
+  body.keyboard-open #app.mode-normal .toolbar nav button {
+    padding: 4px 2px;
+    font-size: 13px;
+  }
+
+  body.keyboard-open #app.mode-normal #quiet-btn {
+    width: 38px;
+  }
+
+  body.keyboard-open #app.mode-normal #avatar {
+    width: min(124px, 34vw);
+    height: min(124px, 34vw);
+  }
+
+  body.keyboard-open #app.mode-normal #proactive-bubble {
+    max-height: 48px;
+    font-size: 12px;
+    padding: 3px 7px;
+  }
+
+  body.keyboard-open #app.mode-normal #history {
+    min-height: 72px;
+    padding: 7px;
+  }
+
+  body.keyboard-open #app.mode-normal #text-input,
+  body.keyboard-open #app.mode-normal #send-btn,
+  body.keyboard-open #app.mode-normal #cancel-btn {
+    min-height: 44px;
+    height: 44px;
+  }
+
+  body.keyboard-open #app.mode-normal #send-btn,
+  body.keyboard-open #app.mode-normal #cancel-btn {
+    flex-basis: 44px;
+    width: 44px;
+    min-width: 44px;
+  }
+}
+
+/* iPhone 12 Proの横向き等、縦が極端に短い場合はキャラをさらに控えめにする。 */
+@media (max-height: 500px) and (hover: none) and (pointer: coarse) {
+  #app.mode-normal #avatar {
+    width: 96px;
+    height: 96px;
+  }
+
+  #app.mode-normal #character-view {
+    gap: 2px;
+  }
+}
