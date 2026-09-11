@@ -1,3 +1,7 @@
 # Windowsのバッチは CRLF でないと、長いファイルで goto や choice の解釈がずれる。
 *.bat text eol=crlf
 *.ps1 text eol=crlf
+
+# READMEから生成するファイル。生成器はLFで書くので、取り出しもLFで揃える。
+# ここがずれると、ビルドのたびに作業ツリーが汚れて git pull が止まる。
+frontend/public/manual.html text eol=lf

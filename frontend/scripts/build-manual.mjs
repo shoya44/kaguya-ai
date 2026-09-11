@@ -143,16 +143,23 @@ function render(picked) {
 
 const html = `${HEAD}\n${render(collect(readFileSync(README, 'utf8')))}\n`;
 
+let current = '';
+try { current = readFileSync(OUTPUT, 'utf8'); } catch { current = ''; }
+
+// WindowsのGitはこのファイルをCRLFで取り出すことがある。LFで上書きすると
+// ビルドのたびに「変更あり」になり、git pull が止まってしまう。
+// いま置かれている改行に合わせて書き、比較は改行を揃えてから行う。
+const asFile = value => (current.includes('\r\n') ? value.replace(/\n/g, '\r\n') : value);
+const sameText = (left, right) => left.replace(/\r\n/g, '\n') === right.replace(/\r\n/g, '\n');
+
 if (process.argv.includes('--check')) {
-  let current = '';
-  try { current = readFileSync(OUTPUT, 'utf8'); } catch { current = ''; }
-  if (current !== html) {
+  if (!sameText(current, html)) {
     console.error('public/manual.html が README と食い違っています。');
     console.error('`npm run build`（または node scripts/build-manual.mjs）で作り直して、生成物もコミットしてください。');
     process.exit(1);
   }
   console.log('manual.html は README と一致しています。');
 } else {
-  writeFileSync(OUTPUT, html, 'utf8');
+  writeFileSync(OUTPUT, asFile(html), 'utf8');
   console.log(`generated ${OUTPUT}`);
 }
