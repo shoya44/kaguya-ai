@@ -116,7 +116,7 @@ class ScheduleShortcutTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_an_empty_day_still_answers_locally(self):
         self.assertEqual(await tools.direct_reply('明日なにか予定ある？', self.memory([])),
-                         'その期間の予定はないよ。')
+                         'かぐやの予定表には、その期間の予定は入ってないよ。今のところ空っぽ。')
 
     async def test_adding_a_plan_is_left_to_the_model(self):
         memory = SimpleNamespace(call=AsyncMock())

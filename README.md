@@ -25,6 +25,7 @@ Windows PCを母艦にして、PCまたは同じ家庭内Wi-FiのiPhoneから使
 - PC版の「最新版を反映」
 - 同一LAN内のiPhoneブラウザからの利用
 - Living Kaguya（生活状態、軽い感情、低負荷モーション、利用時間帯の学習）
+- Kaguya Mind（実験機能・既定OFF。かぐや自身の感情・好み・未完の話題をローカルに育てる）
 
 アプリ画面の「使い方」は `frontend/public/manual.html` です。READMEと同じく現行仕様へ更新します。
 
@@ -254,6 +255,75 @@ Living Kaguyaの利用時間学習・感情状態は端末localStorageなので�
 
 ---
 
+# Kaguya Mind（実験機能）
+
+かぐや自身の感情・好み・気にかけていることを、少しずつローカルに育てる実験レイヤーです。
+**既定はOFF**で、「設定 → 実験機能「Kaguya Mind」を使う」で切り替えます。
+
+追加のGemini/外部API呼び出しはありません。OFFのときはSQLiteを開かず、プロンプトにも何も足さないため、
+会話・記憶・ツールの動作と消費トークンはOFF導入前と同じです。
+
+## 既存機能との関係
+
+Kaguya Mindは既存機能とは別レイヤーで、保存先も分かれています。
+
+| | 保存先 | 役割 |
+|---|---|---|
+| Memory（3層） | PostgreSQL | ユーザーについて覚えていること |
+| Relationship Memory | `settings.json` | 慣れ・利用日数・話し方フィードバック |
+| Living Kaguya | localStorage | 画面上の生活状態と表情（normal / happy / sleepy / sulky） |
+| Kaguya Mind | `mind.db` | かぐや自身の感情・好み・未完の話題 |
+
+会話本体との接点は `before_reply` / `after_reply` の2箇所だけです。
+Mind内部で例外が起きても会話は止まらず、Mindの寄与だけが無くなります（fail-open）。
+`mind.db` を削除しても、会話・記憶・Relationship Memoryは影響を受けません。
+
+Living Kaguyaの表情とMindの気分は**別々に動きます**。画面のかぐやが `sleepy` でも、Mindの気分は「ご機嫌」のことがあります。
+
+## 育つもの
+
+**感情（Emotion Vector）**
+happiness / curiosity / boredom / affection / jealousy / concern の6つに、時刻から算出するenergyを加えたもの。
+褒められた、他のAIと比べられた、つらい話をされた等でローカルに変化し、時間が経つと基準値へ戻ります。
+戻る速さは感情ごとに違い、affectionが最も長く残ります。
+
+**好み（Self Model）**
+かぐやが自分の回答で「あたしは○○が好きだよ / 苦手かな」と**言い切った**ときだけ、自分の好みとして記録します。
+「好きじゃない」「好きって言ったら」のような否定・仮定や、ユーザー発言の引用は学習しません。
+最初は確信度が低く、同じ傾向が重なるほど定着します。`かぐや --likes/dislikes--> 話題` として内部グラフにも残します。
+
+**気にかけていること（未完の話題）**
+「明日面接がある」「熱が出たかも」のような予定・体調を覚えておき、あとから自分で触れます。
+
+- 予定が**過ぎてから**触れます。言われた当日には聞きません
+- ユーザーが自分でその話題に戻れば、そこで終わりにします
+- 返事がなくても2回で諦めます
+- 片付いた話題は14日、動きのない話題は30日で忘れます
+
+抽出はローカルの規則だけで行い、誤検出を避ける側に倒しています。
+語尾がひらがなの名詞（「打ち合わせ」「引っ越し」など）は拾えません。
+
+**よく使う言い方（Shortcut候補）**
+同じ短い言い回しが3回以上現れたら候補として記録します。**現時点では自動実行しません**。
+設定画面に表示するだけで、プロンプトへは渡しません。
+
+## 設定画面の表示
+
+ONのときだけ、現在の気分・育ち具合・上位の好み・気にかけている話題の件数を1行で表示します。
+内部の数値やテーブル名は会話へ出しません。
+
+## リセット
+
+「設定 → Kaguya Mindの蓄積を消す」で `mind.db` を削除し、育ったものを最初からにできます。
+会話・記憶（PostgreSQL）・かぐやの接し方・Relationship Memoryは消えません。
+
+## 制約
+
+- `mind.db` にはユーザー発話の短い抜粋が残ります。記憶画面の個別「削除」とは連動しないため、消す場合は上記のリセットを使います
+- 会話・保存の実行中はリセットできません
+
+---
+
 # Function Calling / ローカル機能
 
 ## リマインダー
@@ -377,6 +447,7 @@ READMEを確認してiPhone対応を教えて
 | ローカル予定 | `%LOCALAPPDATA%\KaguyaAI\calendar.json` |
 | 参照資料 | `%LOCALAPPDATA%\KaguyaAI\references` |
 | Living状態 | 各ブラウザ/WebViewのlocalStorage |
+| Kaguya Mind（実験機能） | `%LOCALAPPDATA%\KaguyaAI\mind.db` |
 | 更新ログ | `%LOCALAPPDATA%\KaguyaAI\update.log` |
 
 ---
@@ -395,6 +466,7 @@ Gemini  PostgreSQL  Local tools
                    |- calendar.json
                    |- references/
                    |- project inspector
+                   |- mind.db (実験機能。OFF時は開かない)
 
 PCのみ: Tauri
  |- tray / mini window
@@ -496,4 +568,5 @@ start.bat
 - LLMによる自己ソース書き換え
 - 本格的な感情モデル / Fine-tuning
 
-Living Kaguyaは「本当に感情がある」ことを主張する機能ではなく、キャラクターとして自然に見えるためのローカル演出です。
+Living KaguyaとKaguya Mindは「本当に感情がある」ことを主張する機能ではなく、キャラクターとして自然に見えるためのローカル演出です。
+どちらもGeminiの学習・Fine-tuningは行いません。

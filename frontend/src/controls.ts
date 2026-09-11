@@ -32,6 +32,15 @@ export class Controls {
         this.message('設定を保存しました。');
       });
     });
+    document.getElementById('mind-reset-btn')!.addEventListener('click', () => {
+      this.confirm('Kaguya Mindの蓄積を消しますか？',
+        'かぐやの感情・好み・気にかけていることだけを消します。会話・記憶・かぐやの接し方は消えません。',
+        async () => {
+          // 完了メッセージは共通の確認ダイアログ側が出す。
+          const result = await this.api('/mind', { method: 'DELETE' });
+          this.renderMind(result.mind);
+        });
+    });
     document.getElementById('quiet-btn')!.addEventListener('click', () => this.toggleQuiet());
     document.getElementById('organize-btn')!.addEventListener('click', () => this.perform(async () => {
       await this.api('/jobs/run', { method: 'POST' });
@@ -121,7 +130,9 @@ export class Controls {
     }
     const traits = Array.isArray(mind.traits) ? mind.traits.slice(0, 4).map((item: Row) => `${item.name}=${item.stance}`).join('、') : '';
     const suffix = traits ? ` ／ 好み：${traits}` : ' ／ 好みはまだ育ち始めたところ';
-    target.textContent = `ON：${mind.mood ?? 'いつも通り'} ／ ${mind.growth ?? ''}${suffix}`;
+    const open = Number(mind.stats?.open_loops ?? 0);
+    const loops = open ? ` ／ 気にかけている話題：${open}件` : '';
+    target.textContent = `ON：${mind.mood ?? 'いつも通り'} ／ ${mind.growth ?? ''}${suffix}${loops}`;
   }
 
   private renderReminders(items: Row[]): void {

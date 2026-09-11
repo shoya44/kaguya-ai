@@ -73,6 +73,7 @@ async def lifespan(app: FastAPI):
     finally:
         await controller.close()
         await llm.close()
+        mind.close()
         await internal_client.aclose()
 
 
@@ -175,6 +176,22 @@ async def change_settings(body: dict, request: Request, _client_id: UUID = Depen
     await controller.broadcast({'type': 'settings.changed', 'options': options.model_dump()})
     return {'options': options.model_dump(),
             'mind': controller.mind.snapshot(tokyo_now()) if controller.mind else {'enabled': False, 'status': 'off'}}
+
+
+@app.delete('/mind')
+async def reset_mind(request: Request, _client_id: UUID = Depends(require_session)):
+    """実験機能の蓄積だけを消す。会話・記憶・Relationship Memoryは対象外。"""
+    controller = request.app.state.controller
+    if not controller.mind:
+        raise HTTPException(404, 'Kaguya Mindは利用できません。')
+    if controller.active or controller.unsaved:
+        raise HTTPException(409, '会話・保存の完了後に実行してください。')
+    try:
+        await asyncio.to_thread(controller.mind.reset)
+    except OSError:
+        raise HTTPException(503, 'Kaguya Mindのデータを削除できませんでした。') from None
+    return {'mind': controller.mind.snapshot(tokyo_now()),
+            'status': 'Kaguya Mindの蓄積を削除しました。'}
 
 
 @app.delete('/reminders/{reminder_id}')
