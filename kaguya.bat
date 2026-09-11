@@ -116,25 +116,22 @@ echo     4  check-db    Database checks on a disposable local PostgreSQL
 echo     5  autostart   Turn sign-in auto start on or off
 echo     0  exit
 echo.
-set "CHOICE="
-set /p "CHOICE=Enter a number: "
-if "%CHOICE%"=="1" goto update
-if "%CHOICE%"=="2" goto check
-if "%CHOICE%"=="3" goto build
-if "%CHOICE%"=="4" goto checkdb
-if "%CHOICE%"=="5" goto autostart_menu
-if "%CHOICE%"=="0" exit /b 0
-if "%CHOICE%"=="" exit /b 0
-echo No such number.
-goto menu
+rem set /p ではなくchoiceを使う。Enter不要で、空入力や想定外の文字が入らない。
+rem errorlevelは「以上」で判定されるため、必ず大きい方から見る。
+choice /c 123450 /n /m "Select: "
+if errorlevel 6 exit /b 0
+if errorlevel 5 goto autostart_menu
+if errorlevel 4 goto checkdb
+if errorlevel 3 goto build
+if errorlevel 2 goto check
+if errorlevel 1 goto update
+exit /b 0
 
 :autostart_menu
 set "TASK_NAME=KaguyaAI_AutoStart"
-set "SWITCH="
-set /p "SWITCH=Type on or off (Enter to go back): "
-if /i "%SWITCH%"=="on" goto autostart_on
-if /i "%SWITCH%"=="off" goto autostart_off
-goto menu
+choice /c yn /m "Start Kaguya AI at Windows sign-in"
+if errorlevel 2 goto autostart_off
+goto autostart_on
 
 :usage
 echo Usage: kaguya.bat ^<command^>
