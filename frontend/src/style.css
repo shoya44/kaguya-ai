@@ -244,6 +244,7 @@ input[type="checkbox"] {
 }
 
 #options-form button[type="submit"],
+#mind-reset-btn,
 #organize-btn {
   align-self: flex-start;
   margin-top: 4px;
