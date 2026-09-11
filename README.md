@@ -22,7 +22,7 @@ Windows PCを母艦にして、PCまたは同じ家庭内Wi-FiのiPhoneから使
 - 返答のあとに出る定型の追いかけボタン（「もっと詳しく」など。候補生成のためのLLM呼び出しはしない）
 - 書きかけの端末内保存（送信が受理されると消える）
 - PC版の通常表示 / 簡易表示
-- PC版の「最新版を反映」
+- `kaguya.bat` からの更新（ダブルクリックでメニュー）
 - 同一LAN内のiPhoneブラウザからの利用
 - Living Kaguya（生活状態、軽い感情、低負荷モーション、利用時間帯の学習）
 - Kaguya Mind（実験機能・既定OFF。かぐや自身の感情・好み・未完の話題をローカルに育てる）
@@ -88,7 +88,7 @@ Gemini APIは以下の方針です。
 ## 更新
 
 通常の `start.bat` は**Gitを変更しません**。
-最新版を取り込むのは、PC版の「最新版を反映」を明示的に押したときだけです。
+最新版を取り込むのは、`kaguya.bat` の `update` を明示的に実行したときだけです。
 
 更新時は外部PowerShellヘルパーが以下を行います。
 
@@ -113,7 +113,7 @@ Gemini APIは以下の方針です。
 | Rust stable + MSVC Build Tools + Windows SDK | Tauri build |
 | WebView2 Runtime | PC画面 |
 | PostgreSQL | 会話・長期記憶 |
-| Git | 「最新版を反映」 |
+| Git | 更新（`kaguya.bat update`） |
 
 Python 3.13系でも、requirementsが正常にインストールできれば利用できます。
 
@@ -544,17 +544,18 @@ PCのみ: Tauri
 | `stop.bat` | 終了 |
 | `kaguya.bat <command>` | 開発・保守 |
 
-`kaguya.bat` のコマンド：
+`kaguya.bat` は**ダブルクリックするとメニューが出ます**。番号を選ぶだけで、コマンドを打つ必要はありません。
+コマンドで直接指定することもできます。
 
 | コマンド | 内容 |
 |---|---|
-| `update` | 終了 → `main` を更新 → ビルド → 起動。アプリ内の「最新版を反映」が動かないときはこれ |
+| `update` | 終了 → `main` を更新 → ビルド → 起動 |
 | `build` | frontendとデスクトップアプリを再ビルド |
 | `check` | ローカルの全テスト、ビルド、Cargo check |
 | `check-db` | 使い捨てのローカルPostgreSQLでDB確認（アプリのDBは使いません） |
 | `autostart on` / `off` | Windowsサインイン時の簡易表示起動を登録／解除 |
 
-`tools/` の `update_repo.bat` と `restart_update.ps1` は、PC版の「最新版を反映」から呼ばれる内部用です。直接実行する必要はありません。
+`tools/update_repo.bat` は `kaguya.bat update` から呼ばれる内部用です。直接実行する必要はありません。
 
 ---
 
@@ -596,9 +597,8 @@ Cargo check（Tauri）はRustツールチェーンとWindows SDKが必要なの�
 <!-- manual:start -->
 # 更新手順
 
-通常はPC版の「最新版を反映」を使用します。
-
-アプリ内のボタンが動かないときは、コマンドプロンプトから同じことができます。
+エクスプローラーで `kaguya.bat` を**ダブルクリック**し、`1`（update）を選びます。
+コマンドで直接指定しても同じです。
 
 ```bat
 cd C:\kaguya-ai
@@ -606,7 +606,6 @@ kaguya.bat update
 ```
 
 終了 → `main` を `--ff-only` 更新 → ビルド → 起動 を順に行い、**失敗するとその場に理由を表示して止まります**。
-アプリ内のボタンと違って画面が残るので、うまくいかないときはこちらを使ってください。
 
 1つずつ確かめたい場合：
 
