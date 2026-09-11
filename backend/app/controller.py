@@ -15,7 +15,7 @@ class Controller:
     Socket disconnects do not abort a turn. The same ID may be used to recover
     the result. Never automatically regenerate after an ambiguous save failure.
     """
-    def __init__(self, memory, llm, broadcast, runtime):
+    def __init__(self, memory, llm, broadcast, runtime, mind=None):
         self.memory = memory
         self.llm = llm
         self.broadcast = broadcast
@@ -26,6 +26,8 @@ class Controller:
         self.unsaved = None
         self.editing = False
         self.runtime = runtime
+        # Optional experimental dependency. Core chat never imports Mind internals.
+        self.mind = mind
         self.proactive = Proactive(runtime)
         self.jobs = Jobs(memory, llm, runtime, self)
         self.presence = {}
@@ -168,6 +170,7 @@ class Controller:
             await self.broadcast({'type': 'chat.accepted', 'turn_id': turn_id,
                                   'text': turn['text'], 'client_id': turn['client_id']})
             relationship.capture_feedback(self.runtime, turn['text'], tokyo_now())
+            mind_context = self.mind.before_reply(turn['text'], tokyo_now()) if self.mind else {}
             proactive = self.proactive.activity()
             if self.cancel_requested:
                 raise asyncio.CancelledError
@@ -179,6 +182,8 @@ class Controller:
                 hint = ' '.join(row['text'] for row in context[-2:])[:2000]
                 recalled = await self.memory.call('GET', '/recall', params={'text': turn['text'], 'context': hint})
                 recalled['relationship'] = relationship.context(self.runtime)
+                if mind_context:
+                    recalled['mind'] = mind_context
                 self.references = ([{'label': row['topic_key'], 'text': row['summary']}
                                     for row in recalled.get('wisdom', [])[:5]]
                                    + [{'label': row['key'], 'text': row['value']}
@@ -199,6 +204,8 @@ class Controller:
                 return
             self.unsaved = None
             relationship.record_success(self.runtime, tokyo_now())
+            if self.mind:
+                self.mind.after_reply(turn['text'], answer, tokyo_now())
             self.proactive.last_activity = tokyo_now()
             await self.broadcast({'type': 'chat.completed', 'turn_id': turn_id,
                                   'text': turn['text'], 'answer': answer, 'references': self.references,
@@ -253,6 +260,8 @@ class Controller:
             await self.memory.complete(turn_id, answer)
             self.unsaved = None
             relationship.record_success(self.runtime, tokyo_now())
+            if self.mind:
+                self.mind.after_reply(turn['text'], answer, tokyo_now())
             await self.broadcast({'type': 'chat.completed', 'turn_id': turn_id,
                                   'text': turn['text'], 'answer': answer, 'references': self.references})
         except ChatError:
