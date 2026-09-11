@@ -66,6 +66,31 @@ class DatabaseChecks(unittest.TestCase):
             self.assertEqual(len(recalled['wisdom'][0]['evidence']), 1)
             self.assertEqual(conn.execute('SELECT count(*) AS n FROM raw_memory WHERE processed_at IS NOT NULL').fetchone()['n'], 2)
 
+    def test_recall_prefers_the_current_message_over_the_surrounding_context(self):
+        with self.connect() as conn:
+            for topic, text in [('コーヒー', 'コーヒーはブラックで飲む'), ('確定申告', '確定申告の書類は書斎の棚')]:
+                conn.execute('''INSERT INTO wisdom(id,topic_key,summary,kind,support_level,importance,evidence)
+                    VALUES (%s,%s,%s,'explicit','stated',3,'[]')''', (uuid4(), topic, text))
+        with self.connect() as conn:
+            # 直前の話題（コーヒー）に引きずられず、今の質問の記憶を先頭に置く。
+            recalled = store.recall(conn, '確定申告の書類ってどこだっけ', 'コーヒーの話をしていた')
+        self.assertEqual(recalled['wisdom'][0]['topic_key'], '確定申告')
+
+    def test_recall_matches_across_half_and_full_width_spellings(self):
+        with self.connect() as conn:
+            conn.execute('''INSERT INTO wisdom(id,topic_key,summary,kind,support_level,importance,evidence)
+                VALUES (%s,'GitHub','GitHubのアカウントはshoya44','explicit','stated',3,'[]')''', (uuid4(),))
+        with self.connect() as conn:
+            recalled = store.recall(conn, 'ＧＩＴＨＵＢのアカウント教えて')
+        self.assertEqual([row['topic_key'] for row in recalled['wisdom']], ['GitHub'])
+
+    def test_summary_counts_exactly_what_organizing_would_pick_up(self):
+        self.add()
+        with self.connect() as conn:
+            result = store.summary(conn)
+            self.assertEqual(result['pending'], len(store.snapshot(conn)['raw']))
+            self.assertEqual(result['recent'], [])
+
     def test_unknown_evidence_does_not_consume_original(self):
         self.add()
         with self.connect() as conn: snap = store.snapshot(conn)

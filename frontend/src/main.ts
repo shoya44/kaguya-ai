@@ -13,11 +13,12 @@ import { Menu } from '@tauri-apps/api/menu';
 // the iPhone opens http://<PC's LAN address>:8765/, which FastAPI now also
 // serves this build from, so location.hostname is exactly the right host.
 const BACKEND_HOST = isTauri() ? '127.0.0.1' : location.hostname;
-const API_BASE = `http://${BACKEND_HOST}:8765`;
-const WS_BASE = `ws://${BACKEND_HOST}:8765`;
+const API_BASE = isTauri() || location.port === '5173' ? `http://${BACKEND_HOST}:8765` : location.origin;
+const WS_BASE = API_BASE.replace(/^http/, 'ws');
 const SESSION_KEY = 'kaguya.session';
 const CLIENT_KEY = 'kaguya.client';
 const MINI_MODE_KEY = 'kaguya.miniMode';
+const DRAFT_KEY = 'kaguya.draft.v1';
 
 // 簡易版UI（デスクトップマスコット表示）: 透過・枠なしウィンドウを画面右下に
 // 固定する。位置はドラッグ不可・毎回右下に再計算するだけなので設定ファイル
@@ -35,10 +36,11 @@ let savedNormalMaximized = false;
 let miniModeTransition: Promise<void> = Promise.resolve();
 
 function applyMiniUi(enabled: boolean): void {
+  if (enabled) setInputFocused(false);
   document.body.classList.toggle('mini-mode', enabled);
   document.getElementById('app')!.classList.toggle('mode-mini', enabled);
   document.getElementById('app')!.classList.toggle('mode-normal', !enabled);
-  inputEl.placeholder = enabled ? '' : 'かぐやに話しかける（Enterで送信・Shift+Enterで改行）';
+  inputEl.placeholder = enabled ? '' : INPUT_PLACEHOLDER;
   try { localStorage.setItem(MINI_MODE_KEY, enabled ? '1' : '0'); } catch { /* best effort */ }
 }
 
@@ -175,6 +177,8 @@ interface HistoryTurn {
   answer: string | null;
   status: string;
   client_id: string;
+  partial?: string;
+  references?: { label: string; text: string }[];
 }
 
 interface PendingTurn {
@@ -204,6 +208,95 @@ let unsavedTurnId: string | null = null;
 let turns = new Map<string, HistoryTurn>();
 let controls: Controls | null = null;
 let activeTurnId: string | null = null;
+const answerElements = new Map<string, HTMLDivElement>();
+
+// iPhone/iPadでは改行キーは改行のまま残し、送信は送信ボタンだけに任せる。
+// PC（細かいポインタ）では従来どおりEnter送信・Shift+Enter改行。
+const TOUCH_INPUT = typeof window.matchMedia === 'function'
+  && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+const INPUT_PLACEHOLDER = TOUCH_INPUT
+  ? 'かぐやに話しかける（送信ボタンで送信）'
+  : 'かぐやに話しかける（Enterで送信・Shift+Enterで改行）';
+
+// 追加で聞きたいときの定型ボタン。候補を作るための追加のLLM呼び出しはしない。
+const FOLLOW_UPS = ['もっと詳しく', '例をあげて', '短くまとめて'];
+
+// 書きかけは端末内（localStorage）だけに置く。送信が受理されるまで消さないので、
+// 送信前にSafariがタブを捨てても、開き直せば書きかけがそのまま戻る。
+function saveDraft(turnId?: string): void {
+  const text = inputEl.value;
+  try {
+    if (!text && !turnId) localStorage.removeItem(DRAFT_KEY);
+    else localStorage.setItem(DRAFT_KEY, JSON.stringify({ text, turnId }));
+  } catch { /* optional storage */ }
+}
+
+function restoreDraft(): void {
+  try {
+    const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+    if (typeof draft?.text === 'string' && !inputEl.value) inputEl.value = draft.text.slice(0, 2000);
+  } catch { /* invalid/disabled storage */ }
+}
+
+// 送信が受理された時点で、その送信ぶんの書きかけだけを消す。受理前に書き始めた
+// 次の文章は消さないよう、turn_idが一致するときに限る。
+function settleDraft(turnId: string): void {
+  try {
+    const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+    if (!draft || draft.turnId !== turnId) return;
+    if (inputEl.value === draft.text) inputEl.value = '';
+    localStorage.removeItem(DRAFT_KEY);
+  } catch { /* optional storage */ }
+}
+
+restoreDraft();
+inputEl.addEventListener('input', () => saveDraft());
+// 入力中はキャラクターを小さな顔だけの表示にして、会話履歴へ場所を渡す。
+function setInputFocused(focused: boolean): void {
+  document.body.classList.toggle('input-focused', focused);
+  avatar.setFaceMode(focused && !document.getElementById('app')!.classList.contains('mode-mini'));
+}
+
+inputEl.addEventListener('focus', () => setInputFocused(true));
+inputEl.addEventListener('blur', () => setInputFocused(false));
+
+// 接続状態は常設の小さな表示。実際に起きていることだけを書く
+// （検索していないのに「記憶を探しているよ」のような演出はしない）。
+function connectionStatus(text: string): void {
+  document.getElementById('connection-status')!.textContent = text;
+}
+
+const PHASE_LABELS: Record<string, string> = {
+  preparing: '接続中', generating: '回答を生成中', saving: '保存中',
+};
+
+function chatStatus(phase: string | null): void {
+  document.getElementById('chat-status')!.textContent = phase ? PHASE_LABELS[phase] ?? '' : '';
+}
+
+// ストリーミング中の本文差し替え。過去を読んでいる間は勝手に最下部へ動かさない。
+function applyPartial(turnId: string, text: string): void {
+  const el = answerElements.get(turnId);
+  if (!el || !text) return;
+  const follow = nearLatest();
+  el.textContent = text;
+  if (follow) scrollLatest();
+  else document.getElementById('latest-btn')!.hidden = false;
+}
+
+function nearLatest(): boolean {
+  return historyEl.scrollHeight - historyEl.scrollTop - historyEl.clientHeight < 64;
+}
+
+function scrollLatest(): void {
+  historyEl.scrollTop = historyEl.scrollHeight;
+  document.getElementById('latest-btn')!.hidden = true;
+}
+
+document.getElementById('latest-btn')!.addEventListener('click', scrollLatest);
+historyEl.addEventListener('scroll', () => {
+  if (nearLatest()) document.getElementById('latest-btn')!.hidden = true;
+});
 
 
 // crypto.randomUUID() は Secure Context 限定で、LAN内HTTPで開くiPhone Safariでは
@@ -345,17 +438,52 @@ function appendMessage(role: 'user' | 'assistant', text: string, opts?: { pendin
   el.textContent = text;
   if (opts?.id) el.dataset.turnId = opts.id;
   historyEl.appendChild(el);
-  historyEl.scrollTop = historyEl.scrollHeight;
   return el;
 }
 
-function renderHistoryTurn(turn: HistoryTurn): void {
+// 返答が何を参照したかは、実際に渡した記憶があるときだけ出す。
+function appendReferences(turn: HistoryTurn): void {
+  if (!turn.references?.length) return;
+  const box = document.createElement('details');
+  box.className = 'msg-references';
+  const title = document.createElement('summary');
+  title.textContent = `参照した記憶 ${turn.references.length}件`;
+  box.appendChild(title);
+  for (const item of turn.references) {
+    const row = document.createElement('div');
+    row.textContent = `${item.label}：${item.text}`;
+    box.appendChild(row);
+  }
+  historyEl.appendChild(box);
+}
+
+// 最後の返答にだけ定型の追いかけ質問を出す。押すと通常の会話として送るだけで、
+// 候補を作るための追加のLLM呼び出しはしない。
+function appendFollowUps(turn: HistoryTurn, isLast: boolean): void {
+  if (!isLast || !turn.answer || turn.status !== 'completed') return;
+  const row = document.createElement('div');
+  row.className = 'follow-ups';
+  for (const label of FOLLOW_UPS) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.disabled = busy || !synchronized || !!unsavedTurnId;
+    button.addEventListener('click', () => sendTurn(label, createTurnId(), false));
+    row.appendChild(button);
+  }
+  historyEl.appendChild(row);
+}
+
+function renderHistoryTurn(turn: HistoryTurn, isLast: boolean): void {
   const userEl = appendMessage('user', turn.text, { id: turn.turn_id });
   if (turn.answer) {
-    appendMessage('assistant', turn.answer, { id: turn.turn_id, pending: turn.status === 'pending' });
+    answerElements.set(turn.turn_id, appendMessage('assistant', turn.answer, { id: turn.turn_id, pending: turn.status === 'pending' }));
+    appendReferences(turn);
+    appendFollowUps(turn, isLast);
   } else if (turn.status === 'pending') {
-    appendMessage('assistant', '……考え中……', { id: turn.turn_id, pending: true });
+    answerElements.set(turn.turn_id, appendMessage('assistant', turn.partial || '……考え中……', { id: turn.turn_id, pending: true }));
   } else if (['failed', 'cancelled'].includes(turn.status)) {
+    if (turn.partial) appendMessage('assistant', `${turn.partial}\n（途中の返答・未保存）`, { id: turn.turn_id, pending: true });
     const label = document.createElement('div');
     label.textContent = '前回の会話は完了しませんでした。';
     userEl.appendChild(label);
@@ -369,9 +497,18 @@ function renderHistoryTurn(turn: HistoryTurn): void {
   }
 }
 
-function renderTurns(): void {
+function renderTurns(forceLatest = false): void {
+  const follow = forceLatest || nearLatest();
+  const oldTop = historyEl.scrollTop;
   historyEl.innerHTML = '';
-  for (const turn of turns.values()) renderHistoryTurn(turn);
+  answerElements.clear();
+  const lastId = [...turns.keys()].at(-1);
+  for (const turn of turns.values()) renderHistoryTurn(turn, turn.turn_id === lastId);
+  if (follow) scrollLatest();
+  else {
+    historyEl.scrollTop = oldTop;
+    document.getElementById('latest-btn')!.hidden = false;
+  }
 }
 
 async function loadHistory(older = false): Promise<void> {
@@ -402,10 +539,18 @@ async function loadHistory(older = false): Promise<void> {
     const page = new Map(body.items.map(turn => [turn.turn_id, turn]));
     const oldHeight = historyEl.scrollHeight;
     const oldTop = historyEl.scrollTop;
+    const previous = turns;
     turns = older ? new Map([...page, ...turns]) : page;
+    // 再接続後や別端末から見たときも、送信済みの書きかけはここで消える。
+    for (const [id, turn] of turns) {
+      const before = previous.get(id);
+      if (before?.references) turn.references = before.references;
+      if (before?.partial && !turn.answer) turn.partial = before.partial;
+      if (turn.status === 'pending' || turn.status === 'completed') settleDraft(id);
+    }
     nextCursor = body.next_cursor;
     olderBtn.hidden = !nextCursor;
-    renderTurns();
+    renderTurns(!older && previous.size === 0);
     if (older) historyEl.scrollTop = oldTop + historyEl.scrollHeight - oldHeight;
   } finally {
     historyLoading = false;
@@ -505,6 +650,7 @@ async function characterVisible(): Promise<boolean> {
 async function connectWs(): Promise<void> {
   if (isTauri()) await waitForBackend(20000, 500);
   const s = await ensureSession();
+  connectionStatus('接続中…');
   const socket = new WebSocket(`${WS_BASE}/ws?token=${encodeURIComponent(s.sessionToken)}`);
   synchronized = false;
   ws = socket;
@@ -527,6 +673,7 @@ async function connectWs(): Promise<void> {
       synchronized = true;
       unsavedTurnId = null;
       reconnectDelay = 1000;
+      connectionStatus('接続済み');
       hideError();
       controls?.refreshSettings().catch(() => showError('設定を取得できませんでした。設定画面から再試行してください。', null));
       for (const event of queued) handleServerEvent(event);
@@ -547,6 +694,8 @@ async function connectWs(): Promise<void> {
     ws = null;
     synchronized = false;
     setBusy(false);
+    chatStatus(null);
+    connectionStatus('未接続（再接続します）');
     if (event.code === 4401) invalidateSession();
     showError('サーバーとの接続が切れました。再接続します。', null);
     scheduleReconnect();
@@ -570,10 +719,30 @@ function scheduleReconnect(): void {
 function handleServerEvent(data: Record<string, unknown>): void {
   const type = data.type as string;
   switch (type) {
-    case 'state.changed':
+    case 'state.changed': {
       activeTurnId = (data.turn_id as string) ?? null;
+      chatStatus(data.state === 'thinking' ? (data.phase as string) ?? null : null);
+      // 別端末から始まった会話でも、進行中の本文・参照をこの端末へ復元する。
+      if (activeTurnId) {
+        const known = turns.get(activeTurnId);
+        const turn: HistoryTurn = known ?? { turn_id: activeTurnId, text: (data.text as string) ?? '',
+          answer: null, status: 'pending', client_id: (data.client_id as string) ?? '' };
+        turn.partial = (data.partial as string) || turn.partial;
+        const references = data.references as HistoryTurn['references'];
+        if (references?.length) turn.references = references;
+        if (!known) { turns.set(activeTurnId, turn); renderTurns(); }
+        else applyPartial(activeTurnId, turn.partial || '');
+      }
       setBusy(data.state === 'thinking');
       break;
+    }
+    case 'chat.progress': {
+      const turnId = data.turn_id as string;
+      const turn = turns.get(turnId);
+      if (turn) turn.partial = data.partial as string;
+      applyPartial(turnId, data.partial as string);
+      break;
+    }
     case 'proactive.message': {
       characterVisible().then(visible => {
         if (!visible || reminderId) return;
@@ -621,6 +790,7 @@ function handleServerEvent(data: Record<string, unknown>): void {
     case 'chat.accepted':
       turns.set(data.turn_id as string, { turn_id: data.turn_id as string,
         text: data.text as string, answer: null, status: 'pending', client_id: data.client_id as string });
+      settleDraft(data.turn_id as string);
       renderTurns();
       break;
     case 'chat.completed': {
@@ -630,7 +800,11 @@ function handleServerEvent(data: Record<string, unknown>): void {
         turns.set(turnId, { turn_id: turnId, text: data.text as string, answer: null,
           status: 'pending', client_id: '' });
       }
+      const references = data.references as HistoryTurn['references'];
+      if (references?.length) turns.get(turnId)!.references = references;
+      settleDraft(turnId);
       markPendingSettled(turnId, data.answer as string);
+      chatStatus(null);
       if (pending?.turnId === turnId) pending = null;
       lastConversation = Date.now();
       talkingState = 'talking';
@@ -646,11 +820,13 @@ function handleServerEvent(data: Record<string, unknown>): void {
       // 操作拒否は進行中の会話の失敗ではない。
       if (['saving', 'not_owner', 'busy', 'turn_conflict'].includes(code)) {
         if (turnId && turnId !== activeTurnId) markPendingSettled(turnId, null);
+        if (!activeTurnId) chatStatus(null);
         setBusy(activeTurnId !== null);
         showError(message, null);
         return;
       }
       setBusy(false);
+      chatStatus(null);
       if (code === 'save_failed') {
         // Keep the pending bubble; only a save retry is offered, per spec.
         showSaveRetry(turnId!, data.text as string, data.answer as string);
@@ -713,6 +889,9 @@ form.addEventListener('submit', (event) => {
   const text = inputEl.value.trim();
   if (!text) return;
   const turnId = createTurnId();
+  // 端末内の下書きは送信が受理されるまで消さない。受理はサーバーのchat.accepted
+  // （または履歴の取得）で確認し、そこで初めて入力欄と保存分を消す。
+  saveDraft(turnId);
   sendTurn(text, turnId, false);
   if (pending?.turnId === turnId) inputEl.value = '';
 });
@@ -723,7 +902,8 @@ let draftIndex = 0;
 
 inputEl.addEventListener('keydown', (event) => {
   // isComposing: IMEの変換確定Enterを送信と誤認しないための判定。
-  if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+  // タッチ端末（iPhone）では改行キーは改行のまま。送信は送信ボタンだけ。
+  if (!TOUCH_INPUT && event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
     event.preventDefault();
     form.requestSubmit();
     return;
@@ -790,6 +970,8 @@ async function waitForBackend(maxWaitMs: number, intervalMs: number): Promise<bo
 
 async function main(): Promise<void> {
   setupViewportHeight();
+  inputEl.placeholder = INPUT_PLACEHOLDER;
+  connectionStatus('接続中…');
   controls = new Controls(api, options => {
     quietMode = options.quiet === true;
     refreshAvatar();

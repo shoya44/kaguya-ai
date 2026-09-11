@@ -240,9 +240,15 @@ def references(request: Request, q: str = Query('', max_length=200)):
 
 
 @router.get('/recall')
-def recalled(request: Request, text: str = Query('', max_length=2000)):
+def recalled(request: Request, text: str = Query('', max_length=2000), context: str = Query('', max_length=2000)):
     with connection(request) as conn:
-        return memory_store.recall(conn, text)
+        return memory_store.recall(conn, text, context)
+
+
+@router.get('/summary')
+def memory_summary(request: Request):
+    with connection(request) as conn:
+        return memory_store.summary(conn)
 
 
 @router.get('/organize/snapshot')

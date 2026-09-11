@@ -2,6 +2,7 @@ import asyncio
 import json
 import math
 import re
+from contextlib import aclosing
 
 import httpx
 from google import genai
@@ -94,8 +95,53 @@ class Gemini:
     async def _generate(self, contents, config):
         return self._text(await self._request(contents, config))
 
+    async def _stream(self, contents, config, on_text):
+        if not self.client:
+            raise ChatError('not_configured', 'PC側のGemini設定がまだ完了していません。')
+        answer = ''
+        for attempt in range(2):
+            try:
+                async with asyncio.timeout(self.settings.llm_timeout_seconds):
+                    stream = await self.client.aio.models.generate_content_stream(
+                        model=self.settings.gemini_model, contents=contents, config=config)
+                    async with aclosing(stream):
+                        async for chunk in stream:
+                            for candidate in (chunk.candidates or [])[:1]:
+                                for part in getattr(candidate.content, 'parts', None) or []:
+                                    # thought部分は表示しない。古いSDKには属性自体がない。
+                                    if part.text and not getattr(part, 'thought', False):
+                                        answer += part.text
+                                        await on_text(answer)
+                                reason = str(candidate.finish_reason or '').split('.')[-1]
+                                if reason == 'MAX_TOKENS':
+                                    raise ChatError('output_limit', '出力上限に達しました。途中の返答は未保存です。')
+                                if reason not in ('', 'STOP', 'FINISH_REASON_UNSPECIFIED'):
+                                    raise ChatError('empty_response', '回答が中断されました。途中の返答は未保存です。')
+                if not answer.strip():
+                    raise ChatError('empty_response', '回答を取得できませんでした。')
+                return answer.strip()
+            except errors.APIError as exc:
+                code = int(exc.code or 0)
+                if not answer and attempt == 0 and code in {500, 502, 503, 504}:
+                    await asyncio.sleep(.4)
+                    continue
+                if code == 429:
+                    raise ChatError('rate_limit', 'Geminiの利用制限です。時間をおいて再試行してください。') from None
+                raise ChatError('api_error', 'Geminiへの接続が中断されました。再試行できます。') from None
+            except (TimeoutError, httpx.TimeoutException):
+                raise ChatError('timeout', '返答が時間内に完了しませんでした。途中の返答は未保存です。') from None
+            except httpx.NetworkError:
+                if not answer and attempt == 0:
+                    await asyncio.sleep(.3)
+                    continue
+                raise ChatError('network_error', '通信が中断されました。途中の返答は未保存です。') from None
+            except httpx.HTTPError:
+                raise ChatError('network_error', '通信が中断されました。再試行できます。') from None
+
+        raise ChatError('api_error', 'Geminiへの接続が中断されました。再試行できます。')
+
     async def reply(self, history: list[dict], text: str, recalled=None, proactive=None,
-                    max_tokens=None, memory=None) -> str:
+                    max_tokens=None, memory=None, on_text=None) -> str:
         system = memory_prompt(recalled, proactive)
         contents = [types.Content(role=item['role'], parts=[types.Part(text=item['text'])])
                     for item in conversation_context(history, text, system)]
@@ -105,6 +151,8 @@ class Gemini:
             thinking_config=self._chat_thinking_config(),
         )
         selected_tools = tools.declarations_for(text) if memory is not None else []
+        if not selected_tools and on_text is not None:
+            return await self._stream(contents, config, on_text)
         if selected_tools:
             config.tools = [types.Tool(function_declarations=selected_tools)]
         response = await self._request(contents, config)
@@ -147,6 +195,7 @@ class Gemini:
             'assistant_replyは文脈の確認だけに使い、かぐや自身の発言を事実として抽出しない。'
             '日付や時刻の表現は現在日時を基準に絶対日付へ直してsummaryに書く。'
             'その場限りの依頼や挨拶は省く。推測はinferredにする。根拠は与えたuser_messagesのIDのみ。'
+            '「今回だけ詳しく」「今は短く」など今回の返答だけへの指示は長期的な好みとして保存しない。'
             'summaryは短い日本語。対象がなければitemsは空。最大8項目。',
             thinking_config=self._chat_thinking_config(),
             max_output_tokens=2048, response_mime_type='application/json', response_schema=WisdomBatch))
