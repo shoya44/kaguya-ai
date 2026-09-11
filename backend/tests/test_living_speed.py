@@ -39,6 +39,12 @@ class FastReplyTests(unittest.TestCase):
         self.assertIn('set_reminder', names)
         self.assertNotIn('calendar', names)
 
+    def test_voice_reminder_does_not_also_offer_settings(self):
+        names = {item['name'] for item in tools.declarations_for('明日9時に薬って声かけて')}
+        self.assertIn('set_reminder', names)
+        self.assertNotIn('calendar', names)
+        self.assertNotIn('app_settings', names)
+
 
 class ThinkingConfigTests(unittest.TestCase):
     @staticmethod
