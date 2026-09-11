@@ -156,61 +156,69 @@ def _when(value):
 
 
 def fast_reply(name: str, outcome: dict, user_text: str = '') -> str | None:
-    """考察不要なtool結果だけローカルで短く返す。NoneならGeminiに文章化させる。"""
+    """考察不要なtool結果を、追加LLMなしで短く柔らかく返す。NoneならGeminiに文章化させる。"""
     if not isinstance(outcome, dict):
         return None
     if outcome.get('ok') is False:
-        return f"うまくできなかった。{outcome.get('error', 'もう一度確認してみて。')}"
+        return f"ん、ごめん。うまくできなかったみたい。{outcome.get('error', 'もう一度試してみて。')}"
 
     if name == 'weather' and outcome.get('現在'):
-        stale = '（直近の取得結果）' if outcome.get('キャッシュ利用') else ''
+        stale = ' ちょっと前に取った情報だけどね。' if outcome.get('キャッシュ利用') else ''
         if '明日' in user_text and isinstance(outcome.get('明日'), dict):
             day = outcome['明日']
-            return (f"明日は{day.get('天気', '不明')}。最高{day.get('最高気温C', '?')}℃、"
-                    f"最低{day.get('最低気温C', '?')}℃、降水確率は{day.get('降水確率%', '?')}%だよ。{stale}")
+            rain = day.get('降水確率%')
+            extra = ''
+            if isinstance(rain, (int, float)):
+                extra = ' 傘、持ってった方がよさそう。' if rain >= 40 else ' 雨はそこまで心配しなくてよさそう。'
+            return (f"明日は{day.get('天気', '不明')}みたい。最高{day.get('最高気温C', '?')}℃、"
+                    f"最低{day.get('最低気温C', '?')}℃で、降水確率は{rain if rain is not None else '?'}%だよ。"
+                    f"{extra}{stale}").strip()
         current = outcome['現在']
         today = outcome.get('今日') or {}
         rain = today.get('降水確率%')
-        base = (f"{outcome.get('場所', '')}はいま{current.get('天気', '不明')}、"
-                f"{current.get('気温C', '?')}℃くらい。")
+        base = (f"{outcome.get('場所', '')}はいま{current.get('天気', '不明')}で、"
+                f"{current.get('気温C', '?')}℃くらいだよ。")
         if '傘' in user_text and isinstance(rain, (int, float)):
-            base += (f"降水確率{rain}%だから、傘は持ってった方がよさそう。" if rain >= 40
-                     else f"降水確率{rain}%だから、傘はたぶん大丈夫そう。")
+            base += (f" 降水確率{rain}%だから、傘は持ってった方がよさそう。" if rain >= 40
+                     else f" 降水確率{rain}%だし、傘はたぶん大丈夫そう。")
         elif rain is not None:
-            base += f"今日の降水確率は最大{rain}%だよ。"
-        return base + stale
+            base += f" 今日の降水確率は最大{rain}%みたい。"
+        return (base + stale).strip()
 
     if name == 'set_reminder':
-        return f"{outcome.get('予約時刻', '')}に「{outcome.get('内容', '')}」って声かけるね。"
+        return (f"おっけー。{outcome.get('予約時刻', '')}に「{outcome.get('内容', '')}」って声かけるね。"
+                "ちゃんと任せて。")
     if name == 'remember':
-        return f"うん、「{outcome.get('内容', '')}」って覚えておく。"
+        return f"うん、覚えた。「{outcome.get('内容', '')}」ね。ちゃんと覚えておくよ。"
 
     if name == 'app_settings':
         if 'name' in outcome:
             labels = {'quiet': '静音', 'proactive_minutes': '声かけ間隔', 'always_on_top': '最前面',
                       'font_size': '文字サイズ', 'weather_location': '天気の場所'}
             label = labels.get(str(outcome['name']), str(outcome['name']))
-            return f"{label}を「{outcome.get('value')}」に変えたよ。"
+            return f"うん、変えといたよ。{label}は「{outcome.get('value')}」になってる。"
         settings = outcome.get('settings')
         if isinstance(settings, dict):
-            shown = '、'.join(f'{key}={value}' for key, value in list(settings.items())[:5])
-            return f"今の設定は {shown} だよ。"
+            labels = {'quiet': '静音', 'proactive_minutes': '声かけ間隔', 'always_on_top': '最前面',
+                      'font_size': '文字サイズ', 'weather_location': '天気の場所'}
+            shown = '、'.join(f"{labels.get(key, key)}={value}" for key, value in list(settings.items())[:5])
+            return f"今はこんな感じだよ。{shown}。"
 
     if name == 'calendar':
         event = outcome.get('event')
         if isinstance(event, dict):
-            return f"{_when(event.get('start'))}に「{event.get('title', '予定')}」を入れたよ。"
+            return f"入れといたよ。{_when(event.get('start'))}に「{event.get('title', '予定')}」ね。"
         if outcome.get('removed') is True and isinstance(outcome.get('item'), dict):
-            return f"「{outcome['item'].get('title', '予定')}」は消したよ。"
+            return f"うん、「{outcome['item'].get('title', '予定')}」は予定から消しといたよ。"
         if outcome.get('removed') is False and outcome.get('error'):
-            return str(outcome['error'])
+            return f"んー、その予定はうまく消せなかったみたい。{outcome['error']}"
         items = outcome.get('items')
         if isinstance(items, list):
             if not items:
-                return 'その期間の予定はないよ。'
+                return 'かぐやの予定表には、その期間の予定は入ってないよ。今のところ空っぽ。'
             rows = [f"{_when(item.get('start'))} {item.get('title', '予定')}" for item in items[:5] if isinstance(item, dict)]
             suffix = ' ほかにもあるよ。' if len(items) > 5 else ''
-            return '予定は、' + '／'.join(rows) + '。' + suffix
+            return 'あるよ。' + '／'.join(rows) + '。' + suffix
 
     return None
 
