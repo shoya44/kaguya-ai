@@ -322,3 +322,27 @@ test('the connection state is shown and restored across a reconnect', async () =
   h.sockets[0].close();
   assert.equal(h.elements['connection-status'].textContent, '未接続（再接続します）');
 });
+
+test('the measured response time is shown under the answer', async () => {
+  const h = harness(); await connected(h);
+  h.run("sendTurn('hello','t1',false)");
+  h.sockets[0].emit({ type: 'chat.completed', turn_id: 't1', text: 'hello', answer: '返事',
+    elapsed_ms: 3420, first_text_ms: 1180 });
+  const timing = h.elements.history.children.find(el => el.className === 'msg-timing');
+  assert.equal(timing.textContent, '書き始めまで 1.2秒 ／ 全体 3.4秒');
+});
+
+test('no timing is invented when the server did not measure one', async () => {
+  const h = harness(); await connected(h);
+  h.run("sendTurn('hello','t1',false)");
+  h.sockets[0].emit({ type: 'chat.completed', turn_id: 't1', text: 'hello', answer: '返事' });
+  assert.equal(h.elements.history.children.some(el => el.className === 'msg-timing'), false);
+});
+
+test('the first history page is small and only catching up reads a full page', async () => {
+  const h = harness({ fetch: async () => response({ items: [row('t0')], next_cursor: 'older' }) });
+  await connected(h);
+  assert.match(h.calls.at(-1).url, /limit=20/);
+  await h.run('loadHistory(true)');
+  assert.match(h.calls.at(-1).url, /limit=50&cursor=older/);
+});

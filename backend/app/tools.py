@@ -47,7 +47,11 @@ def declarations_for(text: str) -> list[dict]:
 
     if any(word in value for word in ('覚えて', '覚えといて', '記憶して')):
         names.add('remember')
-    if any(word in value for word in ('リマインド', '知らせて', '声かけて', '言って', '教えて')) and time_hint:
+    # 「教えて」「言って」は日常の問いかけでも普通に出る。時刻が読み取れないのに
+    # リマインダー定義を渡すと、雑談の回までストリーミングできなくなるため、
+    # 明示的な予約語があるときだけ日付だけの指定を許す。
+    if (any(word in value for word in ('リマインド', '知らせて', '声かけて')) and time_hint) or (
+            any(word in value for word in ('言って', '教えて')) and clock_hint):
         names.add('set_reminder')
     if any(word in value for word in ('暑い？', '暑い?', '寒い？', '寒い?')):
         names.add('weather')
@@ -78,13 +82,45 @@ def _weather_location(text: str) -> str:
     return candidate
 
 
+SCHEDULE_WORDS = ('予定', 'スケジュール', 'カレンダー')
+# 追加・削除・変更を含む依頼は日時の解釈が要るのでGeminiへ渡す。
+SCHEDULE_EDITS = ('入れ', '入れて', '追加', '登録', '消し', '削除', 'キャンセル', '取り消', '変更', 'ずらし')
+
+
+def _schedule_range(text: str, now=None) -> tuple[str, str] | None:
+    """「今日の予定は？」のような確認依頼から、見に行く期間を決める。"""
+    now = now or tokyo_now()
+    midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    for offset, word in ((0, '今日'), (1, '明日'), (2, '明後日')):
+        if word in text:
+            start = midnight + timedelta(days=offset)
+            return start.isoformat(), (start + timedelta(days=1)).isoformat()
+    if '来週' in text:
+        start = midnight + timedelta(days=7)
+        return start.isoformat(), (start + timedelta(days=7)).isoformat()
+    # 期間の指定がなければ、今から1週間。calendarツールの既定と同じ範囲。
+    return now.isoformat(), (now + timedelta(days=7)).isoformat()
+
+
 async def direct_reply(text: str, memory) -> str | None:
     """Geminiを呼ばずに確定できる軽量リクエストを処理する。"""
     value = str(text or '')
     # 設定・予約・記憶などの複合依頼は通常のツール選択へ渡す。
-    if (any(item['name'] not in {'weather', 'set_reminder'} for item in declarations_for(value))
+    if (any(item['name'] not in {'weather', 'set_reminder', 'calendar'} for item in declarations_for(value))
             or re.search(r'リマインド|知らせて|声かけ|\d+\s*分後|\d{1,2}\s*(?:時|:)', value)):
         return None
+
+    # 予定の「確認」だけを直接答える。追加・削除や時刻指定は上の条件で除外済み。
+    schedule_request = (
+        any(word in value for word in SCHEDULE_WORDS)
+        and '予定通り' not in value
+        and not any(word in value for word in SCHEDULE_EDITS)
+        and bool(re.search(r'[？?]|教えて|ある|何|なに|確認|入ってる|どうなって', value))
+    )
+    if schedule_request:
+        start, end = _schedule_range(value)
+        outcome = await quick_tools.run('calendar', {'action': 'list', 'start': start, 'end': end}, memory)
+        return fast_reply('calendar', outcome, value)
     weather_request = (
         bool(re.search(r'(?:天気|気温|予報).*(?:[？?]|教えて|知りたい|どう|は$)', value.strip()))
         or bool(re.search(r'傘.*(?:いる|要る|必要|持って|持つ).*(?:[？?]|かな|教えて|$)', value))

@@ -628,6 +628,7 @@ body.mini-mode {
 #app.mode-mini > #controls-status,
 #app.mode-mini > .chat-status-line,
 #app.mode-mini #latest-btn,
+#app.mode-mini .msg-timing,
 #app.mode-mini .msg-references,
 #app.mode-mini .follow-ups,
 #app.mode-mini #older-btn,
@@ -976,6 +977,13 @@ body.mini-mode {
   padding: 5px 12px;
   font-size: 0.85em;
   border-radius: 999px;
+}
+
+/* --- 実測した応答時間 ------------------------------------------------------ */
+.msg-timing {
+  align-self: flex-start;
+  color: var(--muted);
+  font-size: 0.75em;
 }
 
 /* --- 返答が参照した記憶と、定型の追いかけ質問 ----------------------------- */

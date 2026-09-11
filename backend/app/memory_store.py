@@ -202,12 +202,16 @@ def commit_persona(conn, snap, candidate):
 
 
 def list_memories(conn, layer, query='', offset=0):
+    # 記憶タブの検索も、返答時の呼び出し（recall）と同じゆれを吸収する。
+    # 全角・半角をNFKCで揃えてから部分一致で探す（「github」で「ＧｉｔＨｕｂ」が出る）。
+    pattern = '%' + unicodedata.normalize('NFKC', query) + '%'
     if layer == 'raw':
-        rows = conn.execute('''SELECT * FROM raw_memory WHERE content ILIKE %s
-            ORDER BY created_at DESC,id DESC LIMIT 31 OFFSET %s''', ('%' + query + '%', offset)).fetchall()
+        rows = conn.execute('''SELECT * FROM raw_memory WHERE normalize(content, NFKC) ILIKE %s
+            ORDER BY created_at DESC,id DESC LIMIT 31 OFFSET %s''', (pattern, offset)).fetchall()
     elif layer == 'wisdom':
-        rows = conn.execute('''SELECT * FROM wisdom WHERE summary ILIKE %s OR topic_key ILIKE %s
-            ORDER BY updated_at DESC,id DESC LIMIT 31 OFFSET %s''', ('%' + query + '%', '%' + query + '%', offset)).fetchall()
+        rows = conn.execute('''SELECT * FROM wisdom
+            WHERE normalize(summary, NFKC) ILIKE %s OR normalize(topic_key, NFKC) ILIKE %s
+            ORDER BY updated_at DESC,id DESC LIMIT 31 OFFSET %s''', (pattern, pattern, offset)).fetchall()
     elif layer == 'persona':
         rows = conn.execute('SELECT * FROM persona ORDER BY key LIMIT 31 OFFSET %s', (offset,)).fetchall()
     else:
