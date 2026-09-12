@@ -915,6 +915,8 @@ function sendTurn(text: string, turnId: string, retry: boolean): void {
   renderTurns();
   setBusy(true);
   hideError();
+  // 受け取ったことを一度うなずいて返す。考え始めの表情より先に反応が見える。
+  avatar.react('nod');
   ws.send(JSON.stringify({ type: 'chat.send', turn_id: turnId, text, retry }));
 }
 
