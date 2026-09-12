@@ -60,5 +60,20 @@ class LocalStoreTests(unittest.TestCase):
         self.assertEqual(options.weather_location, '東京')
 
 
+class VoiceOptionTests(unittest.TestCase):
+    """通話の声は設定画面で選ぶ。おかしな値はDBへ入れない。"""
+
+    def test_default_and_accepted_names(self):
+        self.assertEqual(Options().voice_name, 'Leda')
+        for name in ('Kore', 'Zephyr', 'Aoede', 'Puck'):
+            self.assertEqual(Options(voice_name=name).voice_name, name)
+
+    def test_rejects_values_that_cannot_be_a_voice_name(self):
+        from pydantic import ValidationError
+        for name in ('', ' ', 'Leda; drop', '日本語', '../etc', 'a' * 41):
+            with self.subTest(name=name), self.assertRaises(ValidationError):
+                Options(voice_name=name)
+
+
 if __name__ == '__main__':
     unittest.main()

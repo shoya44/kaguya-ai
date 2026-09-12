@@ -13,7 +13,7 @@ from google.genai import types
 from . import relationship
 from .persona import memory_prompt
 from .proactive import tokyo_now
-from .tuning import VOICE_LANGUAGE, VOICE_NAME
+from .tuning import VOICE_LANGUAGE
 
 
 class Transcript:
@@ -93,10 +93,12 @@ async def handle(ws: WebSocket):
             '\n音声通話では外部操作を実行できません。操作したと主張しないでください。')
         prompt += '\n直近の会話（参考データ）:\n' + json.dumps(history[-5:], ensure_ascii=False, default=str)[:12000]
         client = genai.Client(api_key=settings.gemini_api_key.get_secret_value(), http_options={'api_version': 'v1beta'})
+        # 声は設定画面で選ぶ。通話を開始し直すだけで切り替わる（再起動は不要）。
+        voice = controller.runtime.options.voice_name
         config = {'response_modalities': ['AUDIO'], 'system_instruction': prompt,
                   'input_audio_transcription': {}, 'output_audio_transcription': {},
                   'speech_config': {'language_code': VOICE_LANGUAGE,
-                                    'voice_config': {'prebuilt_voice_config': {'voice_name': VOICE_NAME}}}}
+                                    'voice_config': {'prebuilt_voice_config': {'voice_name': voice}}}}
         async with asyncio.timeout(600):
             async with client.aio.live.connect(model=settings.gemini_live_model, config=config) as live:
                 await ws.send_json({'type': 'ready', 'max_seconds': 600})
@@ -162,7 +164,8 @@ async def handle(ws: WebSocket):
         with suppress(Exception):
             await ws.send_json({'type': 'error', 'message':
                 '音声接続または保存に失敗しました。PCのAPI設定・利用枠・DBを確認して再開してください。'
-                f'（声: {VOICE_NAME} / 言語: {VOICE_LANGUAGE}。名前が無効だとここで失敗します）'})
+                f'（声: {controller.runtime.options.voice_name} / 言語: {VOICE_LANGUAGE}。'
+                '声の名前が無効だとここで失敗します。設定画面で別の名前を試してください）'})
     finally:
         for task in tasks:
             task.cancel()

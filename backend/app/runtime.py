@@ -27,6 +27,9 @@ class Options(BaseModel):
     font_size: int = Field(default=14, ge=12, le=22)
     # 会話から天気を聞かれたときの既定地点。UI項目を増やさず、会話から変更できる。
     weather_location: str = Field(default='東京', min_length=1, max_length=80)
+    # 通話の声。名前の一覧はGemini側に従うため、選択式にせず入力できるようにする。
+    # 無効な名前だと通話開始時に失敗し、その旨と使った名前が画面に出る。
+    voice_name: str = Field(default='Leda', min_length=1, max_length=40, pattern=r'^[A-Za-z][A-Za-z0-9]*$')
 
 
 class RuntimeStore:
