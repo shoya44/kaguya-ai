@@ -788,6 +788,8 @@ PCのみ: Tauri
 
 `tools/update_repo.bat` は `kaguya.bat update` から呼ばれる内部用です。直接実行する必要はありません。
 
+`tools/motion-compare.html` は、かぐやの揺れ方を並べて見比べるための開発用ページです。アプリには含まれません。ブラウザで直接開きます（絵が出ないときは、リポジトリのルートで `python -m http.server 8000` を実行し `http://127.0.0.1:8000/tools/motion-compare.html` を開きます）。案を増やすときはファイル先頭の `VARIANTS` に、姿勢を増やすときは `POSES` に追加します。
+
 ---
 
 # テスト
