@@ -41,6 +41,15 @@ export class PCPanel {
 
   private status(text: string): void { document.getElementById('pc-status')!.textContent = text; }
 
+  /** 1:02:03 / 12:34 の形。読めなかった動画は長さを出さない。 */
+  private static duration(value: unknown): string {
+    const total = Math.round(Number(value));
+    if (!Number.isFinite(total) || total <= 0) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const minutes = `${Math.floor(total / 60) % 60}:${pad(total % 60)}`;
+    return total >= 3600 ? `${Math.floor(total / 3600)}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}` : minutes;
+  }
+
   /** iPhoneから開くURL。控え忘れても、ここを見れば分かるようにしておく。 */
   private showRemote(url: string): void {
     const line = document.getElementById('pc-remote')!;
@@ -72,7 +81,8 @@ export class PCPanel {
       this.showRemote(String(status.remote_url || ''));
       for (const item of videos.items) {
         const button = document.createElement('button'); button.type = 'button';
-        button.textContent = `${item.name}（${(item.size / 1048576).toFixed(1)} MB）`;
+        const length = PCPanel.duration(item.seconds);
+        button.textContent = length ? `${item.name}（${length}）` : item.name;
         button.addEventListener('click', async () => {
           button.disabled = true;
           try {
@@ -85,9 +95,7 @@ export class PCPanel {
           } catch (error) { this.status(String(error)); } finally { button.disabled = false; }
         });
         this.videoButtons.push(button);
-        const row = document.createElement('article'); row.className = 'memory-card';
-        const path = document.createElement('small'); path.textContent = `${item.folder} / ${item.path}`;
-        row.append(button, path); list.append(row);
+        list.append(button);
       }
       if (!videos.items.length) list.textContent = status.video_folders.length ? '該当するMP4動画がありません。' : 'PC側の「連携設定」で動画フォルダを追加してください。';
       for (const command of status.commands) {

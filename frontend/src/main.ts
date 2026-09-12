@@ -219,8 +219,10 @@ const answerElements = new Map<string, HTMLDivElement>();
 // PC（細かいポインタ）では従来どおりEnter送信・Shift+Enter改行。
 const TOUCH_INPUT = typeof window.matchMedia === 'function'
   && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+// タッチ端末の入力欄は1行分の高さしかないので、但し書きを足すと
+// プレースホルダーが2行になり下半分が見切れる。送信ボタンは隣にあるため省く。
 const INPUT_PLACEHOLDER = TOUCH_INPUT
-  ? 'かぐやに話しかける（送信ボタンで送信）'
+  ? 'かぐやに話しかける'
   : 'かぐやに話しかける（Enterで送信・Shift+Enterで改行）';
 
 // 追加で聞きたいときの定型ボタン。候補を作るための追加のLLM呼び出しはしない。

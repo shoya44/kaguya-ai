@@ -106,6 +106,56 @@ def video_path(folder: str, relative: str) -> Path:
     return candidate
 
 
+def _atoms(stream, end):
+    """MP4の箱を順に返す。箱は [4バイトの長さ][4文字の種類][中身] の並び。"""
+    while stream.tell() < end:
+        head = stream.read(8)
+        if len(head) < 8:
+            return
+        size = int.from_bytes(head[:4], 'big')
+        kind = head[4:8]
+        start = stream.tell()
+        if size == 1:                      # 長さが4バイトに収まらない場合は次の8バイト
+            size = int.from_bytes(stream.read(8), 'big') - 16
+            start = stream.tell()
+        elif size == 0:                    # 0はファイル末尾までを指す
+            size = end - start
+        else:
+            size -= 8
+        if size < 0:
+            return
+        yield kind, start, size
+        stream.seek(start + size)
+
+
+def seconds(path: Path) -> float | None:
+    """mp4の再生時間。moov/mvhd から読む。読めなければNoneを返して表示を省く。"""
+    try:
+        end = path.stat().st_size
+        with path.open('rb') as stream:
+            for kind, start, size in _atoms(stream, end):
+                if kind != b'moov':
+                    continue
+                stream.seek(start)
+                for inner, at, _ in _atoms(stream, start + size):
+                    if inner != b'mvhd':
+                        continue
+                    stream.seek(at)
+                    version = stream.read(4)[0]
+                    body = stream.read(28 if version == 1 else 16)
+                    if version == 1:
+                        scale = int.from_bytes(body[16:20], 'big')
+                        length = int.from_bytes(body[20:28], 'big')
+                    else:
+                        scale = int.from_bytes(body[8:12], 'big')
+                        length = int.from_bytes(body[12:16], 'big')
+                    return length / scale if scale and length else None
+                return None
+    except (OSError, IndexError):
+        return None
+    return None
+
+
 def videos(query='', offset=0):
     items = []
     scanned = 0
@@ -135,14 +185,19 @@ def videos(query='', offset=0):
                     resolved = path.resolve()
                     if not resolved.is_relative_to(root) or not resolved.is_file():
                         continue
-                    items.append({'folder': label, 'path': relative, 'name': name, 'size': resolved.stat().st_size})
+                    items.append({'folder': label, 'path': relative, 'name': name,
+                                  'size': resolved.stat().st_size, 'full': str(resolved)})
                 except OSError:
                     continue
             if truncated:
                 break
         if truncated:
             break
-    return {'items': items[offset:offset + 30], 'next_offset': offset + 30 if len(items) > offset + 30 else None,
+    page = items[offset:offset + 30]
+    # 再生時間はファイルを開いて読むので、実際に返す分だけ調べる。
+    for item in page:
+        item['seconds'] = seconds(Path(item.pop('full')))
+    return {'items': page, 'next_offset': offset + 30 if len(items) > offset + 30 else None,
             'truncated': truncated}
 
 

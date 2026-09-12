@@ -129,7 +129,9 @@ goto done
 
 :autostart
 rem Windowsサインイン時に簡易表示で起動するタスク。管理者権限は不要。
+rem 読み上げエンジンも一緒に常駐させる。通話のたびに手で起動しなくて済む。
 set "TASK_NAME=KaguyaAI_AutoStart"
+set "TTS_TASK=KaguyaAI_Voice_AutoStart"
 if /i "%~2"=="on" goto autostart_on
 if /i "%~2"=="off" goto autostart_off
 echo Usage: kaguya.bat autostart on^|off
@@ -138,7 +140,24 @@ goto failed
 :autostart_on
 schtasks /Create /TN "%TASK_NAME%" /TR "\"%~dp0start.bat\" --mini" /SC ONLOGON /RL LIMITED /F
 if errorlevel 1 goto failed
-echo Registered: KaguyaAI will start minimized on next Windows sign-in.
+echo Registered: Kaguya AI starts in mini mode at sign-in.
+rem よくある置き場だけを見る。見つからなければ手動の手順を出す。
+set "TTS_EXE=%LOCALAPPDATA%\Programs\AivisSpeech\AivisSpeech.exe"
+if exist "%TTS_EXE%" goto autostart_tts
+set "TTS_EXE=%ProgramFiles%\AivisSpeech\AivisSpeech.exe"
+if exist "%TTS_EXE%" goto autostart_tts
+set "TTS_EXE=%ProgramFiles(x86)%\AivisSpeech\AivisSpeech.exe"
+if exist "%TTS_EXE%" goto autostart_tts
+echo.
+echo   AivisSpeech was not found, so it was NOT registered.
+echo   Press Win+R, run "shell:startup", and put a shortcut to AivisSpeech there.
+echo   Without it, calls fall back to the Gemini voice.
+goto done
+
+:autostart_tts
+schtasks /Create /TN "%TTS_TASK%" /TR "\"%TTS_EXE%\"" /SC ONLOGON /RL LIMITED /F
+if errorlevel 1 goto failed
+echo Registered: AivisSpeech starts at sign-in.
 goto done
 
 :autostart_off
@@ -146,8 +165,11 @@ schtasks /Delete /TN "%TASK_NAME%" /F
 if errorlevel 1 (
   echo No auto-start task found, or it could not be removed.
 ) else (
-  echo Removed: KaguyaAI will no longer start automatically at sign-in.
+  echo Removed: Kaguya AI no longer starts at sign-in.
 )
+rem 読み上げエンジンのタスクは無いこともある。無くても失敗として扱わない。
+schtasks /Delete /TN "%TTS_TASK%" /F >nul 2>&1
+if not errorlevel 1 echo Removed: AivisSpeech no longer starts at sign-in.
 goto done
 
 :menu
@@ -160,7 +182,7 @@ echo     1  update      Update to the latest version and start again
 echo     2  check       Run all local tests and the build
 echo     3  build       Rebuild only
 echo     4  check-db    Database checks on a disposable local PostgreSQL
-echo     5  autostart   Turn sign-in auto start on or off
+echo     5  autostart   Start Kaguya AI and AivisSpeech at sign-in
 echo     0  exit
 echo.
 rem set /p ではなくchoiceを使う。Enter不要で、空入力や想定外の文字が入らない。
@@ -176,7 +198,8 @@ goto quit
 
 :autostart_menu
 set "TASK_NAME=KaguyaAI_AutoStart"
-choice /c yn /m "Start Kaguya AI at Windows sign-in"
+set "TTS_TASK=KaguyaAI_Voice_AutoStart"
+choice /c yn /m "Start Kaguya AI and AivisSpeech at Windows sign-in"
 if errorlevel 2 goto autostart_off
 goto autostart_on
 
@@ -190,7 +213,7 @@ echo   update           Stop, update main, rebuild and start again.
 echo   build            Rebuild the frontend and the desktop app.
 echo   check            Run all local tests, the build and cargo check.
 echo   check-db         Run database checks against a disposable local PostgreSQL.
-echo   autostart on     Start Kaguya AI in mini mode at Windows sign-in.
+echo   autostart on     Start Kaguya AI (mini) and AivisSpeech at sign-in.
 echo   autostart off    Remove that auto-start task.
 echo.
 echo   Day to day, use start.bat and stop.bat instead.
