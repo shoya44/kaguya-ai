@@ -15,7 +15,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = ROOT / 'backend' / 'migrations'
 SCRIPTS = ('001_init.sql', '002_memory_jobs.sql', '003_reminders.sql', '004_local_state.sql',
-           '005_memory_redesign.sql')
+           '005_memory_redesign.sql', '006_emotion_counters.sql')
 # 設定・予定・かぐや側の表。各テストの前に空へ戻す。会話側は使うテストが自分で消す。
 LOCAL_TABLES = ('app_settings', 'calendar_events', 'living_emotion', 'living_activity',
                 'persona_favorite', 'memory_concern')

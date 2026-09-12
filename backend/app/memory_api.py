@@ -321,7 +321,7 @@ def remember(body: dict, request: Request):
 @router.post('/persona/style')
 def persona_style(body: dict, request: Request):
     with connection(request) as conn:
-        return memory_store.set_style(conn, body['value'])
+        return memory_store.set_style(conn, body['value'], body.get('key', 'style_feedback'))
 
 
 @router.get('/browse/{layer}')

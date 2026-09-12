@@ -262,3 +262,57 @@ class RecalledMoodTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DispositionTests(unittest.TestCase):
+    """よくある状態が性格になる（状態 → 性格）。回数だけを見て決める。"""
+
+    @staticmethod
+    def pick(rows):
+        from app.mind.engine import KaguyaMind as Engine
+        return Engine._disposition(rows)
+
+    def test_a_state_that_keeps_coming_back_becomes_a_trait(self):
+        self.assertEqual(self.pick([{'name': 'boredom', 'samples': 100, 'high_count': 60}]),
+                         ['退屈しやすく、かまってほしくなる'])
+
+    def test_too_few_conversations_decide_nothing(self):
+        """少ない回数で性格を決めると、たまたまの機嫌が固定されてしまう。"""
+        self.assertEqual(self.pick([{'name': 'boredom', 'samples': 5, 'high_count': 5}]), [])
+
+    def test_a_rare_state_is_not_a_trait(self):
+        self.assertEqual(self.pick([{'name': 'jealousy', 'samples': 200, 'high_count': 4}]), [])
+
+    def test_the_strongest_tendencies_come_first_and_are_capped(self):
+        from app import tuning
+        rows = [{'name': name, 'samples': 100, 'high_count': count} for name, count in
+                (('boredom', 40), ('curiosity', 90), ('happiness', 70))]
+        found = self.pick(rows)
+        self.assertEqual(len(found), tuning.DISPOSITION_MAX)
+        self.assertEqual(found[0], '知りたがりで、いろいろ聞きたくなる')
+
+    def test_unknown_or_broken_rows_are_ignored(self):
+        self.assertEqual(self.pick([{'name': 'unknown', 'samples': 100, 'high_count': 100},
+                                    {'name': 'boredom', 'samples': 0, 'high_count': 0}]), [])
+
+
+@unittest.skipUnless(pgtemp.available(), pgtemp.reason())
+class DispositionCounterTests(unittest.TestCase):
+    def setUp(self):
+        self.db = pgtemp.database()
+        self.addCleanup(self.db.close)
+
+    def test_every_turn_is_counted_and_strong_feelings_are_marked(self):
+        mind = KaguyaMind(self.db, lambda: True)
+        for minute in range(3):
+            mind.before_reply('ChatGPTの方が賢いよね', NOW + timedelta(minutes=minute))
+        rows = {row['name']: row for row in mind.store.counters()}
+        self.assertEqual(rows['jealousy']['samples'], 3)
+        # やきもちは1回で閾値を越える。数えられていること自体を確かめる。
+        self.assertGreaterEqual(rows['jealousy']['high_count'], 1)
+        self.assertEqual(rows['happiness']['high_count'], 0)
+
+    def test_nothing_is_claimed_before_enough_conversations(self):
+        mind = KaguyaMind(self.db, lambda: True)
+        mind.before_reply('ChatGPTの方が賢いよね', NOW)
+        self.assertEqual(mind.disposition(), '')

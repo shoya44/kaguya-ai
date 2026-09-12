@@ -119,6 +119,13 @@ FAMILIARITY_STEPS = (
 )
 
 
+# --- 傾向（状態 → 性格） ---------------------------------------------------
+# よくある状態が、そのまま「その子らしさ」になる。週次でまとめて見る。
+DISPOSITION_MIN_SAMPLES = 50        # これだけ会話してから判断する
+DISPOSITION_RATIO = .35             # 全体のこれ以上を占めたら「その傾向がある」
+DISPOSITION_MAX = 2                 # 一度に持つ傾向の数
+
+
 # --- 育ち具合の表示 --------------------------------------------------------
 GROWTH_GROWN = {'traits': 8, 'interactions': 100}
 GROWTH_GROWING = {'traits': 3, 'interactions': 30}
