@@ -41,6 +41,14 @@ const MOOD_SPRITES: Record<LifeMood, string | null> = {
   worried: '/sprites/worry.png',
   bored: '/sprites/bored.png',
 };
+// まばたき用の差分絵。目を閉じただけで、輪郭は元絵と揃えてある（揃っていないと
+// 瞬いた瞬間にキャラが跳ねる）。差分絵の無い絵では瞬かない。
+const BLINK: Record<string, string> = {
+  '/sprites/wave.png': '/sprites/wave-blink.png',
+  '/sprites/book.png': '/sprites/book-blink.png',
+  '/sprites/talk.png': '/sprites/talk-blink.png',
+};
+const BLINK_FRAMES = new Set(Object.values(BLINK));
 // 専用イラストがまだ置かれていないときの代わり。読み込みに失敗した絵だけが
 // ここを通る。絵を配置すれば、コードを変えずに専用イラストへ切り替わる。
 const FALLBACK: Record<string, string> = {
@@ -49,6 +57,10 @@ const FALLBACK: Record<string, string> = {
   '/sprites/sulk.png': '/sprites/book.png',
   '/sprites/worry.png': '/sprites/think.png',
   '/sprites/bored.png': '/sprites/cards.png',
+  // 差分絵が未配置なら、目を開けたままにする。瞬かないだけで済む。
+  '/sprites/wave-blink.png': '/sprites/wave.png',
+  '/sprites/book-blink.png': '/sprites/book.png',
+  '/sprites/talk-blink.png': '/sprites/talk.png',
 };
 // 気分が変わった瞬間に一度だけ返す動き。載っていない気分は普段どおり。
 const MOOD_NUDGE: Partial<Record<LifeMood, Nudge>> = {
@@ -95,6 +107,12 @@ const BREATH_OUT_MS = 2_500;
 // 画面に出ているキャラの高さ（style.cssの#avatar）。測れないときだけ使う。
 const AVATAR_CSS_PX = 160;
 
+// まばたき。人の瞬きは数秒おきに一度、閉じている時間は100ms台。
+// これも身じろぎと同じく、間隔がばらつくことに意味がある。
+const BLINK_MIN_MS = 3_600;
+const BLINK_MAX_MS = 7_000;
+const BLINK_MS = 120;
+
 const IDLE_ROTATE_MS = 45_000;
 // 絵の差し替えにかける時間。瞬時に入れ替わると、表情が変わったというより点滅して見える。
 const FADE_MS = 220;
@@ -123,6 +141,8 @@ function resolve(src: string): string {
 }
 for (const frames of Object.values(SPRITES)) for (const src of frames) loadImage(src);
 for (const frames of Object.values(LIFE_SPRITES)) for (const src of frames) loadImage(src);
+// まばたきは一瞬なので、そのとき取りに行っては間に合わない。先に持っておく。
+for (const src of BLINK_FRAMES) loadImage(src);
 
 export class Avatar {
   private ctx: CanvasRenderingContext2D;
@@ -143,6 +163,9 @@ export class Avatar {
   private nudgeEndedAt = 0;
   private nudgeFiredAt: Partial<Record<Nudge, number>> = {};
   private breakTimer: number | null = null;
+  private blinking = false;
+  private blinkTimer: number | null = null;
+  private blinkEndTimer: number | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
@@ -172,6 +195,7 @@ export class Avatar {
     this.draw();
     this.updateMotion();
     this.scheduleIdleBreak();
+    this.scheduleBlink();
   }
 
   setState(state: AvatarState, quiet = false): void {
@@ -226,6 +250,35 @@ export class Avatar {
   /** 眠っているように見えているか。絵で判断するので、生活の演出と食い違わない。 */
   private looksAsleep(): boolean {
     return resolve(this.frames()[0]) === '/sprites/sleep.png';
+  }
+
+  /** いま出ている絵に対応するまばたき絵。無い絵では瞬かない。 */
+  private blinkFrame(): string | null {
+    const frames = this.frames();
+    return BLINK[resolve(frames[this.frame] ?? frames[0])] ?? null;
+  }
+
+  private scheduleBlink(): void {
+    if (this.blinkTimer !== null) window.clearTimeout(this.blinkTimer);
+    const wait = BLINK_MIN_MS + Math.random() * (BLINK_MAX_MS - BLINK_MIN_MS);
+    this.blinkTimer = window.setTimeout(() => {
+      this.blinkTimer = null;
+      this.blink();
+      this.scheduleBlink();
+    }, wait);
+  }
+
+  private blink(): void {
+    // 眠っている絵はもう目を閉じている。差分絵の無い絵も瞬かない。
+    if (this.looksAsleep() || !this.blinkFrame()) return;
+    if (this.blinkEndTimer !== null) window.clearTimeout(this.blinkEndTimer);
+    this.blinking = true;
+    this.draw();
+    this.blinkEndTimer = window.setTimeout(() => {
+      this.blinkEndTimer = null;
+      this.blinking = false;
+      this.draw();
+    }, BLINK_MS);
   }
 
   /** 手持ち無沙汰な間だけ身じろぎする。話しかけられている最中はしない。 */
@@ -325,14 +378,18 @@ export class Avatar {
 
   private draw(): void {
     const frames = this.frames();
-    const src = resolve(frames[this.frame] ?? frames[0]);
+    const base = resolve(frames[this.frame] ?? frames[0]);
+    const src = resolve(this.blinking ? (BLINK[base] ?? base) : base);
     const img = loadImage(src);
     const version = ++this.drawVersion;
     const begin = () => {
       if (version !== this.drawVersion || !img.naturalWidth || !img.naturalHeight) return;
       const from = this.shownSrc && this.shownSrc !== src ? images.get(this.shownSrc) ?? null : null;
+      // まばたきは重ねずに差し替える。220msかけて閉じると、瞬きではなく
+      // 眠そうに見える。人の瞬きは開閉あわせて100ms台しかない。
+      const instant = BLINK_FRAMES.has(src) || BLINK_FRAMES.has(this.shownSrc);
       this.shownSrc = src;
-      this.fade(from, img);
+      this.fade(instant ? null : from, img);
     };
     if (img.complete && img.naturalWidth) {
       begin();
