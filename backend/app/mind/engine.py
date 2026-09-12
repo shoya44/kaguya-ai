@@ -11,9 +11,11 @@ import re
 from datetime import datetime, timedelta
 from typing import Callable
 
-from ..tuning import (EMOTION_BASELINE, EMOTION_HALF_LIFE_HOURS, EMOTION_REACTION, EMOTION_THRESHOLD,
-                      ENERGY_BY_HOUR, GROWTH_GROWING, GROWTH_GROWN, LOOP_CONCERN_AFTER, LOOP_DUE_HOUR,
-                      LOOP_TODAY_AFTER, TRAIT_STABILITY, TRAIT_STANCE, TRAIT_VALENCE)
+from ..tuning import (CONCERN_REACTION, EMOTION_BASELINE, EMOTION_HALF_LIFE_HOURS, EMOTION_REACTION,
+                      EMOTION_THRESHOLD, ENERGY_BY_HOUR, GROWTH_GROWING, GROWTH_GROWN,
+                      LOOP_CONCERN_AFTER, LOOP_DUE_HOUR, LOOP_TODAY_AFTER, RECALL_IMPORTANT,
+                      RECALL_IMPORTANT_REACTION, RECALL_REACTION, TRAIT_STABILITY, TRAIT_STANCE,
+                      TRAIT_VALENCE)
 from ..db import Database
 from .store import MindStore
 
@@ -111,6 +113,29 @@ class KaguyaMind:
             value = float(values.get(name, baseline))
             factor = .5 ** (elapsed / EMOTION_HALF_LIFE_HOURS[name]) if elapsed else 1.0
             result[name] = baseline + (value - baseline) * factor
+        return result
+
+    @staticmethod
+    def _recalled(values: dict[str, float], memories, concerns) -> dict[str, float]:
+        """思い出したことで動く分。言葉づかいではなく「何を思い出したか」で決まる。
+
+        memories は想起できた長期記憶の行。concerns は期限の来た気がかり。
+        どちらも会話のたびに引いているものを受け取るだけで、DBは引き直さない。
+        """
+        result = dict(values)
+        rows = [row for row in (memories or []) if isinstance(row, dict)]
+        reactions = []
+        if rows:
+            # 覚えていることに触れられた。話題そのものへの関心が上がる。
+            reactions.append(RECALL_REACTION)
+        if any(int(row.get('importance') or 0) >= RECALL_IMPORTANT for row in rows):
+            # その人の核心に近い話題。親しみと機嫌がいっしょに動く。
+            reactions.append(RECALL_IMPORTANT_REACTION)
+        if concerns:
+            reactions.append(CONCERN_REACTION)
+        for reaction in reactions:
+            for key, delta in reaction.items():
+                result[key] = result.get(key, 0.0) + delta
         return result
 
     @staticmethod
@@ -227,23 +252,31 @@ class KaguyaMind:
         self.store.prune_loops(now)
         self.store.prune_traits(now)
 
-    def before_reply(self, text: str, now: datetime) -> dict:
-        return self._safe({}, self._before_reply, text, now)
+    def before_reply(self, text: str, now: datetime, recalled=None) -> dict:
+        """recalled は /recall の結果。渡されたときだけ、思い出した分も感情へ足す。
 
-    def _before_reply(self, text: str, now: datetime) -> dict:
+        天気の即答やファイルタブへの引き継ぎでは記憶を引かないので、
+        そのときは従来どおり言葉づかいだけで動く。
+        """
+        return self._safe({}, self._before_reply, text, now, recalled)
+
+    def _before_reply(self, text: str, now: datetime, recalled=None) -> dict:
         emotions, updated = self.store.emotions(now)
-        emotions = self._react(self._decay(emotions, updated, now), text)
+        # 気がかりは感情の材料でもあるので、先に引いてから感情を決める。
+        due = self.store.due_loops(now, 2)
+        memories = (recalled or {}).get('wisdom') or []
+        emotions = self._decay(emotions, updated, now)
+        emotions = self._recalled(self._react(emotions, text), memories, due)
+        emotions = {key: max(0.0, min(100.0, value)) for key, value in emotions.items()}
         self.store.save_emotions(emotions, now)
         traits = self.store.traits_for(text, 5)
         stats = self.store.stats()
-        # Shortcut candidates are the *user's* recurring phrases. They are shown in
-        # settings only: feeding them here made Kaguya imitate the user's wording.
         context = {
             '現在の気分': self._mood(emotions, self._energy(now)),
             '自分の好み': [self._trait_label(row) for row in traits],
             '成長': self._growth(stats),
         }
-        loops = [self._loop_label(row, now) for row in self.store.due_loops(now, 2)]
+        loops = [self._loop_label(row, now) for row in due]
         if loops:
             context['気にかけていること'] = loops
         return context
