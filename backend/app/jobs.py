@@ -181,8 +181,11 @@ class Jobs:
             self.status = '整理失敗：内部処理または保存に失敗しました。未処理の原文は保持しています。'
         finally:
             self.cancel_reason = None
-            # 日付も残す。設定画面はその日の結果だけを出し、古い状態を残さない。
-            self.store.record(last_job_status=self.status, last_job_day=periods(tokyo_now())[0])
+            # 終わった時刻も残す。結果だけだと、それがいつのものか分からない。
+            # 「上限に達しました」が今日のことなのか3日前のことなのかで、
+            # 次にすべきことが変わる。
+            self.store.record(last_job_status=self.status, last_job_day=periods(tokyo_now())[0],
+                              last_job_at=tokyo_now().isoformat())
             await self.controller.broadcast({'type': 'jobs.changed', 'status': self.status, 'running': False})
 
     async def update_disposition(self) -> str:
