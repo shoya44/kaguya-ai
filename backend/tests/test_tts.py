@@ -141,6 +141,32 @@ class NarratorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([q['text'] for q in self.engine.queries], ['おかえり。', '今日はどうだった？'])
         self.assertEqual(len(self.sent), 2)
 
+    async def test_the_first_words_are_read_before_the_sentence_finishes(self):
+        """話しかけてから返ってくるまでの体感は、一言目が出るまでで決まる。"""
+        # 書き起こしは少しずつ届く。句点を待たず、最初の読点で読み始める。
+        for chunk in ['うん', '、', '今日は', 'ね、', 'いろいろ', 'あったんだけど', '、まあ元気だよ。']:
+            self.narrator.feed(chunk)
+        await self.settle()
+        self.assertEqual(self.engine.queries[0]['text'], 'うん、')
+        # 2文目以降まで短くすると細切れになるので、そこは元の区切りのまま。
+        self.assertGreater(len(self.engine.queries[1]['text']), len('うん、'))
+
+    async def test_the_short_first_break_applies_again_to_the_next_answer(self):
+        self.narrator.feed('はい、わかりました。')
+        self.narrator.flush()
+        await self.settle()
+        self.engine.queries.clear()
+        for chunk in ['ええ', '、そうだね', '、たぶん', '大丈夫だと', '思うよ。']:
+            self.narrator.feed(chunk)
+        await self.settle()
+        self.assertEqual(self.engine.queries[0]['text'], 'ええ、')
+
+    async def test_a_short_first_sentence_is_not_chopped_up(self):
+        # 元から短ければ待ち時間は問題にならない。無理に切らない。
+        self.narrator.feed('うん、いいよ。')
+        await self.settle()
+        self.assertEqual([q['text'] for q in self.engine.queries], ['うん、いいよ。'])
+
     async def test_the_tail_is_read_when_the_answer_ends(self):
         self.narrator.feed('うん、わかった')
         self.narrator.flush()

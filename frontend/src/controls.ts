@@ -52,54 +52,6 @@ export class Controls {
     document.querySelectorAll<HTMLButtonElement>('[data-panel]').forEach(button => {
       button.addEventListener('click', () => this.open(button.dataset.panel!));
     });
-    document.getElementById('options-form')!.addEventListener('submit', event => {
-      event.preventDefault();
-      this.perform(async () => {
-        const form = new FormData(event.currentTarget as HTMLFormElement);
-        const options = {
-          quiet: form.has('quiet'), auto_jobs: form.has('auto_jobs'), mind_enabled: form.has('mind_enabled'),
-          always_on_top: form.has('always_on_top'),
-          proactive_minutes: Number(form.get('proactive_minutes')), daily_call_limit: Number(form.get('daily_call_limit')),
-          reply_tokens: Number(form.get('reply_tokens')), font_size: Number(form.get('font_size')),
-          voice_name: String(form.get('voice_name') || ''),
-          voice_style: String(form.get('voice_style') || ''),
-          voice_engine: String(form.get('voice_engine') || 'gemini'),
-          tts_url: String(form.get('tts_url') || ''),
-          tts_speaker: String(form.get('tts_speaker') || ''),
-          tts_style: String(form.get('tts_style') || ''),
-        };
-        const result = await this.api('/settings', { method: 'PATCH', body: JSON.stringify(options) });
-        await this.applyOptions(result.options);
-        this.renderMind(result.mind);
-        this.message('設定を保存しました。');
-      });
-    });
-    // この1項目だけは切り替えた時点で反映する。かぐやの内面を動かすスイッチなので、
-    // 保存ボタンを押し忘れて「入れたのに効かない」となるのを避ける。
-    document.getElementById('mind-enabled')!.addEventListener('change', event => {
-      const field = event.currentTarget as HTMLInputElement;
-      const wanted = field.checked;
-      this.perform(async () => {
-        try {
-          const result = await this.api('/settings', { method: 'PATCH', body: JSON.stringify({ mind_enabled: wanted }) });
-          await this.applyOptions(result.options);
-          this.renderMind(result.mind);
-          this.message(wanted ? 'Kaguya Mindを使います。' : 'Kaguya Mindを止めました。');
-        } catch (error) {
-          field.checked = !wanted;
-          throw error;
-        }
-      });
-    });
-    document.getElementById('mind-reset-btn')!.addEventListener('click', () => {
-      this.confirm('Kaguya Mindの蓄積を消しますか？',
-        'かぐやの感情・好み・気にかけていることだけを消します。会話・記憶・かぐやの接し方は消えません。',
-        async () => {
-          // 完了メッセージは共通の確認ダイアログ側が出す。
-          const result = await this.api('/mind', { method: 'DELETE' });
-          this.renderMind(result.mind);
-        });
-    });
     document.getElementById('quiet-btn')!.addEventListener('click', () => this.toggleQuiet());
     document.getElementById('organize-btn')!.addEventListener('click', () => this.perform(async () => {
       await this.api('/jobs/run', { method: 'POST' });
@@ -174,29 +126,10 @@ export class Controls {
   async refreshSettings(): Promise<void> {
     const body = await this.api('/settings');
     await this.applyOptions(body.options);
-    this.renderMind(body.mind);
     document.getElementById('job-status')!.textContent = `${body.jobs.running ? '整理中' : body.jobs.last_status || body.jobs.status}（本日 ${body.jobs.calls_today}/${body.options.daily_call_limit} 回）`;
     document.getElementById('model-info')!.textContent = `モデル：${body.model || '未設定'} ／ API設定：${body.configured ? 'あり' : 'なし'}`;
     (document.getElementById('organize-btn') as HTMLButtonElement).disabled = body.jobs.running;
     this.renderReminders(body.reminders ?? []);
-  }
-
-  private renderMind(mind: Row | undefined): void {
-    const target = document.getElementById('mind-status');
-    if (!target) return;
-    if (!mind?.enabled) {
-      target.textContent = 'OFF：従来どおりの会話・記憶・Relationship Memoryで動作します。';
-      return;
-    }
-    if (mind.status !== 'ok') {
-      target.textContent = 'ON：Mindの状態を読み取れませんでした。会話本体はそのまま動作します。';
-      return;
-    }
-    const traits = Array.isArray(mind.traits) ? mind.traits.slice(0, 4).map((item: Row) => `${item.name}=${item.stance}`).join('、') : '';
-    const suffix = traits ? ` ／ 好み：${traits}` : ' ／ 好みはまだ育ち始めたところ';
-    const open = Number(mind.stats?.open_loops ?? 0);
-    const loops = open ? ` ／ 気にかけている話題：${open}件` : '';
-    target.textContent = `ON：${mind.mood ?? 'いつも通り'} ／ ${mind.growth ?? ''}${suffix}${loops}`;
   }
 
   private renderReminders(items: Row[]): void {
@@ -225,14 +158,9 @@ export class Controls {
   }
 
   async applyOptions(options: Row): Promise<void> {
+    // 設定画面に入力欄は置いていない。値はサーバーの既定値をそのまま使い、
+    // 画面に効くもの（文字サイズ・静音・最前面）だけをここで反映する。
     this.onOptions?.(options);
-    const form = document.getElementById('options-form') as HTMLFormElement;
-    for (const [key, value] of Object.entries(options)) {
-      const field = form.elements.namedItem(key) as HTMLInputElement | null;
-      if (!field) continue;
-      if (typeof value === 'boolean') field.checked = value;
-      else field.value = String(value);
-    }
     document.documentElement.style.setProperty('--font-size', `${options.font_size}px`);
     // 色（aria-pressed）で現在の状態、文言で押したときの動作を示す。
     const quietBtn = document.getElementById('quiet-btn')!;

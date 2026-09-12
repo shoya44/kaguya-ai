@@ -57,52 +57,14 @@
       <section id="settings-panel" class="panel" hidden>
         <h1>設定</h1>
         <button type="button" data-panel="help">使い方</button>
-        <form id="options-form">
-          <label><input type="checkbox" name="quiet">自発的な声かけを停止する</label>
-          <label><input type="checkbox" name="auto_jobs">会話していない時間に記憶を自動整理する</label>
-          <label><input type="checkbox" id="mind-enabled" name="mind_enabled">実験機能「Kaguya Mind」を使う</label>
-          <p class="hint">切り替えるとすぐ反映されます（保存ボタンは不要です）。Kaguya Mindは、かぐや自身の感情・好み・個性を別領域で少しずつ育てます。OFFにすると従来仕様へ戻り、既存の会話・記憶・ツール機能には影響しません。</p>
-          <p id="mind-status" class="hint" role="status">OFF：従来仕様で動作します。</p>
-          <button type="button" id="mind-reset-btn">Kaguya Mindの蓄積を消す</button>
-          <p class="hint">かぐやの感情・好み・気にかけていることだけを消します。会話・記憶・かぐやの接し方は消えません。</p>
-          <label>声かけの間隔（分）<input type="number" name="proactive_minutes" min="60" max="240" required></label>
-          <label>整理APIの1日上限（週次更新を含む）<input type="number" name="daily_call_limit" min="1" max="10" required></label>
-          <label>回答の出力上限（トークン）<input type="number" name="reply_tokens" min="256" max="8192" required></label>
-          <label class="desktop-setting"><input type="checkbox" name="always_on_top">ウィンドウを最前面にする</label>
-          <label>文字サイズ<input type="number" name="font_size" min="12" max="22" required></label>
-          <label>通話の読み上げ
-            <select name="voice_engine">
-              <option value="gemini">Gemini（追加の用意は不要）</option>
-              <option value="local">PCの読み上げエンジン（AivisSpeech / VOICEVOX）</option>
-            </select>
-          </label>
-          <label>読み上げエンジンのURL<input name="tts_url" maxlength="200" required></label>
-          <label>話者<input name="tts_speaker" maxlength="80" required></label>
-          <label>スタイル<input name="tts_style" maxlength="80" required></label>
-          <p class="hint">PCの読み上げエンジンを使う場合は、先にそのアプリを起動してください。AivisSpeech は <code>http://127.0.0.1:10101</code>、VOICEVOX は <code>http://127.0.0.1:50021</code> です。話者とスタイルは、そのエンジンでの表示名をそのまま入れます（例：コハク／ノーマル）。繋がらない場合は Gemini の声で通話を続け、理由を表示します。</p>
-          <label>通話の声（Geminiのとき）<input name="voice_name" list="voice-names" maxlength="40" pattern="[A-Za-z][A-Za-z0-9]*" required></label>
-          <datalist id="voice-names">
-            <option value="Leda">若く明るい</option>
-            <option value="Zephyr">明るい</option>
-            <option value="Aoede">軽やか</option>
-            <option value="Puck">元気</option>
-            <option value="Kore">落ち着き</option>
-            <option value="Charon">低め</option>
-            <option value="Fenrir">力強い</option>
-            <option value="Orus">しっかり</option>
-          </datalist>
-          <label>話し方<textarea name="voice_style" rows="2" maxlength="300" placeholder="例：少し高めの明るいトーンで、やわらかい語尾で。"></textarea></label>
-          <p class="hint">保存したあと、通話を開始し直すと切り替わります（アプリの再起動は不要）。声の名前は候補以外も入力できます。名前が無効な場合は通話開始時にエラーが出ます。声の印象は「話し方」の指示で大きく変わるので、こちらも調整してください。空にすると指示なしになります。</p>
-          <button type="submit">設定を保存</button>
-        </form>
         <h2>予約した声かけ</h2>
-        <p class="hint">会話の中で「明日の朝9時に〜と言って」のように頼むと登録されます。時間になるとかぐやが吹き出しで伝えます。</p>
+        <p class="hint">「明日の朝9時に〜と言って」と頼むと登録されます。</p>
         <div id="reminder-list"></div>
         <h2>記憶の整理</h2>
-        <p>起動・最後の会話から5分以上空くと、未整理の会話を少量ずつ整理します。確認間隔は15分、APIは1日上限内です。会話が来た場合は整理を中断します。</p>
+        <p class="hint">会話が5分以上途切れると、未整理の会話を少しずつ整理します。</p>
         <button id="organize-btn">今すぐ整理</button>
-        <p id="job-status" role="status"></p><p id="model-info"></p>
-        <p class="hint">自動整理が有効な場合、処理済みで7日を過ぎた元の会話は削除されます。知恵は残ります。音声会話は「会話」画面から利用できます。</p>
+        <p id="job-status" role="status"></p>
+        <p id="model-info" class="hint"></p>
       </section>
       <section id="memories-panel" class="panel" hidden>
         <h1>あなたについて覚えていること</h1>
