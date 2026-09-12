@@ -41,3 +41,92 @@ test('マイク非対応のブラウザは、接続ではなくブラウザの�
   assert.match(message, /ブラウザはマイクに対応していません/);
   assert.doesNotMatch(message, /pc_setup\.bat/);
 });
+
+// 音量の覚え方と消音の見せ方だけを確かめる。実際の音の経路はブラウザで見る。
+function volumeHarness(stored = {}) {
+  const data = new Map(Object.entries(stored));
+  const elements = {};
+  const element = () => ({
+    handlers: {}, attributes: {}, value: '', hidden: true, disabled: false, textContent: '',
+    addEventListener(name, callback) { this.handlers[name] = callback; },
+    setAttribute(name, value) { this.attributes[name] = value; },
+  });
+  const context = vm.createContext({
+    window: { isSecureContext: true, addEventListener() {} },
+    navigator: { mediaDevices: { getUserMedia() {} } },
+    document: {
+      getElementById: id => elements[id] ??= element(),
+      addEventListener() {},
+    },
+    localStorage: {
+      getItem: key => data.has(key) ? data.get(key) : null,
+      setItem: (key, value) => data.set(key, value),
+    },
+    Promise,
+  });
+  vm.runInContext(compiled + '\nvar chat = new VoiceChat("http://x", async () => ({sessionToken:"t"}), () => {});', context);
+  return { elements, data,
+    slide: percent => { elements['voice-gain'].value = String(percent); elements['voice-gain'].handlers.input(); },
+    mute: () => elements['voice-mute'].handlers.click() };
+}
+
+test('音量は端末に覚えて、次の通話でも同じ大きさにする', () => {
+  const h = volumeHarness();
+  h.slide(40);
+  assert.equal(h.data.get('kaguya.voiceVolume'), '40');
+  // 覚えた値は次回つまみへ戻る。
+  const again = volumeHarness({ 'kaguya.voiceVolume': '40' });
+  assert.equal(again.elements['voice-gain'].value, '40');
+});
+
+test('覚えた値が無いときは、これまでと同じ大きさで始める', () => {
+  const h = volumeHarness();
+  assert.equal(h.elements['voice-gain'].value, '100');
+});
+
+test('壊れた値を覚えていても、通話できる大きさにする', () => {
+  const h = volumeHarness({ 'kaguya.voiceVolume': 'ほげ' });
+  assert.equal(h.elements['voice-gain'].value, '100');
+});
+
+test('消音は状態が見えるようにし、次の通話へ持ち越す', () => {
+  const h = volumeHarness();
+  h.mute();
+  assert.equal(h.elements['voice-volume'].attributes['data-muted'], 'true');
+  assert.equal(h.elements['voice-mute'].attributes['aria-pressed'], 'true');
+  assert.equal(h.elements['voice-mute'].attributes['aria-label'], '消音を解除する');
+  assert.equal(h.data.get('kaguya.voiceMuted'), '1');
+  const again = volumeHarness({ 'kaguya.voiceMuted': '1' });
+  assert.equal(again.elements['voice-volume'].attributes['data-muted'], 'true');
+});
+
+test('つまみを動かしたら消音は解除する', () => {
+  const h = volumeHarness({ 'kaguya.voiceMuted': '1' });
+  assert.equal(h.elements['voice-volume'].attributes['data-muted'], 'true');
+  // 動かしても無音のままだと、壊れているように見える。
+  h.slide(60);
+  assert.equal(h.elements['voice-volume'].attributes['data-muted'], 'false');
+  assert.equal(h.data.get('kaguya.voiceMuted'), '0');
+});
+
+test('端末が保存を拒んでも通話は続けられる', () => {
+  const elements = {};
+  const element = () => ({
+    handlers: {}, attributes: {}, value: '', hidden: true, disabled: false, textContent: '',
+    addEventListener(name, callback) { this.handlers[name] = callback; },
+    setAttribute(name, value) { this.attributes[name] = value; },
+  });
+  const context = vm.createContext({
+    window: { isSecureContext: true, addEventListener() {} },
+    navigator: { mediaDevices: { getUserMedia() {} } },
+    document: { getElementById: id => elements[id] ??= element(), addEventListener() {} },
+    // プライベートウィンドウなどでは読み書きそのものが失敗する。
+    localStorage: { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } },
+    Promise,
+  });
+  vm.runInContext(compiled + '\nvar chat = new VoiceChat("http://x", async () => ({sessionToken:"t"}), () => {});', context);
+  assert.equal(elements['voice-gain'].value, '100');
+  elements['voice-gain'].value = '30';
+  elements['voice-gain'].handlers.input();
+  assert.equal(elements['voice-volume'].attributes['data-muted'], 'false');
+});

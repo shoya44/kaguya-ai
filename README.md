@@ -273,6 +273,8 @@ C:\kaguya-ai\start.bat
 
 - 1回最大10分
 - マイク音声は16kHz PCMとしてGemini Liveへ送信し、返答音声をその場で再生（1回最大10分・従量課金）
+- 通話中は通話ボタンの左に音量のつまみと消音ボタンが出ます。読み上げがGeminiでもPCのエンジンでも同じつまみで効きます
+- 音量と消音は**端末ごと**に覚えます。PCとiPhoneで別々に設定できます（サーバーには送りません）
 - 通話中の字幕は画面に出しません。会話が終わると通常の会話履歴に残ります
 - 現行のGemini Live設定はNO_INTERRUPTIONです。返答中の発話による自動割り込みは有効にしていません
 - 読み上げは PCの [AivisSpeech](https://aivis-project.com/) か [VOICEVOX](https://voicevox.hiroshiba.jp/) に任せられます。使う場合は、通話の前にそのアプリを起動してください
