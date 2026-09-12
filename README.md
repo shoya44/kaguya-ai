@@ -178,6 +178,16 @@ C:\kaguya-ai\start.bat
 - 終了はタスクトレイの「終了」または `stop.bat`。ウィンドウの×は常駐したまま非表示になります
 - iPhone画面には更新ボタンを出しません。PCのソース更新・再ビルドはPC版からだけ実行します
 
+## PC起動時から常駐させる
+
+`kaguya.bat` をダブルクリック → `5` で登録します。管理者権限は不要です。
+
+- かぐやは**簡易表示**で起動し、タスクトレイに常駐します
+- AivisSpeech も一緒に起動します。よくある置き場（`%LOCALAPPDATA%\Programs\AivisSpeech` など）を探して見つかれば登録します
+- 見つからなかった場合はその旨を表示します。Win+R で `shell:startup` を開き、AivisSpeech のショートカットを置いてください
+- AivisSpeech が起動していないと、通話は Gemini の声に切り替わります（会話自体は続きます）
+- 解除は同じ `5` から。両方の登録を外します
+
 # 設定
 
 | 設定 | 意味 |
@@ -704,7 +714,7 @@ PCのみ: Tauri
 | `build` | frontendとデスクトップアプリを再ビルド |
 | `check` | ローカルの全テスト、ビルド、Cargo check |
 | `check-db` | 使い捨てのローカルPostgreSQLでDB確認（アプリのDBは使いません） |
-| `autostart on` / `off` | Windowsサインイン時の簡易表示起動を登録／解除 |
+| `autostart on` / `off` | Windowsサインイン時に、かぐや（簡易表示）とAivisSpeechを起動する設定を登録／解除 |
 
 `tools/update_repo.bat` は `kaguya.bat update` から呼ばれる内部用です。直接実行する必要はありません。
 
