@@ -145,5 +145,63 @@ class ChatPathTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('record_success', source)
 
 
+
+
+class RecallOrderTests(unittest.IsolatedAsyncioTestCase):
+    """先に思い出してから感じる。想起の結果を使い回し、DBは引き直さない。"""
+
+    def controller(self, answer='へんじ'):
+        from unittest.mock import AsyncMock, MagicMock
+        from types import SimpleNamespace
+        from app.controller import Controller
+
+        recalled = {'wisdom': [{'topic_key': '猫', 'summary': '猫が好き', 'importance': 5}],
+                    'persona': []}
+        calls = []
+
+        async def call(method, path, **kwargs):
+            calls.append(path)
+            return dict(recalled) if path == '/recall' else {}
+
+        seen = []
+        runtime = SimpleNamespace(data={'ledger': {}}, record=MagicMock(),
+                                  options=SimpleNamespace(reply_tokens=1024))
+        memory = SimpleNamespace(begin=AsyncMock(return_value={'status': 'pending'}),
+                                 context=AsyncMock(return_value=[]), call=call,
+                                 complete=AsyncMock(), fail=AsyncMock())
+        mind = SimpleNamespace(before_reply=lambda text, now, rows=None: seen.append(rows) or {},
+                               after_reply=lambda *a: None, face=lambda now: '',
+                               snapshot=lambda now: {})
+        controller = Controller(memory, SimpleNamespace(reply=AsyncMock(return_value=answer)),
+                                AsyncMock(), runtime, mind=mind)
+        return controller, calls, seen
+
+    async def talk(self, controller, text='猫の話をしよう'):
+        await controller.send({'turn_id': '1', 'client_id': 'pc', 'text': text, 'input_mode': 'text'},
+                              unittest.mock.AsyncMock())
+        await controller.task
+
+    async def test_what_was_recalled_reaches_the_feelings(self):
+        controller, _, seen = self.controller()
+        await self.talk(controller)
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0]['wisdom'][0]['topic_key'], '猫')
+
+    async def test_recall_is_asked_for_exactly_once(self):
+        """感情のために引き直すと、会話のたびにクエリが1本増える。"""
+        controller, calls, _ = self.controller()
+        await self.talk(controller)
+        self.assertEqual(calls.count('/recall'), 1)
+
+    async def test_a_turn_without_recall_still_updates_the_feelings(self):
+        """ファイルタブへの引き継ぎなど、記憶を引かない経路でも感情は動く。"""
+        from unittest.mock import patch
+        controller, calls, seen = self.controller()
+        with patch('app.controller.pc.chat_action', return_value={'event': {}, 'reply': '開いたよ'}):
+            await self.talk(controller, 'ファイルタブを開いて')
+        self.assertEqual(seen, [None])
+        self.assertEqual(calls.count('/recall'), 0)
+
+
 if __name__ == '__main__':
     unittest.main()

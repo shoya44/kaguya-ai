@@ -65,6 +65,16 @@ EMOTION_THRESHOLD = {
 ENERGY_BY_HOUR = ((6, 24.0), (10, 58.0), (18, 78.0), (23, 64.0), (24, 30.0))
 
 
+# --- 記憶が感情へ与える影響（記憶 → 感情） ---------------------------------
+# これまで感情は発言の言葉づかいにしか反応せず、その話題がその人にとって
+# 大事かどうかを見ていなかった。想起できた記憶を材料に足す。
+# 毎ターン効くので、言葉への反応（EMOTION_REACTION）より小さくする。
+RECALL_REACTION = {'curiosity': +4}          # 覚えている話題に触れられた
+RECALL_IMPORTANT = 4                         # この重要度以上を「その人の核心」とみなす
+RECALL_IMPORTANT_REACTION = {'affection': +1.2, 'happiness': +4}
+CONCERN_REACTION = {'concern': +6}           # 気がかりを抱えたまま話している
+
+
 # --- 好み ------------------------------------------------------------------
 TRAIT_VALENCE = {'like': .78, 'dislike': .22}
 TRAIT_CONFIDENCE_START = .35        # 初めて言ったときの確信度

@@ -241,8 +241,6 @@ class Controller:
                 with suppress(ChatError):
                     await self.memory.call('POST', '/persona/style', json={'value': hint})
             self.mood.react(turn['text'], tokyo_now())
-            mind_context = self.mind.before_reply(turn['text'], tokyo_now()) if self.mind else {}
-            await self.emit_mood(refresh=True)
             proactive = self.proactive.activity()
             if self.cancel_requested:
                 raise asyncio.CancelledError
@@ -257,15 +255,24 @@ class Controller:
                 answer = pc_action['reply']
             else:
                 answer = await tools.direct_reply(turn['text'], self.memory)
+
+            # 先に思い出してから感じる。以前は言葉づかいだけで感情を決めており、
+            # その話題がその人にとって大事かどうかを見ていなかった。
+            # 想起の結果をそのまま渡すので、DBへの問い合わせは増えない。
+            context = recalled = None
+            if answer is None:
+                context = await self.memory.context()
+                hint = ' '.join(row['text'] for row in context[-2:])[:2000]
+                recalled = await self.memory.call('GET', '/recall', params={'text': turn['text'], 'context': hint})
+            mind_context = self.mind.before_reply(turn['text'], tokyo_now(), recalled) if self.mind else {}
+            await self.emit_mood(refresh=True)
+
             if answer is None:
                 # 重い相談・眠そうな時間帯だけ一拍置いてから書き始める。
                 # 天気などの即答（direct_reply）と、ファイルタブへの引き継ぎには挟まない。
                 delay = think_delay(turn['text'], str(mind_context.get('現在の気分', '')))
                 if delay:
                     await asyncio.sleep(delay)
-                context = await self.memory.context()
-                hint = ' '.join(row['text'] for row in context[-2:])[:2000]
-                recalled = await self.memory.call('GET', '/recall', params={'text': turn['text'], 'context': hint})
                 recalled['relationship'] = relationship.context(self.living) if self.living else {}
                 if mind_context:
                     recalled['mind'] = mind_context

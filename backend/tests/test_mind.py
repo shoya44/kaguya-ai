@@ -184,5 +184,81 @@ class MindTests(unittest.TestCase):
         self.assertIn('毎回蒸し返さない', on_prompt)
 
 
+class RecalledEmotionTests(unittest.TestCase):
+    """思い出したことで感情が動く。言葉づかいだけで決めない（記憶 → 感情）。"""
+
+    @staticmethod
+    def react(memories=(), concerns=()):
+        from app import tuning
+        from app.mind.engine import KaguyaMind as Engine
+        return Engine._recalled(dict(tuning.EMOTION_BASELINE), list(memories), list(concerns))
+
+    def test_nothing_recalled_leaves_the_feelings_alone(self):
+        from app import tuning
+        self.assertEqual(self.react(), dict(tuning.EMOTION_BASELINE))
+
+    def test_touching_a_remembered_topic_raises_interest(self):
+        from app import tuning
+        after = self.react([{'topic_key': '猫', 'importance': 2}])
+        self.assertGreater(after['curiosity'], tuning.EMOTION_BASELINE['curiosity'])
+
+    def test_an_important_memory_also_moves_closeness_and_mood(self):
+        from app import tuning
+        ordinary = self.react([{'topic_key': '猫', 'importance': 2}])
+        core = self.react([{'topic_key': '家族', 'importance': tuning.RECALL_IMPORTANT}])
+        self.assertGreater(core['affection'], ordinary['affection'])
+        self.assertGreater(core['happiness'], ordinary['happiness'])
+
+    def test_a_pending_concern_makes_her_worry(self):
+        from app import tuning
+        after = self.react(concerns=[{'topic': '面接'}])
+        self.assertGreater(after['concern'], tuning.EMOTION_BASELINE['concern'])
+
+    def test_malformed_rows_are_ignored_instead_of_raising(self):
+        from app import tuning
+        self.assertEqual(self.react([None, 'not a row']), dict(tuning.EMOTION_BASELINE))
+        self.assertEqual(self.react([{'importance': None}])['curiosity'],
+                         tuning.EMOTION_BASELINE['curiosity'] + tuning.RECALL_REACTION['curiosity'])
+
+
+@unittest.skipUnless(pgtemp.available(), pgtemp.reason())
+class RecalledMoodTests(unittest.TestCase):
+    def setUp(self):
+        self.db = pgtemp.database()
+        self.addCleanup(self.db.close)
+
+    def mind(self):
+        return KaguyaMind(self.db, lambda: True)
+
+    def talk(self, mind, turns, recalled=None):
+        """同じ言葉で数ターン話す。1回の増減は小さく、続けると効いてくる。"""
+        for minute in range(turns):
+            context = mind.before_reply('うん', NOW + timedelta(minutes=minute), recalled)
+        return context
+
+    def test_the_same_words_feel_different_depending_on_what_is_recalled(self):
+        """「うん」でも、覚えている話題が続いているかどうかで気分が変わる。"""
+        plain = self.talk(self.mind(), 4)
+        rich = self.talk(self.mind(), 4, {'wisdom': [{'topic_key': '猫', 'importance': 5}]})
+        self.assertEqual(plain['現在の気分'], 'いつも通り')
+        self.assertNotEqual(rich['現在の気分'], 'いつも通り')
+
+    def test_a_path_without_recall_still_works(self):
+        """天気の即答やファイルタブへの引き継ぎでは記憶を引かない。"""
+        self.assertIn('現在の気分', self.mind().before_reply('明日の天気は？', NOW))
+        self.assertIn('現在の気分', self.mind().before_reply('うん', NOW, None))
+        self.assertIn('現在の気分', self.mind().before_reply('うん', NOW, {}))
+
+    def test_feelings_never_leave_the_0_to_100_range(self):
+        mind = self.mind()
+        memories = {'wisdom': [{'topic_key': '家族', 'importance': 5}]}
+        for minute in range(40):
+            mind.before_reply('かぐや、ありがとう', NOW + timedelta(minutes=minute), memories)
+        for name, value in mind.snapshot(NOW + timedelta(minutes=40))['emotions'].items():
+            with self.subTest(name=name):
+                self.assertGreaterEqual(value, 0)
+                self.assertLessEqual(value, 100)
+
+
 if __name__ == '__main__':
     unittest.main()
