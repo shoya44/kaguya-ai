@@ -45,3 +45,29 @@ class ConsolidatedSchemaTests(unittest.TestCase):
             migrate._run(conn, ROOT, NAMES[0], done)
         self.assertEqual(done, set())
         self.assertEqual(conn.execute.call_count, 1)
+
+
+class SettingsDocumentationTests(unittest.TestCase):
+    """設定のキー名がREADMEに載っていること。
+
+    値は app_settings を直接編集して変える運用なので、キー名が分からないと
+    そもそも変えられない。項目を足したときに書き忘れると、使う側からは
+    存在しない設定になる。
+    """
+
+    def test_readme_lists_every_setting_key(self):
+        from app.runtime import Options
+        readme = (ROOT.parents[1] / 'README.md').read_text(encoding='utf-8')
+        section = readme.split('# 設定\n')[1].split('\n# 基本操作')[0]
+        for name in Options.model_fields:
+            with self.subTest(setting=name):
+                self.assertIn(f'`{name}`', section)
+
+    def test_readme_does_not_invent_settings(self):
+        """無い設定を書かない。書いてあるとおりに直すと起動しなくなる。"""
+        import re
+        from app.runtime import Options
+        readme = (ROOT.parents[1] / 'README.md').read_text(encoding='utf-8')
+        section = readme.split('# 設定\n')[1].split('\n# 基本操作')[0]
+        listed = {m.group(1) for m in re.finditer(r'^\| `([a-z_]+)`', section, re.MULTILINE)}
+        self.assertEqual(listed - set(Options.model_fields), set())
