@@ -58,12 +58,19 @@ def _boot() -> None:
         return
     import psycopg
 
-    output = ROOT / '.test-output'
-    output.mkdir(exist_ok=True)
-    temp = Path(tempfile.mkdtemp(prefix='pg-test-', dir=output)).resolve()
-    assert temp.is_relative_to(output.resolve())
-    data = temp / 'data'
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+
+    # Windowsでは、管理者がinitdbを実行すると制限トークンに降格される。降格後は
+    # リポジトリ配下に書けずPermission deniedになるため、一時フォルダに作り、
+    # BUILTIN\Users（降格後も残るグループ）へ書き込みを許可しておく。
+    base = Path(tempfile.gettempdir()) if os.name == 'nt' else ROOT / '.test-output'
+    base.mkdir(parents=True, exist_ok=True)
+    temp = Path(tempfile.mkdtemp(prefix='pg-test-', dir=base)).resolve()
+    assert temp.is_relative_to(base.resolve())
+    if os.name == 'nt':
+        subprocess.run(['icacls', str(temp), '/grant', '*S-1-5-32-545:(OI)(CI)F'],
+                       capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW)
+    data = temp / 'data'
     atexit.register(shutil.rmtree, temp, True)
     # 失敗したときに何が起きたか読めるよう、initdbの出力はそのまま例外に載せる。
     setup = subprocess.run([initdb, '-D', str(data), '-A', 'trust', '-U', 'tester', '--no-locale', '-E', 'UTF8'],
