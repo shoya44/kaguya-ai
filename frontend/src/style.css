@@ -299,6 +299,10 @@ input[type="checkbox"] {
   }
 }
 
+#pc-now-playing:empty {
+  display: none;
+}
+
 /* 動画は「タイトル（長さ）」のボタンを縦に並べるだけ。 */
 #pc-videos {
   display: flex;
@@ -813,7 +817,8 @@ body.mini-mode {
     flex: 1 1 auto;
     min-width: 0;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    /* タブは4つ。列が足りないと最後の1つだけ次の段へ落ちる。 */
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 5px;
   }
 
