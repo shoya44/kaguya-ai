@@ -148,8 +148,11 @@ exit /b 0
 :autostart_on
 if not exist "%STARTUP%" goto autostart_nofolder
 rem 起動用のcmdは自分で終わる。start.bat を待たないので窓は残らない。
+rem echo は ERRORLEVEL を 0 に戻さない。メニューの choice が Y で 1 を残すため、
+rem echo の直後に「if errorlevel 1」を書くと必ず失敗と判定してしまう。
+rem 書けたかどうかは、消してから書き直してファイルの有無で見る。
+del /f /q "%APP_LINK%" >nul 2>&1
 (echo @echo off)> "%APP_LINK%"
-if errorlevel 1 goto autostart_nowrite
 (echo start "" "%~dp0start.bat" --mini)>> "%APP_LINK%"
 if not exist "%APP_LINK%" goto autostart_nowrite
 echo Registered: Kaguya AI starts in mini mode at sign-in.
@@ -167,8 +170,8 @@ echo   Without it, calls fall back to the Gemini voice.
 goto done
 
 :autostart_tts
+del /f /q "%TTS_LINK%" >nul 2>&1
 (echo @echo off)> "%TTS_LINK%"
-if errorlevel 1 goto autostart_nowrite
 (echo start "" "%TTS_EXE%")>> "%TTS_LINK%"
 if not exist "%TTS_LINK%" goto autostart_nowrite
 echo Registered: AivisSpeech starts at sign-in.
@@ -182,7 +185,8 @@ goto failed
 :autostart_nowrite
 echo Could not write to the Startup folder:
 echo   "%STARTUP%"
-echo Check that the folder is not read-only, then try again.
+echo Security software may be blocking writes to this folder.
+echo Press Win+R, run "shell:startup", and check that you can create a file there.
 goto failed
 
 :autostart_off
