@@ -22,21 +22,18 @@ const LIFE_SPRITES: Record<LifeActivity, string[]> = {
   reading: ['/sprites/book.png'],
   working: ['/sprites/laptop.png'],
   playing: ['/sprites/cards.png'],
-  // 専用イラストを後から追加しやすいよう生活状態は分けておく。
-  // v1では既存絵を流用し、未配置ファイルは参照しない。
-  snacking: ['/sprites/wave.png'],
-  daydreaming: ['/sprites/book.png'],
+  snacking: ['/sprites/snacking.png'],
+  daydreaming: ['/sprites/daydreaming.png'],
   sleeping: ['/sprites/sleep.png'],
 };
-// 気分ごとの絵。専用イラストが増えたらここだけ差し替える（未配置は参照しない）。
-// worried は考え込む絵、bored は手持ち無沙汰な絵を暫定で当てている。
+// 気分ごとの専用イラスト。
 const MOOD_SPRITES: Record<LifeMood, string | null> = {
   normal: null,
   happy: '/sprites/laugh.png',
   sleepy: '/sprites/sleep.png',
-  sulky: '/sprites/book.png',
-  worried: '/sprites/think.png',
-  bored: '/sprites/cards.png',
+  sulky: '/sprites/sulky.png',
+  worried: '/sprites/worried.png',
+  bored: '/sprites/bored.png',
 };
 
 const IDLE_ROTATE_MS = 45_000;
