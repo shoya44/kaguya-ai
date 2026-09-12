@@ -156,6 +156,8 @@ export class Avatar {
   private lifeEnergy = 60;
   private quiet = false;
   private drawVersion = 0;
+  // 通話中に固定する絵。null なら状態どおりに切り替える。
+  private heldBase: string | null = null;
   private shownSrc = '';
   private fadeRaf: number | null = null;
   private nudgeTimer: number | null = null;
@@ -247,15 +249,36 @@ export class Avatar {
     }, move.ms);
   }
 
+  /** いま出すべき絵。通話中は固定した絵を返し、状態が変わっても切り替えない。 */
+  private baseFrame(): string {
+    if (this.heldBase) return this.heldBase;
+    const frames = this.frames();
+    return resolve(frames[this.frame] ?? frames[0]);
+  }
+
+  /**
+   * 通話中は絵を止める。話している最中に絵が切り替わると落ち着かない。
+   *
+   * 止めるのは絵だけで、呼吸・まばたき・反応はそのまま動く。固定先を
+   * 話す絵にするのは、通話中の姿として自然なのと、この絵にはまばたきの
+   * 差分があるため。手持ちの絵で固定すると、差分の無い絵に当たったときに
+   * 通話のあいだ一度も瞬かなくなる。
+   */
+  hold(active: boolean): void {
+    const held = active ? resolve('/sprites/talk.png') : null;
+    if (held === this.heldBase) return;
+    this.heldBase = held;
+    this.draw();
+  }
+
   /** 眠っているように見えているか。絵で判断するので、生活の演出と食い違わない。 */
   private looksAsleep(): boolean {
-    return resolve(this.frames()[0]) === '/sprites/sleep.png';
+    return this.baseFrame() === '/sprites/sleep.png';
   }
 
   /** いま出ている絵に対応するまばたき絵。無い絵では瞬かない。 */
   private blinkFrame(): string | null {
-    const frames = this.frames();
-    return BLINK[resolve(frames[this.frame] ?? frames[0])] ?? null;
+    return BLINK[this.baseFrame()] ?? null;
   }
 
   private scheduleBlink(): void {
@@ -336,7 +359,7 @@ export class Avatar {
   /** 一呼吸ぶんの胸の膨らみ（px）と傾き（度）。姿勢と気分で変わる。 */
   private breath(): { lift: number; tilt: number } {
     // 伏せている姿勢は接地面が広い。大きく伸ばすと床ごと動いて見える。
-    if (LYING.has(resolve(this.frames()[0]))) return { lift: 0.6, tilt: 0 };
+    if (LYING.has(this.baseFrame())) return { lift: 0.6, tilt: 0 };
     if (this.state === 'talking' || this.state === 'greeting' || this.lifeMood === 'happy') {
       return { lift: 3, tilt: 0.4 };
     }
@@ -377,8 +400,7 @@ export class Avatar {
   }
 
   private draw(): void {
-    const frames = this.frames();
-    const base = resolve(frames[this.frame] ?? frames[0]);
+    const base = this.baseFrame();
     const src = resolve(this.blinking ? (BLINK[base] ?? base) : base);
     const img = loadImage(src);
     const version = ++this.drawVersion;

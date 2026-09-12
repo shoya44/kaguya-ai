@@ -22,6 +22,7 @@ function harness() {
   const canvas = { width: 400, height: 600, style: {}, getContext: () => context };
   // 重ね合わせは実時間で進む。時計は進めた分だけ返し、1コマごとに半分ずつ進める。
   let clock = 0;
+  let lastTimer = 0;
   const ctx = vm.createContext({ Image, canvas,
     performance: { now: () => clock },
     requestAnimationFrame: callback => { clock += 110; callback(clock); return 1; },
@@ -30,8 +31,17 @@ function harness() {
       addEventListener: (name, callback) => { handlers[name] = callback; },
       setInterval: () => 1, clearInterval() {},
       // 待ち時間で区別できるように覚える。呼吸と身じろぎは桁が違う。
-      setTimeout: (callback, ms) => timeouts.push({ callback, ms: Number(ms) || 0 }),
-      clearTimeout() {},
+      // 取り消しは本物と同じく実際に消す。消さないと呼吸のタイマーが二重に
+      // 溜まり、1回進めるつもりで2回進んでしまう。
+      setTimeout: (callback, ms) => {
+        const id = ++lastTimer;
+        timeouts.push({ id, callback, ms: Number(ms) || 0 });
+        return id;
+      },
+      clearTimeout: id => {
+        const at = timeouts.findIndex(entry => entry.id === id);
+        if (at >= 0) timeouts.splice(at, 1);
+      },
     } });
   vm.runInContext(compiled + '\nglobalThis.avatar = new Avatar(canvas);', ctx);
   // 指定より短い待ちのタイマーだけを進める。再登録ぶんは次の呼び出しに回す。
@@ -317,4 +327,45 @@ test('まばたき差分が未配置なら、目を開けたままにする', ()
   h.blink();
   closed.on.error.forEach(callback => callback());
   assert.equal(h.rendered.at(-1), '/sprites/book.png');
+});
+
+test('通話中は絵を切り替えない', () => {
+  const h = harness();
+  h.life({ mood: 'normal', activity: 'reading', energy: 60 });
+  h.avatar.hold(true);
+  assert.equal(h.rendered.at(-1), '/sprites/talk.png', '通話中は話す絵で固定する');
+  const before = h.rendered.length;
+  // 通話中に届く気分・活動の変化では絵を変えない。
+  h.life({ mood: 'happy', activity: 'playing', energy: 90 });
+  h.life({ mood: 'bored', activity: 'snacking', energy: 30 });
+  h.avatar.setState('thinking');
+  assert.deepEqual([...new Set(h.rendered.slice(before))], ['/sprites/talk.png']);
+});
+
+test('通話中でもまばたきは動く', () => {
+  const h = harness();
+  h.avatar.hold(true);
+  h.blink();
+  assert.equal(h.rendered.at(-1), '/sprites/talk-blink.png');
+  h.settle();
+  assert.equal(h.rendered.at(-1), '/sprites/talk.png');
+});
+
+test('通話が終わると、いまの状態の絵へ戻る', () => {
+  const h = harness();
+  h.life({ mood: 'normal', activity: 'reading', energy: 60 });
+  h.avatar.hold(true);
+  h.life({ mood: 'normal', activity: 'playing', energy: 60 });
+  h.avatar.hold(false);
+  assert.equal(h.rendered.at(-1), '/sprites/cards.png', '通話中に届いていた活動が反映される');
+});
+
+test('通話中は、伏せ姿勢あつかいの小さな呼吸にしない', () => {
+  const h = harness();
+  // 伏せている絵のまま固定すると、通話中ずっと呼吸が小さいままになる。
+  h.life({ mood: 'normal', activity: 'daydreaming', energy: 60 });
+  h.avatar.hold(true);
+  const seen = new Set();
+  for (let i = 0; i < 4; i++) { h.settle(); seen.add(h.canvas.style.transform); }
+  assert.ok([...seen].some(value => value.includes('scaleY(1.0125)')), [...seen].join(' / '));
 });
