@@ -28,7 +28,9 @@ class SchemaTests(unittest.IsolatedAsyncioTestCase):
             async_client_args={'transport': httpx.MockTransport(respond)}, retry_options=types.HttpRetryOptions(attempts=1)))
         try:
             result = await llm.organize({'raw': [{'id': raw_id, 'content': 'お茶が好き', 'status': 'completed'}], 'wisdom': []})
-            self.assertEqual(result, candidate)
+            # toneを省いた応答でも通り、中立（0）として保存される。
+            expected = {'items': [dict(candidate['items'][0], tone=0)]}
+            self.assertEqual(result, expected)
             self.assertEqual(len(requests), 1)
             self.assertIn('responseSchema', requests[0]['generationConfig'])
         finally:

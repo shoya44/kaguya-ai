@@ -20,6 +20,9 @@ class WisdomItem(BaseModel):
     summary: str = Field(min_length=1, max_length=400)
     kind: Literal['explicit', 'inferred']
     importance: int = Field(ge=1, le=5)
+    # 記憶したときの感情。-1=つらい / 0=どちらでもない / +1=うれしい。
+    # 想起で「いまの気分に近い記憶」を優先するためだけに使う。
+    tone: int = Field(default=0, ge=-1, le=1)
     evidence_ids: list[UUID] = Field(min_length=1, max_length=30)
 
 
@@ -115,13 +118,16 @@ def commit_wisdom(conn, snap, batch):
         support = 'unconfirmed' if item.kind == 'inferred' else (
             'repeated' if len({e['date'] for e in evidence.values()}) >= 2 else 'stated')
         last_seen = max(entry['date'] for entry in evidence.values()) + 'T00:00:00+09:00'
-        value = (item.summary, item.kind, support, item.importance, Jsonb(list(evidence.values())))
+        value = (item.summary, item.kind, support, item.importance, item.tone,
+                 Jsonb(list(evidence.values())))
         if old:
-            conn.execute('''UPDATE memory_long SET summary=%s,kind=%s,support_level=%s,importance=%s,evidence=%s,
-                last_seen_at=%s,revision=revision+1,updated_at=now() WHERE id=%s''', (*value, last_seen, old['id']))
+            conn.execute('''UPDATE memory_long SET summary=%s,kind=%s,support_level=%s,importance=%s,
+                tone=%s,evidence=%s,last_seen_at=%s,revision=revision+1,updated_at=now()
+                WHERE id=%s''', (*value, last_seen, old['id']))
         else:
-            conn.execute('''INSERT INTO memory_long (id,topic_key,summary,kind,support_level,importance,evidence,last_seen_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s)''', (uuid4(), item.topic_key, *value, last_seen))
+            conn.execute('''INSERT INTO memory_long
+                (id,topic_key,summary,kind,support_level,importance,tone,evidence,last_seen_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)''', (uuid4(), item.topic_key, *value, last_seen))
     for row in actual:
         reason = 'cancelled' if row['status'] == 'cancelled' else (
             'wisdom' if str(row['id']) in supported else 'no_durable_fact')
@@ -140,7 +146,12 @@ def recall_terms(text):
     return sorted(terms, key=lambda term: (-len(term), term))[:60]
 
 
-def recall(conn, text, context=''):
+# いまの表情から「思い出しやすい記憶の感情」を決める。人間の気分一致効果
+# （落ち込んでいるとつらい記憶を、機嫌がいいと楽しい記憶を思い出しやすい）。
+TONE_BY_MOOD = {'worried': -1, 'sulky': -1, 'happy': 1}
+
+
+def recall(conn, text, context='', mood=''):
     primary = recall_terms(text)
     secondary = [term for term in recall_terms(context) if term not in primary][:20]
     terms = primary + secondary
@@ -150,14 +161,19 @@ def recall(conn, text, context=''):
         ORDER BY (topic_key ILIKE ANY(%s) OR summary ILIKE ANY(%s)) DESC,
         updated_at DESC LIMIT 100''', (patterns, patterns, current_patterns, current_patterns)).fetchall() if patterns else []
 
+    # 気分に合う記憶を優先する。合わない記憶を捨てはしない（同じ強さの候補の中で
+    # 選ばれやすくなるだけ）。tone=0 の記憶はどの気分でも中立に扱う。
+    wanted = TONE_BY_MOOD.get(str(mood or ''), 0)
+
     def relevance(row):
         # 一致語数だけで並べると、長い要約が偶然当たって上位に来る。重要度と、
         # 明示的に語られた知恵（推測ではない）を加点して順位に反映させる。
         value = unicodedata.normalize('NFKC', row['topic_key'] + ' ' + row['summary']).casefold()
         hits = sum(min(len(term), 8) for term in primary if term in value)
         context_hits = sum(term in value for term in secondary)
+        tone_match = bool(wanted) and int(row.get('tone') or 0) == wanted
         return (hits > 0, hits, row['locked'], context_hits, row['kind'] == 'explicit',
-                row['importance'], row['updated_at'])
+                tone_match, row['importance'], row['updated_at'])
 
     rows.sort(key=relevance, reverse=True)
     selected = rows[:5]

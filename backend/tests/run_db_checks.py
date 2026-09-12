@@ -193,3 +193,41 @@ def main():
 
 if __name__ == '__main__':
     sys.exit(main())
+
+
+@unittest.skipUnless(pgtemp.available(), pgtemp.reason())
+class MoodCongruentRecallTests(unittest.TestCase):
+    """いまの気分に近い記憶を思い出しやすくする（気分一致効果）。"""
+
+    def setUp(self):
+        self.db = pgtemp.database()
+        self.addCleanup(self.db.close)
+        with self.db.session() as conn:
+            conn.execute('TRUNCATE memory_short,memory_long,persona_character,reminders')
+            for topic, tone in (('仕事のつらさ', -1), ('仕事の楽しさ', 1), ('仕事の話', 0)):
+                conn.execute("""INSERT INTO memory_long
+                    (id,topic_key,summary,kind,support_level,importance,tone,evidence)
+                    VALUES (%s,%s,%s,'explicit','stated',3,%s,'[]')""",
+                             (uuid4(), topic, topic + 'について', tone))
+
+    def top(self, mood):
+        with self.db.session() as conn:
+            return store.recall(conn, '仕事', mood=mood)['wisdom'][0]['tone']
+
+    def test_a_worried_kaguya_reaches_for_the_hard_memories(self):
+        self.assertEqual(self.top('worried'), -1)
+
+    def test_a_happy_kaguya_reaches_for_the_good_ones(self):
+        self.assertEqual(self.top('happy'), 1)
+
+    def test_without_a_mood_the_order_is_unchanged(self):
+        with self.db.session() as conn:
+            plain = [row['topic_key'] for row in store.recall(conn, '仕事')['wisdom']]
+            unknown = [row['topic_key'] for row in store.recall(conn, '仕事', mood='normal')['wisdom']]
+        self.assertEqual(plain, unknown)
+
+    def test_memories_that_do_not_match_the_mood_are_still_recalled(self):
+        """気分に合わないだけで忘れたことにはしない。"""
+        with self.db.session() as conn:
+            found = {row['tone'] for row in store.recall(conn, '仕事', mood='happy')['wisdom']}
+        self.assertEqual(found, {-1, 0, 1})

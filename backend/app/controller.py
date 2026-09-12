@@ -263,7 +263,10 @@ class Controller:
             if answer is None:
                 context = await self.memory.context()
                 hint = ' '.join(row['text'] for row in context[-2:])[:2000]
-                recalled = await self.memory.call('GET', '/recall', params={'text': turn['text'], 'context': hint})
+                # いまの表情を渡す。思い出してから感情が動くので、渡すのは「この会話が
+                # 始まる前の気分」になる。人間の思い出し方と同じ順序。
+                recalled = await self.memory.call('GET', '/recall', params={
+                    'text': turn['text'], 'context': hint, 'mood': self.face(tokyo_now())})
             mind_context = self.mind.before_reply(turn['text'], tokyo_now(), recalled) if self.mind else {}
             await self.emit_mood(refresh=True)
 
