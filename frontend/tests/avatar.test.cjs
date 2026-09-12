@@ -92,9 +92,52 @@ test('出来事には一度だけ動き、そのあと普段のゆれへ戻る',
   assert.equal(h.canvas.style.transform, 'translateY(4px) rotate(0.6deg)');
   const nudging = h.canvas.style.transition;
   h.settle();
-  // 戻ったあとは、状態に応じた普段のゆれの長さになっている。
+  // 戻ったあとは、一回性の動きではなく呼吸の長さになっている。
   assert.notEqual(h.canvas.style.transition, nudging);
-  assert.match(h.canvas.style.transition, /1750ms/);
+  assert.match(h.canvas.style.transition, /(1400|2500)ms/);
+});
+
+test('呼吸は縦に伸びるだけで、接地点は動かさない', () => {
+  const h = harness();
+  // 上下へ動かすと足や床まで一緒に浮く。平行移動が混ざっていないこと。
+  const seen = new Set();
+  for (let i = 0; i < 4; i++) { h.settle(); seen.add(h.canvas.style.transform); }
+  for (const value of seen) assert.doesNotMatch(value, /translate/);
+  assert.ok([...seen].some(value => /scaleY\(1\.0[1-9]/.test(value)), [...seen].join(' / '));
+});
+
+test('伏せている絵は、座っている絵より動かさない', () => {
+  const h = harness();
+  const stretch = value => {
+    const found = /scaleY\(([\d.]+)\)/.exec(value);
+    return found ? Number(found[1]) : 1;
+  };
+  // 呼吸は吸う・吐くを往復するので、2回ぶん見て膨らんだ側を取る。
+  const peak = activity => {
+    const detail = { mood: 'normal', activity, energy: 60 };
+    h.life(detail);
+    const first = stretch(h.canvas.style.transform);
+    h.life(detail);
+    return Math.max(first, stretch(h.canvas.style.transform));
+  };
+  const sitting = peak('snacking');
+  const lying = peak('daydreaming');
+  assert.ok(1 < lying && lying < sitting, `伏せ${lying} は 座り${sitting} より小さく伸びること`);
+});
+
+test('息は吸うより吐くほうが長い', () => {
+  const h = harness();
+  const durations = new Set();
+  for (let i = 0; i < 4; i++) { h.settle(); durations.add(h.canvas.style.transition); }
+  // 往復が同じ長さだと振り子に見える。2種類の長さが交互に出ること。
+  assert.equal(durations.size, 2);
+  assert.ok([...durations].some(value => value.includes('1400ms')));
+  assert.ok([...durations].some(value => value.includes('2500ms')));
+});
+
+test('支点は足元に置く', () => {
+  const h = harness();
+  assert.equal(h.canvas.style.transformOrigin, '50% 100%');
 });
 
 test('同じ気分が届き続けても、跳ねるのは変わった一度だけ', () => {

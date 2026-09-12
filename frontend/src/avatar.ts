@@ -58,8 +58,15 @@ const NUDGES: Record<Nudge, { transform: string; ms: number }> = {
   droop: { transform: 'translateY(3px) rotate(-1.2deg) scale(0.99)', ms: 420 },
 };
 
+// 伏せている絵。接地面が広いので、動かすと本人ではなく絵全体が浮いて見える。
+const LYING = new Set(['/sprites/sleep.png', '/sprites/bored.png', '/sprites/daydream.png']);
+// 一呼吸の長さ。吸うより吐くほうが長い。同じ長さで往復すると振り子に見える。
+const BREATH_IN_MS = 1_400;
+const BREATH_OUT_MS = 2_500;
+// 画面に出ているキャラの高さ（style.cssの#avatar）。測れないときだけ使う。
+const AVATAR_CSS_PX = 160;
+
 const IDLE_ROTATE_MS = 45_000;
-const MOTION_MS = 1_900;
 // 絵の差し替えにかける時間。瞬時に入れ替わると、表情が変わったというより点滅して見える。
 const FADE_MS = 220;
 
@@ -147,7 +154,7 @@ export class Avatar {
     if (!style) return;
     const move = NUDGES[nudge];
     if (this.nudgeTimer !== null) window.clearTimeout(this.nudgeTimer);
-    if (this.motionTimer !== null) window.clearInterval(this.motionTimer);
+    if (this.motionTimer !== null) window.clearTimeout(this.motionTimer);
     this.motionTimer = null;
     style.transition = `transform ${move.ms}ms cubic-bezier(0.34, 1.4, 0.64, 1)`;
     style.transform = move.transform;
@@ -198,35 +205,47 @@ export class Avatar {
     }, IDLE_ROTATE_MS);
   }
 
+  /** 一呼吸ぶんの胸の膨らみ（px）と傾き（度）。姿勢と気分で変わる。 */
+  private breath(): { lift: number; tilt: number } {
+    // 伏せている姿勢は接地面が広い。大きく伸ばすと床ごと動いて見える。
+    if (LYING.has(resolve(this.frames()[0]))) return { lift: 0.6, tilt: 0 };
+    if (this.state === 'talking' || this.state === 'greeting' || this.lifeMood === 'happy') {
+      return { lift: 3, tilt: 0.4 };
+    }
+    if (this.state === 'thinking') return { lift: 1.2, tilt: 0.5 };
+    // すねているときは横へ傾いだまま。持ち上がりは抑える。
+    if (this.lifeMood === 'sulky') return { lift: 0.8, tilt: -0.9 };
+    // 心配しているときは動きを小さくする。弾むと軽く見える。
+    if (this.lifeMood === 'worried') return { lift: 1, tilt: 0 };
+    return { lift: 2, tilt: 0 };
+  }
+
   private updateMotion(): void {
     // 一回性の動きの途中なら触らない。終わったときに改めてここへ戻ってくる。
     if (this.nudgeTimer !== null) return;
-    if (this.motionTimer !== null) window.clearInterval(this.motionTimer);
+    if (this.motionTimer !== null) window.clearTimeout(this.motionTimer);
     this.motionTimer = null;
     const style = (this.canvas as HTMLCanvasElement & { style?: CSSStyleDeclaration }).style;
     if (!style) return;
-    style.transition = `transform ${MOTION_MS - 150}ms ease-in-out`;
+    // 支点を足元に置く。中心を軸にすると、傾くたびに座った足や床が左右へ振れる。
+    style.transformOrigin = '50% 100%';
 
-    const apply = () => {
+    const step = () => {
       this.motionFlip = !this.motionFlip;
-      const visuallySleeping = resolve(this.frames()[0]) === '/sprites/sleep.png';
-      if (visuallySleeping) {
-        style.transform = this.motionFlip ? 'translateY(1px) scale(0.995)' : 'translateY(0) scale(1.005)';
-      } else if (this.state === 'talking' || this.state === 'greeting' || this.lifeMood === 'happy') {
-        style.transform = this.motionFlip ? 'translateY(-3px) rotate(-0.4deg)' : 'translateY(0) rotate(0.4deg)';
-      } else if (this.state === 'thinking') {
-        style.transform = this.motionFlip ? 'translateY(-1px) rotate(-0.5deg)' : 'translateY(0) rotate(0deg)';
-      } else if (this.lifeMood === 'sulky') {
-        style.transform = this.motionFlip ? 'translateX(-2px) rotate(-0.8deg)' : 'translateX(0) rotate(-0.2deg)';
-      } else if (this.lifeMood === 'worried') {
-        // 心配しているときは動きを小さくする。弾むと軽く見える。
-        style.transform = this.motionFlip ? 'translateY(-1px)' : 'translateY(0)';
-      } else {
-        style.transform = this.motionFlip ? 'translateY(-2px)' : 'translateY(0)';
-      }
+      const { lift, tilt } = this.breath();
+      // 吸うほうを短く、吐くほうを長く。息を吐ききったところが基準の姿勢。
+      const ms = this.motionFlip ? BREATH_IN_MS : BREATH_OUT_MS;
+      style.transition = `transform ${ms}ms ${this.motionFlip
+        ? 'cubic-bezier(0.37, 0, 0.63, 1)' : 'cubic-bezier(0.33, 0, 0.4, 1)'}`;
+      // 動かすのは縦の伸びだけ。持ち上げると足や床まで一緒に浮いてしまう。
+      // 膨らみのpxを、いま表示されている高さに対する伸び率へ読み替える。
+      const height = this.canvas.clientHeight || AVATAR_CSS_PX;
+      style.transform = this.motionFlip
+        ? `scaleY(${(1 + lift / height).toFixed(4)}) rotate(${tilt}deg)`
+        : 'scaleY(1) rotate(0deg)';
+      this.motionTimer = window.setTimeout(step, ms);
     };
-    apply();
-    this.motionTimer = window.setInterval(apply, MOTION_MS);
+    step();
   }
 
   private draw(): void {
