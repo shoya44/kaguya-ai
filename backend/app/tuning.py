@@ -16,6 +16,8 @@ MOOD_HOLD = {
     'happy': timedelta(minutes=12),
     'sulky': timedelta(minutes=8),
     'sleepy': timedelta(minutes=30),
+    # 心配は尾を引く。褒められてすぐ笑顔に戻らないよう、happyより長く持つ。
+    'worried': timedelta(minutes=20),
 }
 # 会話が無くても眠そうにする時間帯（この時刻以降と、朝この時刻まで）。
 NIGHT_FROM_HOUR = 23
@@ -104,5 +106,15 @@ GROWTH_GROWING = {'traits': 3, 'interactions': 30}
 VOICE_LANGUAGE = 'ja-JP'
 
 
+# --- 返事の「間」 ----------------------------------------------------------
+# 返事を書き始めるまでの待ち（秒）。人は重い話ほど一拍置く。長くすると
+# 「反応が遅いアプリ」になるだけなので、上限は1秒台に留める。
+THINK_DELAY_HEAVY = 0.9             # つらい・しんどい等、重い相談
+THINK_DELAY_SLEEPY = 0.5            # 眠そうな時間帯・気分
+THINK_DELAY_MAX = 1.2
+
+
 # --- 配信 ------------------------------------------------------------------
 FACE_REFRESH_TICKS = 12             # 5秒ごとのtick何回ごとにMindの気分を読み直すか
+# 声かけの言い換えに待てる時間（秒）。超えたら定型文のまま送る。
+PROACTIVE_COMPOSE_SECONDS = 8

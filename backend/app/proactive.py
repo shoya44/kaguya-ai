@@ -82,8 +82,9 @@ class Proactive:
         if not self.greeting_pending and now - self.last_activity < interval:
             return None
         subject = str((topic() if topic else '') or '').strip()
+        kind = 'greeting' if self.greeting_pending else 'nudge'
         if subject:
-            text = random.choice(FOLLOW_UPS['greeting' if self.greeting_pending else 'nudge']).format(topic=subject)
+            text = random.choice(FOLLOW_UPS[kind]).format(topic=subject)
         else:
             text = random.choice((GREETINGS if self.greeting_pending else NUDGES)[time_slot(now)])
         self.greeting_pending = False
@@ -91,4 +92,14 @@ class Proactive:
         self.awaiting = True
         self.last_message = text
         self.store.record(last_proactive=now.isoformat(), proactive_awaiting=True)
-        return {'type': 'proactive.message', 'text': text}
+        # slot/kind/topic は、この定型文をLLMで言い換えるための材料。
+        # 言い換えに失敗しても text をそのまま送れるので、声かけ自体は止まらない。
+        return {'type': 'proactive.message', 'text': text,
+                'slot': time_slot(now), 'kind': kind, 'topic': subject}
+
+    def compose(self, text: str) -> None:
+        """定型文をLLMの言い換えで置き換えたときに、送った文面を記録し直す。
+        次の会話で「直前の声かけ」として渡すのは、実際に画面へ出した文面。"""
+        value = str(text or '').strip()
+        if value:
+            self.last_message = value

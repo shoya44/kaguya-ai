@@ -152,16 +152,21 @@ class KaguyaMind:
 
     @staticmethod
     def _expression(values: dict[str, float], energy: float) -> str:
-        """画面のかぐやの表情。スプライトは4種類しかないので、_moodと同じ優先順で、
-        対応する表情が無いものはnormalへ寄せる。眠さの境目はmood.Moodと揃えている。"""
+        """画面のかぐやの表情。_moodと同じ優先順で、同じ境目を使う。
+
+        以前は心配・退屈がnormalへ落ちていたため、気分ラベルは「少し心配している」
+        なのに顔は普段どおり、という食い違いが出ていた。判定を_moodと揃える。
+        好奇心は表情として分かりにくいのでnormalのままにする。"""
         if values.get('concern', 0) >= EMOTION_THRESHOLD['concern']:
-            return 'normal'
+            return 'worried'
         if values.get('jealousy', 0) >= EMOTION_THRESHOLD['jealousy']:
             return 'sulky'
         if energy < EMOTION_THRESHOLD['energy_sleepy']:
             return 'sleepy'
         if values.get('happiness', 0) >= EMOTION_THRESHOLD['happiness']:
             return 'happy'
+        if values.get('boredom', 0) >= EMOTION_THRESHOLD['boredom']:
+            return 'bored'
         return 'normal'
 
     def face(self, now: datetime) -> str:

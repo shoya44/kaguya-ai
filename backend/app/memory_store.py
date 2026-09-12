@@ -25,7 +25,7 @@ class WisdomItem(BaseModel):
 
 class WisdomBatch(BaseModel):
     model_config = ConfigDict(extra='forbid')
-    items: list[WisdomItem] = Field(max_length=8)
+    items: list[WisdomItem] = Field(max_length=12)
 
 
 class PersonaCandidate(BaseModel):
@@ -43,11 +43,17 @@ def lock(conn):
 # かぐや側の回答を短く添えて文脈を補う（長文の回答で予算を食い潰さない長さ）。
 REPLY_HINT_CHARS = 160
 
+# 1回の整理で扱う原文の件数と文字数。ここが小さいと、よく話した日に整理が
+# 追いつかず反映待ちが積み上がる。Geminiの入力上限ではなく、1回の呼び出しで
+# 破綻なく要約できる量として決めている（llm.organize の入力上限と対）。
+ORGANIZE_ROWS = 60
+ORGANIZE_CHARS = 12000
+
 
 def snapshot(conn):
     rows = conn.execute("""SELECT id,turn_id,content,status,revision,created_at FROM raw_memory
         WHERE role='user' AND processed_at IS NULL AND status <> 'pending'
-        ORDER BY created_at,id LIMIT 30""").fetchall()
+        ORDER BY created_at,id LIMIT %s""", (ORGANIZE_ROWS,)).fetchall()
     replies = {}
     if rows:
         replies = {row['turn_id']: row['content'] for row in conn.execute(
@@ -57,7 +63,7 @@ def snapshot(conn):
     for row in rows:
         row['reply'] = replies.get(row['turn_id'], '')[:REPLY_HINT_CHARS]
         cost = len(row['content']) + len(row['reply']) + 140
-        if chosen and size + cost > 6500:
+        if chosen and size + cost > ORGANIZE_CHARS:
             break
         chosen.append(row)
         size += cost

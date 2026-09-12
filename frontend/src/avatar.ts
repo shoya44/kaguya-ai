@@ -1,6 +1,6 @@
 export type AvatarState = 'idle' | 'thinking' | 'talking' | 'greeting' | 'sleeping' | 'organizing';
 type TimeSlot = 'morning' | 'day' | 'evening' | 'night';
-type LifeMood = 'normal' | 'happy' | 'sleepy' | 'sulky';
+type LifeMood = 'normal' | 'happy' | 'sleepy' | 'sulky' | 'worried' | 'bored';
 type LifeActivity = 'idle' | 'reading' | 'working' | 'playing' | 'snacking' | 'daydreaming' | 'sleeping';
 
 const SPRITES: Record<AvatarState, string[]> = {
@@ -28,6 +28,17 @@ const LIFE_SPRITES: Record<LifeActivity, string[]> = {
   daydreaming: ['/sprites/book.png'],
   sleeping: ['/sprites/sleep.png'],
 };
+// 気分ごとの絵。専用イラストが増えたらここだけ差し替える（未配置は参照しない）。
+// worried は考え込む絵、bored は手持ち無沙汰な絵を暫定で当てている。
+const MOOD_SPRITES: Record<LifeMood, string | null> = {
+  normal: null,
+  happy: '/sprites/laugh.png',
+  sleepy: '/sprites/sleep.png',
+  sulky: '/sprites/book.png',
+  worried: '/sprites/think.png',
+  bored: '/sprites/cards.png',
+};
+
 const IDLE_ROTATE_MS = 45_000;
 const MOTION_MS = 1_900;
 
@@ -70,7 +81,7 @@ export class Avatar {
     this.ctx = ctx;
     window.addEventListener('kaguya-life', event => {
       const detail = (event as CustomEvent).detail ?? {};
-      if (['normal', 'happy', 'sleepy', 'sulky'].includes(detail.mood)) this.lifeMood = detail.mood;
+      if (Object.prototype.hasOwnProperty.call(MOOD_SPRITES, detail.mood)) this.lifeMood = detail.mood;
       if (Object.prototype.hasOwnProperty.call(LIFE_SPRITES, detail.activity)) this.lifeActivity = detail.activity;
       if (Number.isFinite(detail.energy)) this.lifeEnergy = Number(detail.energy);
       // main.tsの「長時間会話なし=睡眠」より、復帰直後の生活演出を優先する。
@@ -102,21 +113,24 @@ export class Avatar {
       && this.lifeMood !== 'sleepy' && this.lifeActivity !== 'sleeping' && this.lifeEnergy >= 20;
   }
 
+  private moodFrames(): string[] | null {
+    const src = MOOD_SPRITES[this.lifeMood];
+    return src ? [src] : null;
+  }
+
   private frames(): string[] {
     if (this.state === 'sleeping' && this.livingOverridesSleeping()) {
-      return this.lifeMood === 'happy' ? ['/sprites/laugh.png']
-        : this.lifeMood === 'sulky' ? ['/sprites/book.png']
-        : this.lifeActivity !== 'idle' ? LIFE_SPRITES[this.lifeActivity]
-        : IDLE_BY_TIME[timeSlot()];
+      // 眠りより生活の演出を優先する場面。眠そうな気分はここへ来ない。
+      return this.moodFrames()
+        ?? (this.lifeActivity !== 'idle' ? LIFE_SPRITES[this.lifeActivity] : IDLE_BY_TIME[timeSlot()]);
     }
     if (this.state !== 'idle') return SPRITES[this.state];
     if (this.lifeMood === 'happy') return ['/sprites/laugh.png'];
     if (this.lifeMood === 'sleepy' || this.lifeActivity === 'sleeping' || this.lifeEnergy < 20) {
       return ['/sprites/sleep.png'];
     }
-    if (this.lifeMood === 'sulky') return ['/sprites/book.png'];
-    if (this.lifeActivity !== 'idle') return LIFE_SPRITES[this.lifeActivity];
-    return IDLE_BY_TIME[timeSlot()];
+    return this.moodFrames()
+      ?? (this.lifeActivity !== 'idle' ? LIFE_SPRITES[this.lifeActivity] : IDLE_BY_TIME[timeSlot()]);
   }
 
   private rotate(): void {
@@ -153,6 +167,9 @@ export class Avatar {
         style.transform = this.motionFlip ? 'translateY(-1px) rotate(-0.5deg)' : 'translateY(0) rotate(0deg)';
       } else if (this.lifeMood === 'sulky') {
         style.transform = this.motionFlip ? 'translateX(-2px) rotate(-0.8deg)' : 'translateX(0) rotate(-0.2deg)';
+      } else if (this.lifeMood === 'worried') {
+        // 心配しているときは動きを小さくする。弾むと軽く見える。
+        style.transform = this.motionFlip ? 'translateY(-1px)' : 'translateY(0)';
       } else {
         style.transform = this.motionFlip ? 'translateY(-2px)' : 'translateY(0)';
       }

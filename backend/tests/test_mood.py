@@ -66,9 +66,12 @@ class MindExpressionTests(unittest.TestCase):
         self.assertEqual(mind.face(NOON + timedelta(minutes=3)), 'happy')
 
     def test_a_worried_kaguya_does_not_smile(self):
+        """気分ラベルが「少し心配している」なのに顔だけ普段どおり、をなくす。"""
         mind = self.mind()
-        mind.before_reply('かぐや、ありがとう。でも最近つらいし不安なんだ', NOON)
-        self.assertEqual(mind.face(NOON), 'normal')
+        # 心配は1度では閾値に届かない。褒め言葉も同時に入るが、笑顔にはしない。
+        for minute in range(4):
+            mind.before_reply('かぐや、ありがとう。でも最近つらいし不安なんだ', NOON + timedelta(minutes=minute))
+        self.assertEqual(mind.face(NOON + timedelta(minutes=4)), 'worried')
 
     def test_late_night_shows_a_sleepy_face(self):
         self.assertEqual(self.mind().face(NIGHT), 'sleepy')
@@ -127,6 +130,16 @@ class TuningTests(unittest.TestCase):
         with unittest.mock.patch.dict(tuning.EMOTION_THRESHOLD, {'happiness': 99}):
             self.assertEqual(Engine._expression(values, 80), 'normal')
 
+    def test_every_expression_has_a_sprite_on_screen(self):
+        """表情を足したのに画面側の絵が無い、という食い違いを防ぐ。"""
+        from pathlib import Path
+        from app.mood import FACES
+        avatar = Path(__file__).resolve().parents[2] / 'frontend/src/avatar.ts'
+        source = avatar.read_text(encoding='utf-8')
+        mapping = source.split('const MOOD_SPRITES')[1].split('};')[0]
+        for face in FACES:
+            self.assertIn(f'{face}:', mapping, face)
+
     def test_changing_a_hold_time_changes_how_long_the_mood_lasts(self):
         from app import tuning
         mood = Mood()
@@ -144,3 +157,26 @@ class TuningTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ThinkDelayTests(unittest.TestCase):
+    """返事を書き始めるまでの「間」。即答が続くと機械的に見える。"""
+
+    def test_a_heavy_message_gets_a_pause(self):
+        from app.mood import think_delay
+        self.assertGreater(think_delay('最近しんどくて何もやる気が出ない'), 0)
+
+    def test_an_ordinary_message_is_answered_at_once(self):
+        from app.mood import think_delay
+        self.assertEqual(think_delay('今日は何して遊ぶ？'), 0)
+        self.assertEqual(think_delay(''), 0)
+
+    def test_a_sleepy_kaguya_pauses_a_little(self):
+        from app.mood import think_delay
+        self.assertGreater(think_delay('おはよう', '眠そう'), 0)
+
+    def test_the_pause_never_makes_the_app_feel_slow(self):
+        from app import tuning
+        from app.mood import think_delay
+        for text, mood in (('つらい', '眠そう'), ('疲れた', ''), ('やっほ', '眠そう')):
+            self.assertLessEqual(think_delay(text, mood), tuning.THINK_DELAY_MAX)

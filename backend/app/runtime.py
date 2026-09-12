@@ -19,9 +19,10 @@ class Options(BaseModel):
     # Experimental Kaguya Mind is opt-in. OFF preserves the pre-Mind behavior.
     mind_enabled: bool = False
     proactive_minutes: int = Field(default=60, ge=60, le=240)
-    # 1回の整理で生の発言30件を処理する。上限3なら1日90件ぶん。よく話した日に
-    # 追いつけるよう上限は広げ、既定は3のままにする。未整理は消えず溜まるだけ。
-    daily_call_limit: int = Field(default=3, ge=1, le=10)
+    # 1回の整理で生の発言60件を処理する。既定8なら1日480件ぶん。既定3・30件では
+    # よく話した日に追いつけず、反映待ちが数百件たまったまま上限に当たっていた。
+    # 未整理の原文は消えず溜まるだけなので、上限は「その日の追いつきやすさ」で決める。
+    daily_call_limit: int = Field(default=8, ge=1, le=10)
     # Thinking-capable models consume this budget before writing the answer,
     # so the ceiling has to allow more than a plain reply would need.
     reply_tokens: int = Field(default=1024, ge=256, le=8192)

@@ -4,8 +4,8 @@ import time
 from contextlib import suppress
 
 from .errors import ChatError
-from .mood import Mood
-from .tuning import FACE_REFRESH_TICKS
+from .mood import Mood, think_delay
+from .tuning import FACE_REFRESH_TICKS, PROACTIVE_COMPOSE_SECONDS
 from .proactive import Proactive, tokyo_now
 from .jobs import Jobs
 from . import pc, relationship, tools
@@ -76,7 +76,7 @@ class Controller:
                 event = self.proactive.tick(visible, bool(self.active or self.unsaved or self.editing),
                                             topic=lambda: self.mind.due_topic(tokyo_now()) if self.mind else '')
                 if event:
-                    await self.broadcast(event)
+                    await self.broadcast(await self.compose_proactive(event))
                 self.mood_ticks += 1
                 # Mindの感情は半減期が長いので、読み直しは1分に1回でよい。
                 # 起動直後の1回目は読む（それまではOFF相当の簡易判定になるため）。
@@ -87,6 +87,27 @@ class Controller:
             except Exception:
                 # Keep the timer alive; details shown by settings/jobs, no raw data logged.
                 self.jobs.status = '定期処理を実行できませんでした。設定・保存先を確認してください。'
+
+    async def compose_proactive(self, event: dict) -> dict:
+        """定型文のままでは毎朝同じ挨拶になるので、LLMで言い換えてから送る。
+
+        言い換えに失敗したら定型文をそのまま使う。声かけは会話ターンではないため、
+        ここでの失敗を利用者へ出さない（出しても直せることがない）。
+        """
+        text = str(event.get('text') or '')
+        mood = self.mind.snapshot(tokyo_now()).get('mood', '') if self.mind else ''
+        try:
+            async with asyncio.timeout(PROACTIVE_COMPOSE_SECONDS):
+                spoken = await self.llm.small_talk(text, event.get('slot', ''), event.get('kind', ''),
+                                                   event.get('topic', ''), str(mood or ''))
+        except Exception:
+            # CancelledErrorはBaseException側なので、ここでは拾わない（停止できる）。
+            spoken = ''
+        if spoken:
+            text = spoken
+            self.proactive.compose(text)
+        # 画面へ送るのは従来どおり type と text だけ。言い換えの材料は内部に留める。
+        return {'type': event['type'], 'text': text}
 
     async def maybe_organize(self):
         now = time.monotonic()
@@ -219,6 +240,11 @@ class Controller:
             else:
                 answer = await tools.direct_reply(turn['text'], self.memory)
             if answer is None:
+                # 重い相談・眠そうな時間帯だけ一拍置いてから書き始める。
+                # 天気などの即答（direct_reply）と、ファイルタブへの引き継ぎには挟まない。
+                delay = think_delay(turn['text'], str(mind_context.get('現在の気分', '')))
+                if delay:
+                    await asyncio.sleep(delay)
                 context = await self.memory.context()
                 hint = ' '.join(row['text'] for row in context[-2:])[:2000]
                 recalled = await self.memory.call('GET', '/recall', params={'text': turn['text'], 'context': hint})
