@@ -90,15 +90,17 @@ def _boot() -> None:
     options = f'-h 127.0.0.1 -p {port} -F'
     if os.name != 'nt':
         options += f' -k "{temp}"'
-    startup = subprocess.run([pg_ctl, '-D', str(data), '-l', str(temp / 'postgres.log'), '-w',
-                              '-o', options, 'start'],
-                             capture_output=True, timeout=60, creationflags=flags)
+    # 出力をパイプで受けてはいけない。起動したサーバーがそのパイプを握ったまま
+    # 残るため、subprocess.run がEOFを待ち続けて返らなくなる。理由は -l のログを読む。
+    log = temp / 'postgres.log'
+    startup = subprocess.run([pg_ctl, '-D', str(data), '-l', str(log), '-w', '-o', options, 'start'],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             timeout=60, creationflags=flags)
     if startup.returncode:
-        log = temp / 'postgres.log'
         detail = log.read_text(encoding='utf-8', errors='replace') if log.exists() else ''
-        raise RuntimeError('pg_ctl start failed: ' + (detail or startup.stderr.decode('utf-8', 'replace')))
+        raise RuntimeError(f'pg_ctl start failed ({startup.returncode}): {detail}')
     atexit.register(subprocess.run, [pg_ctl, '-D', str(data), '-m', 'immediate', '-w', 'stop'],
-                    capture_output=True, timeout=60)
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
     dsn = f'host=127.0.0.1 port={port} user=tester dbname=postgres connect_timeout=5'
     with psycopg.connect(dsn, autocommit=True) as conn:
         for name in SCRIPTS:
