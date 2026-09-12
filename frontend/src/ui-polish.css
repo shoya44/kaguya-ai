@@ -1,12 +1,30 @@
+/* style.css の上に重ねる「見た目の層」。配色・階層・当たり判定を
+   Apple Human Interface Guidelines（iOS のダークモード／グループ化リスト／
+   タブバー）に寄せる。構造とロジックは触らず、ここだけで完結させる。
+   https://developer.apple.com/jp/design/human-interface-guidelines */
+
 :root {
+  /* 面：背景 → カード → 行。3段までに抑え、影ではなく明度差で奥行きを出す。 */
+  --surface-grouped: #1b1526;
+  --surface-card: #221b32;
+  --separator: rgba(242, 238, 252, 0.10);
   --border-subtle: rgba(242, 238, 252, 0.12);
   --border-hover: rgba(242, 238, 252, 0.22);
+  /* 文字：本文 → 補足 → メタ情報。色だけで3階層を作る。 */
+  --label-2: #a99dc2;
+  --label-3: rgba(242, 238, 252, 0.48);
+  --metadata: rgba(242, 238, 252, 0.48);
   --accent-soft: rgba(139, 111, 209, 0.16);
   --control-hover: rgba(242, 238, 252, 0.06);
-  --metadata: rgba(242, 238, 252, 0.48);
 }
 
-/* 通常の枠線は低彩度にし、紫は主操作・選択状態・フォーカスに限定する。 */
+/* 端末標準の書体を優先する（iOSはSF、WindowsはSegoe/Yu Gothic UI）。 */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
+    "Yu Gothic UI", "Noto Sans JP", sans-serif;
+}
+
+/* --- 枠線・押下感 ------------------------------------------------------- */
 button,
 input:not([type="checkbox"]),
 select,
@@ -22,7 +40,6 @@ button:hover:not(:disabled) {
   background: var(--control-hover);
 }
 
-/* カスタムボタンに押下状態を付け、入力を受け付けたことを視覚的に返す。 */
 button:active:not(:disabled) {
   opacity: 0.72;
 }
@@ -32,38 +49,386 @@ button:active:not(:disabled) {
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
-/* 選択中タブは全面を紫にせず、薄いアクセント面で状態だけ示す。 */
-.toolbar button[aria-pressed="true"] {
-  background: var(--accent-soft);
+/* ツールバーと本文の境目に細い線を1本だけ引く（HIGのタブバーの区切り）。 */
+.toolbar {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--separator);
+}
+
+#app.mode-mini .toolbar {
+  border-bottom: none;
+}
+
+/* --- タブバー -----------------------------------------------------------
+   HIGのタブバーに合わせ、アイコンの下にラベルを置く。選択中は塗りつぶさず
+   アクセント色で着色する（塗ると押せる場所と状態の区別が付かなくなる）。 */
+.tabbar {
+  gap: 2px !important;
+}
+
+.toolbar .tabbar button {
+  width: auto;
+  height: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--label-2);
+  font-weight: 500;
+}
+
+.toolbar .tabbar svg {
+  width: 22px;
+  height: 22px;
+}
+
+.tab-label {
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+.toolbar .tabbar button[aria-pressed="true"] {
+  background: transparent;
+  border-color: transparent;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.toolbar .tabbar button:hover:not(:disabled):not([aria-pressed="true"]) {
+  background: var(--control-hover);
+  border-color: transparent;
   color: var(--text);
+}
+
+/* 右側は画面の切替ではなく「その場の操作」。枠を外して主役から下げる。 */
+.toolbar > .button-row button {
+  background: transparent;
+  border-color: transparent;
+  color: var(--label-2);
+}
+
+.toolbar > .button-row button:hover:not(:disabled) {
+  background: var(--control-hover);
+  color: var(--text);
+}
+
+.toolbar > .button-row button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* --- グループ化リスト ---------------------------------------------------
+   設定・ファイルの各項目は「見出し＋カード＋補足」の3点で組む。
+   枠を増やさず、余白と面の明度だけで区切りを作る。 */
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.group > h2 {
+  margin: 0;
+  padding-inline: 4px;
+  font-size: 0.82em;
+  font-weight: 600;
+  color: var(--label-2);
+  overflow-wrap: anywhere;
+}
+
+.group-card {
+  background: var(--surface-card);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.group-footer {
+  margin: 0;
+  padding-inline: 4px;
+  color: var(--label-3);
+  font-size: 0.8em;
+  line-height: 1.5;
+}
+
+.group-footer li {
+  margin-left: 1em;
+}
+
+/* 行は最低44px。区切り線は行と行の間だけに出し、カードの端では出さない。 */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+}
+
+.group-card > * + * {
+  border-top: 1px solid var(--separator);
+}
+
+.row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.row-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* 行の直下に置いた見出しは、右端の操作ボタンまでの幅を占める。 */
+.row > .row-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-meta {
+  color: var(--label-3);
+  font-size: 0.8em;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.row-note {
+  margin: 0;
+  padding: 10px 14px;
+  color: var(--label-2);
+  font-size: 0.85em;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.row-note:empty {
+  display: none;
+}
+
+/* 画面が変わる行にはシェブロンを付ける（HIGの Disclosure indicator）。 */
+.row-link {
+  cursor: pointer;
+}
+
+.row-link:hover:not(:disabled) {
+  background: var(--control-hover);
   border-color: transparent;
 }
 
-/* 送信・確定だけを強い主操作として残し、整理/検索は通常の操作へ戻す。 */
-#organize-btn,
-#memory-filter button[type="submit"] {
-  background: var(--panel);
-  color: var(--text);
-  border-color: var(--border-subtle);
+.chevron {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--label-3);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-/* パネル直下のアイコンボタンは内容幅に固定し、flexのstretchで横長にしない。 */
-#settings-panel > .icon-button {
+.row-link[aria-pressed] {
+  background: transparent;
+}
+
+.empty-state {
+  margin: 0;
+  padding: 16px 14px;
+  background: var(--surface-grouped);
+  border-radius: 12px;
+  color: var(--label-2);
+  font-size: 0.88em;
+  line-height: 1.6;
+}
+
+.back-link {
   align-self: flex-start;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  padding: 0 8px 0 2px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--accent);
+  font-weight: 500;
 }
 
-/* 自分の発言もアクセントの塗り面を弱め、送信ボタンと競合させない。 */
+.back-link svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* --- 設定タブ ----------------------------------------------------------- */
+#settings-panel h1,
+#pc-panel h1,
+#memories-panel h1 {
+  font-size: 1.45em;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+#organize-btn {
+  flex: none;
+  align-self: center;
+  margin: 0;
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-size: 0.9em;
+}
+
+#job-status,
+#model-info {
+  color: var(--label-3);
+}
+
+#reminder-list:empty {
+  display: none;
+}
+
+#reminder-list {
+  display: block;
+  padding: 0;
+  color: var(--label-2);
+}
+
+#reminder-list:not(:has(.reminder-row)) {
+  padding: 14px;
+  font-size: 0.88em;
+}
+
+.reminder-row {
+  background: transparent;
+  border-radius: 0;
+  padding: 10px 14px;
+  min-height: 44px;
+}
+
+.reminder-row + .reminder-row {
+  border-top: 1px solid var(--separator);
+}
+
+.reminder-row button {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 0.85em;
+}
+
+/* --- ファイルタブ -------------------------------------------------------
+   PCの登録フォルダ配下を、フォルダごとにまとめて並べる。 */
+.search-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#pc-search {
+  flex: 1;
+  min-width: 0;
+  border-radius: 10px;
+}
+
+#pc-files {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+#pc-files .group {
+  margin-top: 0;
+}
+
+.row-file {
+  cursor: pointer;
+}
+
+.row-file:hover:not(:disabled) {
+  background: var(--control-hover);
+  border-color: transparent;
+}
+
+.file-icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+#pc-player {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#pc-video {
+  width: 100%;
+  max-height: 45vh;
+  background: #000;
+  border-radius: 12px;
+}
+
+#pc-now-playing,
+#pc-status,
+#pc-jobs {
+  overflow-wrap: anywhere;
+}
+
+#pc-status:empty,
+#pc-jobs:empty {
+  display: none;
+}
+
+#pc-jobs {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.pager {
+  justify-content: center;
+}
+
+#pc-page {
+  color: var(--label-3);
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
+}
+
+#pc-remote a {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+/* --- 会話画面 ----------------------------------------------------------- */
 .msg.user {
   background: var(--accent-soft);
   color: var(--text);
 }
 
-/* 履歴移動は補助操作。枠・塗りを外し、必要な時だけ静かに見せる。 */
 #older-btn,
 #latest-btn {
   align-self: center;
@@ -95,11 +460,6 @@ button:active:not(:disabled) {
   opacity: 0.35;
 }
 
-/* 定型の追いかけ質問は本文より弱い Ghost Chip として扱う。 */
-.follow-ups {
-  gap: 6px;
-}
-
 .follow-ups button {
   background: transparent;
   border-color: var(--border-subtle);
@@ -114,20 +474,17 @@ button:active:not(:disabled) {
   color: var(--text);
 }
 
-/* 応答時間は診断用メタ情報なので、回答本文より一段下の階層にする。 */
 .msg-timing {
   color: var(--metadata);
   font-size: 0.78em;
   line-height: 1.3;
 }
 
-/* 枠を増やさず、余白だけで設定・記憶画面のグループを分ける。 */
-#settings-panel > h2 {
-  margin-top: 10px;
-}
-
-#settings-panel > #reminder-list + h2 {
-  margin-top: 16px;
+/* 整理・検索は主操作ではないので、アクセント色の塗りを外す。 */
+#memory-filter button[type="submit"] {
+  background: var(--panel);
+  color: var(--text);
+  border-color: var(--border-subtle);
 }
 
 #memories-panel > details,
@@ -136,10 +493,9 @@ button:active:not(:disabled) {
   margin-top: 4px;
 }
 
-/* タッチUIは見た目を大きくしすぎず、操作領域だけ44px以上を確保する。 */
+/* --- タッチ端末：見た目は据え置き、当たり判定だけ44px以上を確保する --- */
 @media (hover: none) and (pointer: coarse) {
-  .toolbar button,
-  #settings-panel > .icon-button,
+  .toolbar > .button-row button,
   #older-btn,
   #latest-btn {
     width: 44px;
@@ -154,5 +510,14 @@ button:active:not(:disabled) {
   .msg-timing,
   .chat-status-line {
     font-size: 12px;
+  }
+
+  /* グループ内の行は高さで確保済み。ボタンだけ最小サイズを足す。 */
+  #app.mode-normal .panel .row {
+    min-height: 48px;
+  }
+
+  #app.mode-normal .panel .row button {
+    min-height: 36px;
   }
 }

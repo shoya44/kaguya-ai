@@ -13,11 +13,13 @@ const compiled = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None },
 }).outputText;
 
-function duration(seconds) {
+function call(method, ...args) {
   const context = vm.createContext({ document: { getElementById: () => null, querySelectorAll: () => [] }, window: { addEventListener() {} } });
-  vm.runInContext(compiled + '\nvar result = PCPanel.duration(value);', Object.assign(context, { value: seconds }));
+  vm.runInContext(compiled + `\nvar result = PCPanel.${method}(...args);`, Object.assign(context, { args }));
   return context.result;
 }
+
+const duration = seconds => call('duration', seconds);
 
 test('分と秒で出す', () => {
   assert.equal(duration(150), '2:30');
@@ -34,4 +36,27 @@ test('読めなかった動画は長さを出さない', () => {
   for (const value of [null, undefined, 0, -1, NaN, 'abc']) {
     assert.equal(duration(value), '', `${value}`);
   }
+});
+
+test('大きさはエクスプローラーと同じ単位で出す', () => {
+  assert.equal(call('size', 512), '512 B');
+  assert.equal(call('size', 1024), '1.0 KB');
+  assert.equal(call('size', 87654321), '83.6 MB');
+  assert.equal(call('size', 1287654321), '1.2 GB');
+});
+
+test('大きさが読めなければ何も出さない', () => {
+  for (const value of [null, undefined, 0, -1, NaN, 'abc']) {
+    assert.equal(call('size', value), '', `${value}`);
+  }
+});
+
+test('置き場所はフォルダ名から順に並べる', () => {
+  assert.equal(call('breadcrumb', '動画', '旅行/2026沖縄.mp4'), '動画 ＞ 旅行');
+  assert.equal(call('breadcrumb', '動画', '旅行/沖縄/1日目.mp4'), '動画 ＞ 旅行 ＞ 沖縄');
+});
+
+test('フォルダ直下のファイルはフォルダ名だけにする', () => {
+  assert.equal(call('breadcrumb', 'vid', 'clip01.mp4'), 'vid');
+  assert.equal(call('breadcrumb', 'vid', ''), 'vid');
 });
