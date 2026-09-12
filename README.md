@@ -2,7 +2,7 @@
 
 会話を覚え、日々の接し方へつなげる個人用AIキャラクターです。Windows PCを母艦に、PCとiPhoneで同じ会話・記憶・生活状態を共有します。
 
-![かぐや](frontend/dist/sprites/wave.png)
+![かぐや](frontend/public/sprites/wave.png)
 
 **現行仕様：2026年9月12日のコード確認版。** 概要からDB・APIまで順に読める資料は [Spec v2（PDF）](docs/Spec_v2.pdf) を参照してください。過去資料は [docs/old](docs/old) に保存しています。
 
