@@ -1,10 +1,18 @@
-"""Small deterministic relationship state. No LLM calls and no conversation copies."""
+"""二人の距離。会った量は living_activity、話し方の希望は persona_character が持つ。
+
+以前は app_settings の ledger（スケジューラの記録）へ混ぜて置いていた。
+記憶に当たるものはそれぞれの持ち主のテーブルへ移し、ledger は整理回数と
+声かけの記録だけに戻している。LLMは呼ばず、会話のコピーも残さない。
+"""
 import re
 from datetime import datetime
 
+from .tuning import FAMILIARITY_STEPS
 
 _STYLE_WORDS = ('返し', '返事', '言い方', '話し方', '口調', '回答')
 _ONE_OFF = ('今回だけ', '今だけ', 'この回答だけ', 'この返事だけ')
+
+STYLE_KEY = 'style_feedback'
 
 
 def style_feedback(text: str) -> str | None:
@@ -30,63 +38,20 @@ def style_feedback(text: str) -> str | None:
     return None
 
 
-def _ledger(store) -> dict:
-    try:
-        value = store.data.get('ledger', {})
-        return value if isinstance(value, dict) else {}
-    except Exception:
-        return {}
 
 
-def capture_feedback(store, text: str, now: datetime) -> str | None:
-    hint = style_feedback(text)
-    if hint:
-        try:
-            store.record(relationship_style_hint=hint, relationship_style_at=now.isoformat())
-        except Exception:
-            # 演出用の学習なので、保存失敗で会話を止めない。
-            pass
-    return hint
+def familiarity(chats: int) -> str:
+    for limit, label in FAMILIARITY_STEPS:
+        if chats < limit:
+            return label
+    return FAMILIARITY_STEPS[-1][1]
 
 
-def record_success(store, now: datetime) -> None:
-    try:
-        ledger = _ledger(store)
-        chats = max(0, int(ledger.get('relationship_chats', 0) or 0)) + 1
-        raw_days = ledger.get('relationship_days', [])
-        days = [str(day) for day in raw_days if day] if isinstance(raw_days, list) else []
-        today = now.date().isoformat()
-        if today not in days:
-            days.append(today)
-        # 実利用日だけなので肥大化しにくいが、異常データ対策で上限を持つ。
-        days = days[-1000:]
-        changes = {'relationship_chats': chats, 'relationship_days': days}
-        if not ledger.get('relationship_first_seen'):
-            changes['relationship_first_seen'] = now.isoformat()
-        store.record(**changes)
-    except Exception:
-        # 関係性演出の保存失敗で本体会話を失敗させない。
-        return
+def context(living) -> dict:
+    """プロンプトに渡す関係性。会った量だけ。
 
-
-def context(store) -> dict:
-    ledger = _ledger(store)
-    try:
-        chats = max(0, int(ledger.get('relationship_chats', 0) or 0))
-    except (TypeError, ValueError):
-        chats = 0
-    raw_days = ledger.get('relationship_days', [])
-    days = len({str(day) for day in raw_days if day}) if isinstance(raw_days, list) else 0
-    if chats < 5:
-        familiarity = 'まだ知り合ったばかり'
-    elif chats < 30:
-        familiarity = '少し慣れてきた'
-    elif chats < 100:
-        familiarity = 'かなり慣れている'
-    else:
-        familiarity = '長く話していて気心が知れている'
-    result = {'慣れ': familiarity, '利用日数': days}
-    hint = str(ledger.get('relationship_style_hint', '') or '').strip()
-    if hint:
-        result['直近の話し方フィードバック'] = hint
-    return result
+    話し方フィードバックは persona_character の1行なので、recall() が返す
+    「接し方」にそのまま含まれる。ここで二重に渡さない。
+    """
+    counts = living.familiarity()
+    return {'慣れ': familiarity(counts['chats']), '利用日数': counts['days']}

@@ -33,8 +33,8 @@ class MindTests(unittest.TestCase):
         mind = self.mind(lambda: enabled['value'])
         self.assertEqual(mind.before_reply('こんにちは', NOW), {})
         self.assertEqual(mind.snapshot(NOW), {'enabled': False, 'status': 'off'})
-        self.assertEqual(self.rows('mind_emotions'), 0)
-        self.assertEqual(self.rows('mind_traits'), 0)
+        self.assertEqual(self.rows('living_emotion'), 0)
+        self.assertEqual(self.rows('persona_favorite'), 0)
 
     def test_on_reacts_and_can_grow_self_preference_from_own_reply(self):
         mind = self.mind()
@@ -46,7 +46,6 @@ class MindTests(unittest.TestCase):
         snap = mind.snapshot(NOW + timedelta(minutes=1))
         self.assertEqual(snap['status'], 'ok')
         self.assertEqual(snap['traits'][0]['name'], 'プリン')
-        self.assertGreaterEqual(snap['stats']['edges'], 1)
 
     def test_negated_quoted_and_hypothetical_preferences_are_not_learned(self):
         mind = self.mind()
@@ -56,13 +55,14 @@ class MindTests(unittest.TestCase):
             mind.after_reply('ねえ', answer, NOW)
         self.assertEqual(mind.snapshot(NOW)['traits'], [])
 
-    def test_user_phrases_are_not_offered_as_kaguya_own_wording(self):
+    def test_user_wording_is_never_offered_as_kaguya_own(self):
+        """ユーザーの口ぐせは記録しない。渡すとかぐやが相手の言い回しを真似る。"""
         mind = self.mind()
         for minute in range(3):
             mind.after_reply('朝のやつ', 'うん。', NOW + timedelta(minutes=minute))
         context = mind.before_reply('朝のやつ', NOW + timedelta(minutes=3))
         self.assertNotIn('よく使う言い方', context)
-        self.assertEqual(mind.snapshot(NOW + timedelta(minutes=3))['shortcut_candidates'][0]['text'], '朝のやつ')
+        self.assertNotIn('shortcut_candidates', mind.snapshot(NOW + timedelta(minutes=3)))
 
     def test_open_loop_is_raised_only_after_the_plan_is_over(self):
         mind = self.mind()
@@ -134,14 +134,6 @@ class MindTests(unittest.TestCase):
             mind.after_reply(text, 'うん。', NOW)
         self.assertEqual(mind.snapshot(NOW)['stats']['open_loops'], 0)
 
-    def test_repeated_short_phrase_becomes_candidate_but_is_not_executed_here(self):
-        mind = self.mind()
-        for minute in range(3):
-            mind.after_reply('朝のやつ', 'うん。', NOW + timedelta(minutes=minute))
-        snap = mind.snapshot(NOW + timedelta(minutes=3))
-        self.assertEqual(snap['shortcut_candidates'][0]['text'], '朝のやつ')
-        self.assertEqual(snap['shortcut_candidates'][0]['count'], 3)
-
     def test_fail_open_returns_empty_context_and_is_logged(self):
         mind = self.mind()
 
@@ -160,16 +152,16 @@ class MindTests(unittest.TestCase):
         with self.db.session() as conn:
             conn.execute("INSERT INTO app_settings(key,value) VALUES ('options','{}')")
         mind.after_reply('明日面接があるんだ', 'あたしはプリンが好きだよ。', NOW)
-        self.assertTrue(self.rows('mind_traits'))
+        self.assertTrue(self.rows('persona_favorite'))
         self.assertEqual(mind.snapshot(NOW)['traits'][0]['name'], 'プリン')
 
         mind.reset()
-        self.assertEqual(self.rows('mind_traits'), 0)
+        self.assertEqual(self.rows('persona_favorite'), 0)
         self.assertEqual(self.rows('app_settings'), 1)
         fresh = mind.snapshot(NOW)
         self.assertEqual(fresh['status'], 'ok')
         self.assertEqual(fresh['traits'], [])
-        self.assertEqual(fresh['stats'], {'traits': 0, 'edges': 0, 'interactions': 0, 'open_loops': 0})
+        self.assertEqual(fresh['stats'], {'traits': 0, 'interactions': 0, 'open_loops': 0})
         # 削除後も同じインスタンスで学習を続けられる。
         mind.after_reply('ねえ', 'あたしは犬が好きだよ。', NOW)
         self.assertEqual(mind.snapshot(NOW)['traits'][0]['name'], '犬')
@@ -178,10 +170,10 @@ class MindTests(unittest.TestCase):
         enabled = {'value': True}
         mind = self.mind(lambda: enabled['value'])
         mind.after_reply('ねえ', 'あたしはプリンが好きだよ。', NOW)
-        self.assertTrue(self.rows('mind_traits'))
+        self.assertTrue(self.rows('persona_favorite'))
         enabled['value'] = False
         mind.reset()
-        self.assertEqual(self.rows('mind_traits'), 0)
+        self.assertEqual(self.rows('persona_favorite'), 0)
 
     def test_mind_guidance_is_only_added_when_context_exists(self):
         off_prompt = memory_prompt({})

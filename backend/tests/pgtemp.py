@@ -4,6 +4,7 @@
 見つからない環境では available() が False を返し、DBを使うテストはskipされる。
 """
 import atexit
+import itertools
 import os
 import shutil
 import socket
@@ -13,10 +14,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = ROOT / 'backend' / 'migrations'
-SCRIPTS = ('001_init.sql', '002_memory_jobs.sql', '003_reminders.sql', '004_local_state.sql')
-# 設定・予定・Mindの表。各テストの前に空へ戻す。会話側は使うテストが自分で消す。
-LOCAL_TABLES = ('app_settings', 'calendar_events', 'mind_emotions', 'mind_traits',
-                'mind_phrases', 'mind_graph_edges', 'mind_open_loops', 'mind_meta')
+SCRIPTS = ('001_init.sql', '002_memory_jobs.sql', '003_reminders.sql', '004_local_state.sql',
+           '005_memory_redesign.sql')
+# 設定・予定・かぐや側の表。各テストの前に空へ戻す。会話側は使うテストが自分で消す。
+LOCAL_TABLES = ('app_settings', 'calendar_events', 'living_emotion', 'living_activity',
+                'persona_favorite', 'memory_concern')
 
 _state: dict = {'dsn': '', 'reason': '', 'started': False}
 
@@ -133,8 +135,31 @@ def new():
 
 
 def database():
-    """テスト用のDatabase。毎回、設定・予定・Mindの表を空に戻してから返す。"""
+    """テスト用のDatabase。毎回、設定・予定・かぐや側の表を空に戻してから返す。"""
     db = new()
     with db.session() as conn:
         conn.execute('TRUNCATE ' + ','.join(LOCAL_TABLES))
     return db
+
+
+_serial = itertools.count()
+
+
+def staged(scripts):
+    """指定したスクリプトまでだけを当てた、使い捨てのDBを1つ作る。
+
+    移行そのものを試すために使う。共用のDBは最新の形で作られているので、
+    「古い形から新しい形へ移せるか」はここで別のDBを立てて確かめる。
+    """
+    import psycopg
+
+    from app.db import Database
+    name = f'staged_{next(_serial)}'
+    with psycopg.connect(dsn(), autocommit=True) as conn:
+        conn.execute(f'DROP DATABASE IF EXISTS {name}')
+        conn.execute(f'CREATE DATABASE {name}')
+    target = dsn().replace('dbname=postgres', f'dbname={name}')
+    with psycopg.connect(target, autocommit=True) as conn:
+        for item in scripts:
+            conn.execute((MIGRATIONS / item).read_text(encoding='utf-8'))
+    return Database(target)

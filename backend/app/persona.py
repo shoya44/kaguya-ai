@@ -56,11 +56,11 @@ def tone_hint(mind=None, relationship=None) -> str:
         hint = _TONE_BY_MOOD.get(str(mind.get('現在の気分', '')))
         if hint:
             parts.append(hint)
-    if isinstance(relationship, dict):
-        if str(relationship.get('慣れ', '')) in _KEEP_DISTANCE:
-            parts.append('馴れ馴れしくしすぎず、少し距離を保つ。')
-        else:
-            parts.append('気心が知れている相手として、短く砕けて返してよい。')
+    # 慣れが分からないときは何も足さない。空のまま「気心が知れている」にしない。
+    closeness = str((relationship or {}).get('慣れ', '')) if isinstance(relationship, dict) else ''
+    if closeness:
+        parts.append('馴れ馴れしくしすぎず、少し距離を保つ。' if closeness in _KEEP_DISTANCE
+                     else '気心が知れている相手として、短く砕けて返してよい。')
     return ' '.join(parts)
 
 

@@ -16,15 +16,14 @@ from psycopg.types.json import Jsonb
 from app.config import Settings
 from app.memory_api import database_connection
 
-SCRIPTS = ('002_memory_jobs.sql', '003_reminders.sql', '004_local_state.sql')
+SCRIPTS = ('002_memory_jobs.sql', '003_reminders.sql', '004_local_state.sql',
+           '005_memory_redesign.sql')
 # mind.db の表 → PostgreSQL の表と、時刻として読み直す列。
+# phrases / graph_edges / meta は 005 で廃止したので取り込まない。
 MIND_TABLES = (
-    ('emotions', 'mind_emotions', ('updated_at',)),
-    ('traits', 'mind_traits', ('updated_at',)),
-    ('phrases', 'mind_phrases', ('last_seen_at',)),
-    ('graph_edges', 'mind_graph_edges', ('updated_at',)),
-    ('open_loops', 'mind_open_loops', ('opened_at', 'due_at', 'last_asked_at', 'resolved_at')),
-    ('meta', 'mind_meta', ('updated_at',)),
+    ('emotions', 'living_emotion', ('updated_at',)),
+    ('traits', 'persona_favorite', ('updated_at',)),
+    ('open_loops', 'memory_concern', ('opened_at', 'due_at', 'last_asked_at', 'resolved_at')),
 )
 
 
@@ -110,18 +109,36 @@ def retire(paths: list[Path]) -> list[str]:
     return [path.name for path in paths]
 
 
+def _run(conn, root: Path, name: str, done: set) -> None:
+    """まだ当てていないスクリプトだけを流し、当てたことを記録する。
+
+    以前は毎回すべて流していた（IF NOT EXISTS / ON CONFLICT で冪等なため）。
+    005 で表の改名が入り、改名は2度流せないので、適用済みを記録する方式にした。
+    """
+    if name in done:
+        return
+    # Drop BEGIN/COMMIT wrappers; every script belongs to this one transaction.
+    conn.execute((root / name).read_text(encoding='utf-8').replace('BEGIN;', '').replace('COMMIT;', ''))
+    conn.execute('INSERT INTO schema_migrations(name) VALUES (%s) ON CONFLICT DO NOTHING', (name,))
+    done.add(name)
+
+
 def migrate():
     settings = Settings()
     with database_connection(settings) as conn:
         conn.execute('SELECT pg_advisory_xact_lock(8765001)')
-        exists = conn.execute("SELECT to_regclass('public.raw_memory') AS name").fetchone()['name']
+        conn.execute("""CREATE TABLE IF NOT EXISTS schema_migrations (
+            name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())""")
+        done = {row['name'] for row in conn.execute('SELECT name FROM schema_migrations').fetchall()}
+        # 005 の前後どちらの名前でも「初期化済み」と判断する。ここを取り違えると、
+        # 改名後のDBへ 001 を流し直してしまう。
+        exists = conn.execute("""SELECT coalesce(to_regclass('public.memory_short'),
+            to_regclass('public.raw_memory')) AS name""").fetchone()['name']
         root = Path(__file__).parent / 'migrations'
         if not exists:
-            # Drop BEGIN/COMMIT wrappers; both scripts belong to this transaction.
-            conn.execute((root / '001_init.sql').read_text(encoding='utf-8').replace('BEGIN;', '').replace('COMMIT;', ''))
-        # 追加分は毎回流す（IF NOT EXISTS / ON CONFLICT で冪等）。
+            _run(conn, root, '001_init.sql', done)
         for name in SCRIPTS:
-            conn.execute((root / name).read_text(encoding='utf-8').replace('BEGIN;', '').replace('COMMIT;', ''))
+            _run(conn, root, name, done)
         imported = import_local_files(conn, settings.data_dir)
     # ここまで来ていればDBへ入っている。ファイルを片付けるのはコミットの後。
     moved = retire(imported)

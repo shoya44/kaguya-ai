@@ -27,17 +27,17 @@ class DatabaseChecks(unittest.TestCase):
 
     def setUp(self):
         with self.connect() as conn:
-            conn.execute('TRUNCATE raw_memory,wisdom,persona,reminders')
-            conn.execute("INSERT INTO persona(key,value,locked) VALUES ('reply_style','\"短く\"',false)")
+            conn.execute('TRUNCATE memory_short,memory_long,persona_character,reminders')
+            conn.execute("INSERT INTO persona_character(key,value,locked) VALUES ('reply_style','\"短く\"',false)")
 
     def add(self, content='お茶が好き', days=0, processed=False):
         raw_id, turn_id = uuid4(), uuid4()
         with self.connect() as conn:
-            conn.execute('''INSERT INTO raw_memory(id,turn_id,role,content,status,origin_client_id,input_mode,created_at,processed_at)
+            conn.execute('''INSERT INTO memory_short(id,turn_id,role,content,status,origin_client_id,input_mode,created_at,processed_at)
                 VALUES (%s,%s,'user',%s,'completed',%s,'text',%s,%s)''',
                          (raw_id, turn_id, content, uuid4(), datetime.now(timezone.utc) - timedelta(days=days),
                           datetime.now(timezone.utc) if processed else None))
-            conn.execute('''INSERT INTO raw_memory(id,turn_id,role,content,status,origin_client_id,input_mode,created_at,processed_at)
+            conn.execute('''INSERT INTO memory_short(id,turn_id,role,content,status,origin_client_id,input_mode,created_at,processed_at)
                 VALUES (%s,%s,'assistant','了解','completed',%s,'text',%s,%s)''',
                          (uuid4(), turn_id, uuid4(), datetime.now(timezone.utc) - timedelta(days=days),
                           datetime.now(timezone.utc) if processed else None))
@@ -61,12 +61,12 @@ class DatabaseChecks(unittest.TestCase):
             recalled = store.recall(conn, '好きなお茶は？')
             self.assertEqual(len(recalled['wisdom']), 1)
             self.assertEqual(len(recalled['wisdom'][0]['evidence']), 1)
-            self.assertEqual(conn.execute('SELECT count(*) AS n FROM raw_memory WHERE processed_at IS NOT NULL').fetchone()['n'], 2)
+            self.assertEqual(conn.execute('SELECT count(*) AS n FROM memory_short WHERE processed_at IS NOT NULL').fetchone()['n'], 2)
 
     def test_recall_prefers_the_current_message_over_the_surrounding_context(self):
         with self.connect() as conn:
             for topic, text in [('コーヒー', 'コーヒーはブラックで飲む'), ('確定申告', '確定申告の書類は書斎の棚')]:
-                conn.execute('''INSERT INTO wisdom(id,topic_key,summary,kind,support_level,importance,evidence)
+                conn.execute('''INSERT INTO memory_long(id,topic_key,summary,kind,support_level,importance,evidence)
                     VALUES (%s,%s,%s,'explicit','stated',3,'[]')''', (uuid4(), topic, text))
         with self.connect() as conn:
             # 直前の話題（コーヒー）に引きずられず、今の質問の記憶を先頭に置く。
@@ -75,7 +75,7 @@ class DatabaseChecks(unittest.TestCase):
 
     def test_recall_matches_across_half_and_full_width_spellings(self):
         with self.connect() as conn:
-            conn.execute('''INSERT INTO wisdom(id,topic_key,summary,kind,support_level,importance,evidence)
+            conn.execute('''INSERT INTO memory_long(id,topic_key,summary,kind,support_level,importance,evidence)
                 VALUES (%s,'GitHub','GitHubのアカウントはshoya44','explicit','stated',3,'[]')''', (uuid4(),))
         with self.connect() as conn:
             recalled = store.recall(conn, 'ＧＩＴＨＵＢのアカウント教えて')
@@ -83,7 +83,7 @@ class DatabaseChecks(unittest.TestCase):
 
     def test_memory_tab_search_ignores_half_and_full_width_spellings(self):
         with self.connect() as conn:
-            conn.execute('''INSERT INTO wisdom(id,topic_key,summary,kind,support_level,importance,evidence)
+            conn.execute('''INSERT INTO memory_long(id,topic_key,summary,kind,support_level,importance,evidence)
                 VALUES (%s,'ＧｉｔＨｕｂ','ＧｉｔＨｕｂのアカウントはshoya44','explicit','stated',3,'[]')''', (uuid4(),))
         with self.connect() as conn:
             found = store.list_memories(conn, 'wisdom', 'github')
@@ -102,8 +102,8 @@ class DatabaseChecks(unittest.TestCase):
         with self.assertRaises(ValueError):
             with self.connect() as conn: store.commit_wisdom(conn, snap, self.batch(str(uuid4())))
         with self.connect() as conn:
-            self.assertEqual(conn.execute('SELECT count(*) AS n FROM raw_memory WHERE processed_at IS NULL').fetchone()['n'], 2)
-            self.assertEqual(conn.execute('SELECT count(*) AS n FROM wisdom').fetchone()['n'], 0)
+            self.assertEqual(conn.execute('SELECT count(*) AS n FROM memory_short WHERE processed_at IS NULL').fetchone()['n'], 2)
+            self.assertEqual(conn.execute('SELECT count(*) AS n FROM memory_long').fetchone()['n'], 0)
 
     def test_correction_invalidates_inflight_snapshot(self):
         raw_id = self.add()
@@ -112,8 +112,8 @@ class DatabaseChecks(unittest.TestCase):
         with self.assertRaises(HTTPException):
             with self.connect() as conn: store.commit_wisdom(conn, snap, self.batch(raw_id))
         with self.connect() as conn:
-            self.assertEqual(conn.execute('SELECT content FROM raw_memory WHERE id=%s', (raw_id,)).fetchone()['content'], 'コーヒーが好き')
-            self.assertEqual(conn.execute('SELECT count(*) AS n FROM wisdom').fetchone()['n'], 0)
+            self.assertEqual(conn.execute('SELECT content FROM memory_short WHERE id=%s', (raw_id,)).fetchone()['content'], 'コーヒーが好き')
+            self.assertEqual(conn.execute('SELECT count(*) AS n FROM memory_long').fetchone()['n'], 0)
 
     def test_three_day_weekly_update_and_cascade_clears_rollback(self):
         ids = []
@@ -127,8 +127,8 @@ class DatabaseChecks(unittest.TestCase):
         with self.connect() as conn:
             store.mutate(conn, 'raw', ids[0], {'revision': 1}, delete=True)
         with self.connect() as conn:
-            self.assertEqual(conn.execute('SELECT count(*) AS n FROM wisdom').fetchone()['n'], 0)
-            persona = conn.execute("SELECT * FROM persona WHERE key='reply_style'").fetchone()
+            self.assertEqual(conn.execute('SELECT count(*) AS n FROM memory_long').fetchone()['n'], 0)
+            persona = conn.execute("SELECT * FROM persona_character WHERE key='reply_style'").fetchone()
             self.assertIsNone(persona['previous_value'])
             self.assertEqual(persona['source_wisdom_ids'], [])
 
@@ -139,7 +139,7 @@ class DatabaseChecks(unittest.TestCase):
         self.organize(self.add())
         with self.connect() as conn:
             snap = store.weekly_snapshot(conn)
-            conn.execute("UPDATE persona SET locked=true WHERE key='reply_style'")
+            conn.execute("UPDATE persona_character SET locked=true WHERE key='reply_style'")
         with self.assertRaises(HTTPException):
             with self.connect() as conn:
                 store.commit_persona(conn, snap, {'key': 'reply_style', 'value': '短く', 'source_wisdom_ids': [str(snap['wisdom'][0]['id'])]})
@@ -149,19 +149,19 @@ class DatabaseChecks(unittest.TestCase):
         self.add(days=10, processed=True)
         with self.connect() as conn:
             self.assertEqual(store.cleanup(conn)['removed'], 2)
-            self.assertIsNotNone(conn.execute('SELECT id FROM raw_memory WHERE id=%s', (kept,)).fetchone())
-            self.assertEqual(conn.execute('SELECT count(*) AS n FROM raw_memory').fetchone()['n'], 2)
+            self.assertIsNotNone(conn.execute('SELECT id FROM memory_short WHERE id=%s', (kept,)).fetchone())
+            self.assertEqual(conn.execute('SELECT count(*) AS n FROM memory_short').fetchone()['n'], 2)
 
     def test_manual_wisdom_edit_removes_sources_and_protects_correction(self):
         raw_id = self.add(); self.organize(raw_id)
         with self.connect() as conn:
-            wisdom = conn.execute('SELECT * FROM wisdom').fetchone()
+            wisdom = conn.execute('SELECT * FROM memory_long').fetchone()
             store.mutate(conn, 'wisdom', str(wisdom['id']), {'revision': 1, 'value': 'コーヒーが好き'})
         with self.connect() as conn:
-            wisdom = conn.execute('SELECT * FROM wisdom').fetchone()
+            wisdom = conn.execute('SELECT * FROM memory_long').fetchone()
             self.assertEqual(wisdom['summary'], 'コーヒーが好き'); self.assertTrue(wisdom['locked'])
             self.assertEqual(wisdom['evidence'], [])
-            self.assertEqual(conn.execute('SELECT count(*) AS n FROM raw_memory').fetchone()['n'], 0)
+            self.assertEqual(conn.execute('SELECT count(*) AS n FROM memory_short').fetchone()['n'], 0)
 
     def test_reminders_survive_poll_and_reconnect_until_acknowledged(self):
         now = datetime.now(timezone.utc)

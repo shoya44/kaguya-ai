@@ -37,13 +37,13 @@ def database_connection(settings):
 
 TURN_SELECT = '''SELECT u.turn_id, u.content AS text, a.content AS answer,
     u.status, u.created_at, u.id, u.origin_client_id AS client_id, u.input_mode
-    FROM raw_memory u LEFT JOIN raw_memory a
+    FROM memory_short u LEFT JOIN memory_short a
     ON a.turn_id=u.turn_id AND a.role='assistant' WHERE u.role='user' '''
 
 
 def recover_pending(settings):
     with database_connection(settings) as conn:
-        conn.execute("UPDATE raw_memory SET status='failed' WHERE role='user' AND status='pending'")
+        conn.execute("UPDATE memory_short SET status='failed' WHERE role='user' AND status='pending'")
     return {'ok': True}
 
 
@@ -60,15 +60,15 @@ def begin(turn: Turn, request: Request):
             if row['status'] == 'completed' or not turn.retry:
                 return row
             if row['status'] in ('failed', 'cancelled'):
-                conn.execute("""UPDATE raw_memory SET status='pending',processed_at=NULL,
+                conn.execute("""UPDATE memory_short SET status='pending',processed_at=NULL,
                     processing_reason=NULL,revision=revision+1 WHERE turn_id=%s AND role='user'""", (turn.turn_id,))
                 row['status'] = 'pending'
             return row
-        count = conn.execute('SELECT count(*) AS n FROM raw_memory WHERE processed_at IS NULL').fetchone()['n']
+        count = conn.execute('SELECT count(*) AS n FROM memory_short WHERE processed_at IS NULL').fetchone()['n']
         # Reserve room for the assistant message as well.
         if count >= 9999:
             raise HTTPException(409, 'memory_full')
-        conn.execute('''INSERT INTO raw_memory
+        conn.execute('''INSERT INTO memory_short
             (id,turn_id,role,content,status,origin_client_id,input_mode)
             VALUES (%s,%s,'user',%s,'pending',%s,%s)''',
             (uuid4(), turn.turn_id, turn.text, turn.client_id, turn.input_mode))
@@ -78,27 +78,27 @@ def begin(turn: Turn, request: Request):
 @router.post('/turns/{turn_id}/complete')
 def complete(turn_id: UUID, body: Completion, request: Request):
     with connection(request) as conn:
-        user = conn.execute("SELECT * FROM raw_memory WHERE turn_id=%s AND role='user' FOR UPDATE", (turn_id,)).fetchone()
+        user = conn.execute("SELECT * FROM memory_short WHERE turn_id=%s AND role='user' FOR UPDATE", (turn_id,)).fetchone()
         if not user:
             raise HTTPException(404, 'Turn not found')
         if user['status'] == 'cancelled':
             raise HTTPException(409, 'Turn cancelled')
-        existing = conn.execute("SELECT content FROM raw_memory WHERE turn_id=%s AND role='assistant'", (turn_id,)).fetchone()
+        existing = conn.execute("SELECT content FROM memory_short WHERE turn_id=%s AND role='assistant'", (turn_id,)).fetchone()
         if existing and existing['content'] != body.answer:
             raise HTTPException(409, 'Answer conflict')
         if not existing:
-            conn.execute('''INSERT INTO raw_memory
+            conn.execute('''INSERT INTO memory_short
                 (id,turn_id,role,content,status,origin_client_id,input_mode)
                 VALUES (%s,%s,'assistant',%s,'completed',%s,%s)''',
                 (uuid4(), turn_id, body.answer, user['origin_client_id'], user['input_mode']))
-        conn.execute("UPDATE raw_memory SET status='completed' WHERE turn_id=%s AND role='user'", (turn_id,))
+        conn.execute("UPDATE memory_short SET status='completed' WHERE turn_id=%s AND role='user'", (turn_id,))
     return {'ok': True}
 
 
 @router.post('/turns/{turn_id}/fail')
 def fail(turn_id: UUID, body: Failure, request: Request):
     with connection(request) as conn:
-        conn.execute("UPDATE raw_memory SET status=%s WHERE turn_id=%s AND role='user' AND status='pending'", (body.status, turn_id))
+        conn.execute("UPDATE memory_short SET status=%s WHERE turn_id=%s AND role='user' AND status='pending'", (body.status, turn_id))
     return {'ok': True}
 
 
@@ -315,6 +315,12 @@ def acknowledge_reminder(reminder_id: UUID, request: Request):
 def remember(body: dict, request: Request):
     with connection(request) as conn:
         return memory_store.remember(conn, body['topic'], body['fact'])
+
+
+@router.post('/persona/style')
+def persona_style(body: dict, request: Request):
+    with connection(request) as conn:
+        return memory_store.set_style(conn, body['value'])
 
 
 @router.get('/browse/{layer}')

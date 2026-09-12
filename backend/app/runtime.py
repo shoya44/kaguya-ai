@@ -16,8 +16,9 @@ class Options(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     quiet: bool = False
     auto_jobs: bool = True
-    # Experimental Kaguya Mind is opt-in. OFF preserves the pre-Mind behavior.
-    mind_enabled: bool = False
+    # Kaguya Mind は既定ON。OFFのままだと感情も好みも育たず、表情は時刻だけの
+    # 簡易判定になる。切りたいときは app_settings の options で false にする。
+    mind_enabled: bool = True
     proactive_minutes: int = Field(default=60, ge=60, le=240)
     # 1回の整理で生の発言60件を処理する。既定8なら1日480件ぶん。既定3・30件では
     # よく話した日に追いつけず、反映待ちが数百件たまったまま上限に当たっていた。

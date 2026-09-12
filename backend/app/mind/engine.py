@@ -207,7 +207,7 @@ class KaguyaMind:
 
     def _track_loops(self, text: str, answer: str, now: datetime) -> None:
         value = str(text or '')
-        # ユーザー自身が話題に戻ってきたなら、もう「未完」ではない。
+        # ユーザー自身が話題に戻ってきたなら、もう「気がかり」ではない。
         for topic in self.store.unresolved_topics():
             if topic in value:
                 self.store.resolve_loop(topic, now)
@@ -265,8 +265,7 @@ class KaguyaMind:
         self._safe(None, self._after_reply, text, answer, now)
 
     def _after_reply(self, text: str, answer: str, now: datetime) -> None:
-        self.store.increment('interactions', now)
-        self.store.record_phrase(text, now)
+        # 会話回数は living_activity（かぐやの状態）が数える。
         self._track_loops(text, answer, now)
         value = str(answer or '')
         for match in _TRAIT_PATTERN.finditer(value):
@@ -276,8 +275,6 @@ class KaguyaMind:
             sentiment = match.group(2)
             valence = TRAIT_VALENCE['like'] if '好き' in sentiment else TRAIT_VALENCE['dislike']
             self.store.upsert_trait(name, valence, now)
-            relation = 'likes' if valence >= .5 else 'dislikes'
-            self.store.upsert_edge('かぐや', relation, name, abs(valence - .5) * 2, now)
 
     def reset(self) -> None:
         """育ったものを消して最初からにする。OFFのときも削除できる。"""
@@ -320,6 +317,5 @@ class KaguyaMind:
             ],
             'growth': self._growth(stats),
             'stats': {**stats, 'open_loops': self.store.loop_stats()['open']},
-            'shortcut_candidates': self.store.shortcut_candidates(5),
-            'store': 'PostgreSQL (mind_*)',
+            'store': 'PostgreSQL (living_emotion / persona_favorite / memory_concern)',
         }

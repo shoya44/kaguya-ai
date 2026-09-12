@@ -125,7 +125,8 @@ class Jobs:
             self.status = '整理失敗：内部処理または保存に失敗しました。未処理の原文は保持しています。'
         finally:
             self.cancel_reason = None
-            self.store.record(last_job_status=self.status)
+            # 日付も残す。設定画面はその日の結果だけを出し、古い状態を残さない。
+            self.store.record(last_job_status=self.status, last_job_day=periods(tokyo_now())[0])
             await self.controller.broadcast({'type': 'jobs.changed', 'status': self.status, 'running': False})
 
     async def close(self):

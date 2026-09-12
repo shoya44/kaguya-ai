@@ -104,34 +104,24 @@ async function connected(h) {
   await h.flush();
 }
 
-const served = h => h.dispatched.filter(event => event.type === 'kaguya-served').map(event => event.detail);
+const living = h => h.dispatched.filter(event => event.type === 'kaguya-living').map(event => event.detail);
 
-test('the server last-activity reaches living so another device does not look away', async () => {
-  const h = harness();
-  await h.run('connectWs()');
-  h.sockets.at(-1).emit({ type: 'state.changed', state: 'idle', last_activity: '2026-09-12T21:00:00+09:00' });
+test('かぐやの活動はサーバから届き、そのまま画面へ渡される', async () => {
+  const h = harness(); await connected(h);
+  h.sockets[0].emit({ type: 'living.changed', activity: 'reading', energy: 42,
+                      last_seen_at: '2026-09-12T21:00:00+09:00' });
   await h.flush();
-  const details = served(h);
+  const details = living(h);
   assert.equal(details.length, 1);
-  assert.equal(details[0].at, Date.parse('2026-09-12T21:00:00+09:00'));
-  assert.equal(details[0].counted, false);
+  assert.equal(details[0].activity, 'reading');
+  assert.equal(details[0].energy, 42);
 });
 
-test('a completed conversation is counted once for every device', async () => {
+test('会った記録はサーバが持つので、端末側では数えない', async () => {
   const h = harness(); await connected(h);
   h.sockets[0].emit({ type: 'chat.completed', turn_id: 't1', text: 'hello', answer: 'hi' });
   await h.flush();
-  const counted = served(h).filter(detail => detail.counted);
-  assert.equal(counted.length, 1);
-  assert.ok(Number.isFinite(counted[0].at));
-});
-
-test('a malformed last-activity is ignored instead of resetting the visit', async () => {
-  const h = harness();
-  await h.run('connectWs()');
-  h.sockets.at(-1).emit({ type: 'state.changed', state: 'idle', last_activity: 'not-a-time' });
-  await h.flush();
-  assert.equal(served(h).length, 0);
+  assert.equal(h.dispatched.filter(event => event.type === 'kaguya-served').length, 0);
 });
 
 for (const code of ['timeout', 'rate_limit']) {
