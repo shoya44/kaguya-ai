@@ -21,6 +21,10 @@ LOCAL_TABLES = ('app_settings', 'calendar_events', 'mind_emotions', 'mind_traits
 _state: dict = {'dsn': '', 'reason': '', 'started': False}
 
 
+def _version_key(path: Path) -> tuple:
+    return tuple(int(part) if part.isdigit() else -1 for part in path.name.split('.'))
+
+
 def _binary(name: str) -> str:
     suffix = '.exe' if os.name == 'nt' else ''
     directory = os.environ.get('TEST_POSTGRES_BIN')
@@ -35,8 +39,8 @@ def _binary(name: str) -> str:
     for base in patterns:
         if not base.exists():
             continue
-        # 新しいバージョンから先に試す。
-        for directory in sorted(base.iterdir(), reverse=True):
+        # 新しいバージョンから先に試す。文字列順だと '9.6' が '18' より後になる。
+        for directory in sorted(base.iterdir(), key=_version_key, reverse=True):
             candidate = directory / 'bin' / (name + suffix)
             if candidate.exists():
                 return str(candidate)
@@ -74,7 +78,8 @@ def _boot() -> None:
     atexit.register(shutil.rmtree, temp, True)
     # 失敗したときに何が起きたか読めるよう、initdbの出力はそのまま例外に載せる。
     setup = subprocess.run([initdb, '-D', str(data), '-A', 'trust', '-U', 'tester', '--no-locale', '-E', 'UTF8'],
-                           capture_output=True, text=True, errors='replace', creationflags=flags)
+                           capture_output=True, text=True, errors='replace',
+                           timeout=120, creationflags=flags)
     if setup.returncode:
         raise RuntimeError(f'initdb failed ({setup.returncode}): {setup.stdout}{setup.stderr}')
     with socket.socket() as sock:
@@ -93,7 +98,7 @@ def _boot() -> None:
         detail = log.read_text(encoding='utf-8', errors='replace') if log.exists() else ''
         raise RuntimeError('pg_ctl start failed: ' + (detail or startup.stderr.decode('utf-8', 'replace')))
     atexit.register(subprocess.run, [pg_ctl, '-D', str(data), '-m', 'immediate', '-w', 'stop'],
-                    capture_output=True)
+                    capture_output=True, timeout=60)
     dsn = f'host=127.0.0.1 port={port} user=tester dbname=postgres connect_timeout=5'
     with psycopg.connect(dsn, autocommit=True) as conn:
         for name in SCRIPTS:
