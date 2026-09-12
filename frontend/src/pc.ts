@@ -34,15 +34,9 @@ export class PCPanel {
       for (const folder of folders) {
         const row = document.createElement('article');
         row.className = 'memory-card';
-        const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        icon.setAttribute('viewBox', '0 0 24 24');
-        icon.setAttribute('aria-hidden', 'true');
-        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-        path.setAttribute('d', 'M3 7h7l2 2h9v10H3V7Z');
-        icon.append(path);
         const name = document.createElement('strong');
         name.textContent = String(folder);
-        row.append(icon, name);
+        row.append(name);
         list.append(row);
       }
       if (!folders.length) list.textContent = 'フォルダ未登録';
