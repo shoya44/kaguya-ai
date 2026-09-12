@@ -13,6 +13,14 @@ export class PCPanel {
 
   private status(text: string): void { document.getElementById('pc-status')!.textContent = text; }
 
+  private static duration(value: unknown): string {
+    const total = Math.round(Number(value));
+    if (!Number.isFinite(total) || total <= 0) return '';
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const minutes = `${Math.floor(total / 60) % 60}:${pad(total % 60)}`;
+    return total >= 3600 ? `${Math.floor(total / 3600)}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}` : minutes;
+  }
+
   private showRemote(url: string): void {
     const line = document.getElementById('pc-remote')!;
     line.replaceChildren();
