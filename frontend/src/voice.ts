@@ -38,8 +38,8 @@ export class VoiceChat {
   }
 
   static unavailable(): string {
-    if (!window.isSecureContext) return '音声通話にはPCアプリまたはHTTPS接続が必要です。';
-    if (!navigator.mediaDevices?.getUserMedia) return 'このブラウザではマイクを利用できません。';
+    if (!window.isSecureContext) return 'この接続ではブラウザがマイクを使えません。PCアプリまたはHTTPS接続を使ってください。';
+    if (!navigator.mediaDevices?.getUserMedia) return 'このブラウザはマイクに対応していません。';
     return '';
   }
 
