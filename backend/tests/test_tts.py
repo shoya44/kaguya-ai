@@ -170,6 +170,22 @@ class NarratorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.sent), 1)
 
 
+class LiveConfigTests(unittest.TestCase):
+    """PC側で読み上げる場合も、Liveへ渡す設定は音声出力のまま。"""
+
+    def test_text_only_output_is_never_requested(self):
+        from google.genai import types
+        from app.voice import live_config
+        config = live_config('指示', 'Leda')
+        # ネイティブ音声モデルはTEXTのみの出力を 1007 で拒否する。
+        self.assertEqual(config['response_modalities'], ['AUDIO'])
+        # 読み上げの元になる書き起こしを必ず受け取る。
+        self.assertIn('output_audio_transcription', config)
+        self.assertIn('input_audio_transcription', config)
+        # SDKが受理する形であること。
+        types.LiveConnectConfig.model_validate(config)
+
+
 class FailureMessageTests(unittest.TestCase):
     """通話が続けられなくなったとき、画面に原因が出る。ただし鍵は出さない。"""
 

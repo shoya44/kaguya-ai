@@ -25,6 +25,21 @@ _log = logging.getLogger(__name__)
 _SECRET = re.compile(r'(?i)\b(key|token|authorization)=[^&\s\'"]+')
 
 
+def live_config(prompt: str, voice_name: str) -> dict:
+    """Liveセッションの設定。読み上げをPC側へ回す場合も中身は同じ。
+
+    ネイティブ音声のLiveモデルは音声出力専用で、テキストだけを返す設定は拒否される
+    （1007 The requested combination of response modalities (TEXT) is not supported）。
+    PC側で読み上げるときも音声のまま受け取り、output_audio_transcription の
+    書き起こしを読み上げに回す。Gemini側の音声は再生しない。生成ぶんは無駄になるが、
+    モデルを差し替えずに済む。
+    """
+    return {'response_modalities': ['AUDIO'], 'system_instruction': prompt,
+            'input_audio_transcription': {}, 'output_audio_transcription': {},
+            'speech_config': {'language_code': VOICE_LANGUAGE,
+                              'voice_config': {'prebuilt_voice_config': {'voice_name': voice_name}}}}
+
+
 def _reason(exc: BaseException) -> str:
     """何が起きたかを画面で分かる形にする。種類だけでも原因の切り分けに足りる。"""
     detail = _SECRET.sub(r'\1=***', str(exc)).replace('\n', ' ').strip()[:300]
@@ -125,16 +140,7 @@ async def handle(ws: WebSocket):
                 await speech_client.aclose()
                 speech_client = speech = None
         client = genai.Client(api_key=settings.gemini_api_key.get_secret_value(), http_options={'api_version': 'v1beta'})
-        if speech:
-            # 読み上げはPC側で行うので、Geminiからは文字だけ受け取る。
-            config = {'response_modalities': ['TEXT'], 'system_instruction': prompt,
-                      'input_audio_transcription': {}}
-        else:
-            # 声は設定画面で選ぶ。通話を開始し直すだけで切り替わる（再起動は不要）。
-            config = {'response_modalities': ['AUDIO'], 'system_instruction': prompt,
-                      'input_audio_transcription': {}, 'output_audio_transcription': {},
-                      'speech_config': {'language_code': VOICE_LANGUAGE,
-                                        'voice_config': {'prebuilt_voice_config': {'voice_name': options.voice_name}}}}
+        config = live_config(prompt, options.voice_name)
         async with asyncio.timeout(600):
             async with client.aio.live.connect(model=settings.gemini_live_model, config=config) as live:
                 if speech:
@@ -179,22 +185,19 @@ async def handle(ws: WebSocket):
                                     raise ValueError('1回の発話が長すぎます。短く区切ってください。')
                                 await ws.send_json({'type': 'transcript', 'role': 'user', 'text': transcript.text})
                             if content.output_transcription and content.output_transcription.text:
-                                transcript.answer += content.output_transcription.text
+                                chunk = content.output_transcription.text
+                                transcript.answer += chunk
                                 if len(transcript.answer) > 29500:
                                     raise ValueError('返答が長すぎます。通話を終了します。')
                                 await ws.send_json({'type': 'transcript', 'role': 'assistant', 'text': transcript.answer})
+                                # PC側で読み上げるときは、この書き起こしが読み上げの元になる。
+                                if narrator:
+                                    narrator.feed(chunk)
                             if content.model_turn:
                                 for part in content.model_turn.parts or []:
-                                    if part.inline_data and part.inline_data.data:
+                                    # PC側で読み上げる設定のときは、Geminiの音声は流さない。
+                                    if not narrator and part.inline_data and part.inline_data.data:
                                         await ws.send_bytes(part.inline_data.data)
-                                    # 文字だけ受け取る設定のとき、字幕と読み上げの元はここ。
-                                    if narrator and part.text:
-                                        transcript.answer += part.text
-                                        if len(transcript.answer) > 29500:
-                                            raise ValueError('返答が長すぎます。通話を終了します。')
-                                        await ws.send_json({'type': 'transcript', 'role': 'assistant',
-                                                            'text': transcript.answer})
-                                        narrator.feed(part.text)
                             if narrator and narrator.error:
                                 await ws.send_json({'type': 'notice', 'message': narrator.error})
                                 narrator.error = ''
