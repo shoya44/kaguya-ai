@@ -226,6 +226,8 @@ C:\kaguya-ai\start.bat
 - 音声通話中は文字チャットを同時実行できません
 - 音声通話から天気・予定・BAT等の外部操作は実行しません
 - PC/Tauri、またはTailscaleのHTTPS接続で利用します。同一LANのHTTP接続ではブラウザのマイク制約により利用できません
+- iPhoneから使うには、PCで `pc_setup.bat` を実行し、`1`（Tailscaleを導入）→ `2`（HTTPS接続を有効化）を選びます。
+  表示された `https://….ts.net` を、同じTailscaleアカウントでログインしたiPhoneのSafariで開きます
 - Gemini Liveの利用量はGemini API側の課金・利用枠に従います
 
 ## 進捗と接続状態
@@ -260,7 +262,8 @@ http://<PCのLAN IP>:8765/
 ```
 
 文字チャット、記憶、天気、カレンダー、リマインダー、参照ファイル、Living Kaguya、PCタブを利用できます。
-HTTP接続のため、**iPhoneの音声会話は利用できません**。
+HTTP接続のため、**iPhoneの音声会話は利用できません**（ブラウザがHTTPSでないとマイクを渡さないため）。
+iPhoneで音声会話を使う場合は、次の「外出先から使う（Tailscale）」の設定を行い、そのURLで開きます。家の中でも同じURLが使えます。
 
 ## 外出先から使う（Tailscale）
 
