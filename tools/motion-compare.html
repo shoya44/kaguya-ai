@@ -1,0 +1,268 @@
+<meta charset="utf-8">
+<title>かぐや モーション比較</title>
+<!--
+  かぐやの揺れ方を並べて見比べるための開発用ページ。アプリには含まれない。
+
+  開き方: このファイルをブラウザで直接開く（ダブルクリック）。
+          絵が出ないときは、リポジトリのルートで簡易サーバーを立てて
+          http://127.0.0.1:8000/tools/motion-compare.html を開く。
+            python -m http.server 8000
+
+  案を足すとき: 下の VARIANTS に1つ追加するだけ。
+  姿勢を足すとき: POSES に追加する（絵は frontend/public/sprites/ にあるもの）。
+
+  実機と同じ条件で並べている。canvas 256px を 160px 幅で表示し、ドットを保つ
+  （frontend/src/style.css の #avatar と同じ）。
+-->
+<style>
+  :root {
+    --ground: #f7f5fc; --panel: #fff; --line: #e2ddf0; --ink: #1d1832;
+    --dim: #6b6389; --accent: #6244cf; --floor: #c8407a; --stage: #efebfa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #100e1a; --panel: #1a1729; --line: #2f2a47; --ink: #eae6f7;
+      --dim: #9f97bd; --accent: #b3a2f0; --floor: #ff6fa5; --stage: #13111f;
+    }
+  }
+  body {
+    margin: 0; padding: 28px 20px 48px; background: var(--ground); color: var(--ink);
+    font: 14px/1.75 "Yu Gothic UI", "Segoe UI", system-ui, sans-serif;
+  }
+  .wrap { max-width: 1000px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+  h1 { font-size: 22px; margin: 0; }
+  .lead { margin: 4px 0 0; color: var(--dim); font-size: 13px; max-width: 64ch; }
+  .bar {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding: 11px 13px; background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
+  }
+  button, select {
+    font: inherit; font-size: 13px; color: var(--ink); background: transparent;
+    border: 1px solid var(--line); border-radius: 7px; padding: 5px 12px; cursor: pointer;
+  }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+  button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .hint { color: var(--dim); font-size: 12px; margin-left: auto; }
+  .row { display: flex; flex-direction: column; gap: 9px; }
+  .row-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .row-head h2 { font-size: 15px; margin: 0; }
+  .row-head .meta { font-size: 11px; color: var(--dim); font-family: ui-monospace, monospace; }
+  .cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 13px; }
+  .cell {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .cell.live { border-color: var(--accent); }
+  .cell h3 { font-size: 13px; font-weight: 500; margin: 0; padding: 9px 11px 0; display: flex; gap: 6px; align-items: center; }
+  .tag {
+    font-size: 10px; letter-spacing: .06em; color: var(--panel);
+    background: var(--accent); border-radius: 4px; padding: 1px 5px;
+  }
+  .why { font-size: 11.5px; color: var(--dim); margin: 0; padding: 2px 11px 9px; min-height: 3.4em; }
+  .stage { background: var(--stage); position: relative; height: 178px;
+    display: flex; align-items: flex-end; justify-content: center; }
+  canvas { width: 160px; height: 160px; image-rendering: pixelated; display: block; }
+  /* 床。全案で同じ高さに引く。ここから体が浮くかどうかが判断材料。 */
+  .stage::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 9px;
+    border-top: 1px dashed var(--floor); opacity: .55;
+  }
+  .stage.strong::after { border-top-width: 2px; border-top-style: solid; opacity: 1; }
+  .readout {
+    font-family: ui-monospace, monospace; font-size: 10.5px; color: var(--dim);
+    padding: 6px 11px; border-top: 1px solid var(--line);
+    white-space: nowrap; overflow-x: auto;
+  }
+</style>
+
+<div class="wrap">
+  <div>
+    <h1>かぐや モーション比較</h1>
+    <p class="lead">同じ絵に複数の揺れ方をかけて並べます。破線は床です。
+      <strong>床に対して体が浮くか</strong>と、伏せた姿勢で不自然に伸びないかを見てください。
+      違いは小さいので「ゆっくり」推奨です。</p>
+  </div>
+
+  <div class="bar">
+    <button id="speed" aria-pressed="false">ゆっくり（5倍）</button>
+    <button id="pause" aria-pressed="false">一時停止</button>
+    <button id="floor" aria-pressed="false">床を強調</button>
+    <select id="pose-add" aria-label="姿勢を追加"></select>
+    <span class="hint">canvas 256px を 160px 表示（実機と同条件）</span>
+  </div>
+
+  <div id="rows" style="display:flex;flex-direction:column;gap:24px"></div>
+</div>
+
+<script>
+  const SPRITE_DIR = '../frontend/public/sprites/';
+  // frontend/public/sprites/ にある絵。増えたらここへ足す。
+  const SPRITES = ['wave', 'book', 'cards', 'laptop', 'laugh', 'talk', 'think', 'write',
+                   'sleep', 'snack', 'daydream', 'bored', 'sulk', 'worry'];
+
+  // 見比べる姿勢。lift は膨らみ/持ち上がり(px)、tilt は傾き(度)。
+  // frontend/src/avatar.ts の breath() と同じ値を入れておくと実機と一致する。
+  const POSES = [
+    { file: 'wave',  name: '座り（通常）', lift: 2,   tilt: 0 },
+    { file: 'sulk',  name: 'すねる',       lift: 0.8, tilt: -0.9 },
+    { file: 'bored', name: '伏せる',       lift: 0.6, tilt: 0 },
+  ];
+
+  // 比べたい案。ここに1つ足すと全姿勢の行に列が増える。
+  // at(up, pose) は「吸ったとき / 吐いたとき」の transform を返す。
+  const VARIANTS = [
+    {
+      title: 'translateY', tag: null,
+      why: '上下に平行移動する。支点を足元にしても体ごと動くので、接地は保たれない。',
+      origin: '50% 100%', ms: [1400, 2500],
+      at: (up, p) => up ? `translateY(-${p.lift}px) rotate(${p.tilt}deg)` : 'translateY(0) rotate(0deg)',
+    },
+    {
+      title: 'scaleY', tag: '実装中',
+      why: '支点を足元に置き、縦に伸ばす。接地点は動かず胸だけが膨らむ。呼吸に一番近い。',
+      origin: '50% 100%', ms: [1400, 2500],
+      // 膨らみのpxを、表示されている高さに対する伸び率へ読み替える。
+      at: (up, p, h) => up
+        ? `scaleY(${(1 + p.lift / h).toFixed(4)}) rotate(${p.tilt}deg)`
+        : 'scaleY(1) rotate(0deg)',
+    },
+    {
+      title: '支点が中心', tag: null,
+      why: '比較用の悪い例。支点が絵の中心にあると、傾くたびに足や床が左右へ振れる。',
+      origin: '50% 50%', ms: [1750, 1750],
+      at: (up, p) => up
+        ? `translateY(-${p.lift}px) rotate(${-p.tilt}deg)`
+        : `translateY(0) rotate(${p.tilt}deg)`,
+    },
+  ];
+
+  let speed = 1;
+  let paused = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const cells = [];
+
+  function draw(canvas, file) {
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.addEventListener('load', () => {
+      const scale = Math.min(canvas.width / img.naturalWidth, canvas.height / img.naturalHeight);
+      const w = img.naturalWidth * scale, h = img.naturalHeight * scale;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+    });
+    img.addEventListener('error', () => {
+      ctx.fillStyle = '#c8407a';
+      ctx.font = '16px sans-serif';
+      ctx.fillText('絵が読めません', 12, 128);
+      ctx.fillText(file, 12, 150);
+    });
+    img.src = SPRITE_DIR + file + '.png';
+  }
+
+  function addPose(pose) {
+    const row = document.createElement('section');
+    row.className = 'row';
+    const head = document.createElement('div');
+    head.className = 'row-head';
+    head.innerHTML = `<h2>${pose.name}</h2>`
+      + `<span class="meta">${pose.file}.png ／ lift ${pose.lift}px ／ tilt ${pose.tilt}°</span>`;
+    row.appendChild(head);
+
+    const grid = document.createElement('div');
+    grid.className = 'cells';
+    for (const variant of VARIANTS) {
+      const cell = document.createElement('div');
+      cell.className = 'cell' + (variant.tag ? ' live' : '');
+      cell.innerHTML = `<h3>${variant.title}`
+        + (variant.tag ? `<span class="tag">${variant.tag}</span>` : '')
+        + `</h3><p class="why">${variant.why}</p>`;
+      const stage = document.createElement('div');
+      stage.className = 'stage' + (document.querySelector('.stage.strong') ? ' strong' : '');
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 256;
+      canvas.style.transformOrigin = variant.origin;
+      stage.appendChild(canvas);
+      cell.appendChild(stage);
+      const readout = document.createElement('div');
+      readout.className = 'readout';
+      readout.textContent = '—';
+      cell.appendChild(readout);
+      grid.appendChild(cell);
+      draw(canvas, pose.file);
+      const entry = { canvas, readout, variant, pose, up: false, timer: null };
+      cells.push(entry);
+      if (!paused) step(entry);
+    }
+    row.appendChild(grid);
+    document.getElementById('rows').appendChild(row);
+  }
+
+  function step(cell) {
+    cell.up = !cell.up;
+    const ms = (cell.up ? cell.variant.ms[0] : cell.variant.ms[1]) * speed;
+    // 実機と同じく、表示されている高さを実行時に読む。
+    const height = cell.canvas.clientHeight || 160;
+    const value = cell.variant.at(cell.up, cell.pose, height);
+    cell.canvas.style.transition = `transform ${ms}ms ${cell.up
+      ? 'cubic-bezier(0.37, 0, 0.63, 1)' : 'cubic-bezier(0.33, 0, 0.4, 1)'}`;
+    cell.canvas.style.transform = value;
+    cell.readout.textContent = `${cell.up ? '吸' : '吐'} ${ms}ms  ${value}`;
+    cell.timer = window.setTimeout(() => step(cell), ms);
+  }
+
+  function start() {
+    for (const cell of cells) {
+      if (cell.timer !== null) window.clearTimeout(cell.timer);
+      cell.timer = null;
+      step(cell);
+    }
+  }
+
+  function stop() {
+    for (const cell of cells) {
+      if (cell.timer !== null) window.clearTimeout(cell.timer);
+      cell.timer = null;
+      cell.canvas.style.transition = 'none';
+    }
+  }
+
+  const picker = document.getElementById('pose-add');
+  picker.innerHTML = '<option value="">姿勢を追加…</option>'
+    + SPRITES.map(name => `<option value="${name}">${name}.png</option>`).join('');
+  picker.addEventListener('change', event => {
+    const file = event.target.value;
+    if (!file) return;
+    // 追加ぶんは既定値で並べる。値はPOSESを直接書き換えて調整する。
+    addPose({ file, name: file, lift: 2, tilt: 0 });
+    event.target.value = '';
+  });
+
+  for (const pose of POSES) addPose(pose);
+
+  if (paused) {
+    const button = document.getElementById('pause');
+    button.setAttribute('aria-pressed', 'true');
+    button.textContent = '再生';
+    for (const cell of cells) cell.readout.textContent = '停止中（動きを減らす設定のため）';
+  }
+
+  document.getElementById('speed').addEventListener('click', event => {
+    speed = speed === 1 ? 5 : 1;
+    event.currentTarget.setAttribute('aria-pressed', String(speed !== 1));
+    event.currentTarget.textContent = speed === 1 ? 'ゆっくり（5倍）' : '通常の速さ';
+    if (!paused) start();
+  });
+
+  document.getElementById('pause').addEventListener('click', event => {
+    paused = !paused;
+    event.currentTarget.setAttribute('aria-pressed', String(paused));
+    event.currentTarget.textContent = paused ? '再生' : '一時停止';
+    if (paused) stop(); else start();
+  });
+
+  document.getElementById('floor').addEventListener('click', event => {
+    const on = event.currentTarget.getAttribute('aria-pressed') !== 'true';
+    event.currentTarget.setAttribute('aria-pressed', String(on));
+    document.querySelectorAll('.stage').forEach(stage => stage.classList.toggle('strong', on));
+  });
+</script>
