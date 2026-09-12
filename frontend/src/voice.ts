@@ -38,7 +38,7 @@ export class VoiceChat {
   }
 
   static unavailable(): string {
-    if (!window.isSecureContext) return 'この接続ではブラウザがマイクを使えません。PCアプリ、または pc_setup.bat で設定したHTTPS接続を使ってください。';
+    if (!window.isSecureContext) return 'この接続ではブラウザがマイクを使えません。PCアプリ、または pc_setup.bat で設定した ts.net のHTTPS接続を使ってください。';
     if (!navigator.mediaDevices?.getUserMedia) return 'このブラウザはマイクに対応していません。';
     return '';
   }
