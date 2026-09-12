@@ -9,7 +9,7 @@ class Turn(BaseModel):
     turn_id: UUID
     text: str = Field(min_length=1, max_length=2000)
     client_id: UUID
-    input_mode: Literal['text'] = 'text'
+    input_mode: Literal['text', 'voice'] = 'text'
     retry: bool = False
 
     @field_validator('text')

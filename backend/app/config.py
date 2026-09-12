@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     )
     gemini_api_key: SecretStr = SecretStr('')
     gemini_model: str = ''
+    gemini_live_model: str = 'gemini-3.1-flash-live-preview'
     database_url: SecretStr = SecretStr('')
     # This first milestone is loopback-only, one process, one worker.
     internal_base_url: str = 'http://127.0.0.1:8765'
@@ -45,4 +46,9 @@ class Settings(BaseSettings):
     max_output_tokens: int = 1024
 
     def origin_allowed(self, origin: str) -> bool:
-        return origin in self.allowed_origins or bool(PRIVATE_ORIGIN_PATTERN.match(origin))
+        if origin in self.allowed_origins or PRIVATE_ORIGIN_PATTERN.match(origin):
+            return True
+        # PC連携の設定が壊れていても、ここで例外を投げない。チャットの接続判定を
+        # 巻き添えにしないため、読めないときは「Tailscale未設定」として扱う。
+        from .pc import safe_config
+        return bool(origin) and origin == safe_config().tailscale_origin

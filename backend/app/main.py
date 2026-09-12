@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, ValidationError, Field
 from typing import Literal
 
-from . import memory_api
+from . import memory_api, pc, voice
 from .config import PRIVATE_ORIGIN_PATTERN, Settings
 from .controller import Controller
 from .errors import ChatError
@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.internal_token = secrets.token_urlsafe(32)
     app.state.sessions = {}
+    app.state.pc = pc.PCService()
 
     internal_client = httpx.AsyncClient(
         base_url=settings.internal_base_url,
@@ -76,6 +77,7 @@ async def lifespan(app: FastAPI):
         controller.start()
         yield
     finally:
+        await app.state.pc.close()
         await controller.close()
         await llm.close()
         mind.close()
@@ -94,6 +96,7 @@ app.add_middleware(
     allow_methods=['GET', 'POST', 'PATCH', 'DELETE'],
     allow_headers=['*'],
 )
+app.add_middleware(pc.LocalAccessMiddleware)
 
 
 class SessionRequest(BaseModel):
@@ -120,6 +123,14 @@ def require_session(request: Request) -> UUID:
     if client_id is None:
         raise HTTPException(401, 'Invalid session token')
     return client_id
+
+
+app.include_router(pc.router(require_session))
+
+
+@app.websocket('/voice')
+async def voice_endpoint(ws: WebSocket):
+    await voice.handle(ws)
 
 
 @app.get('/health')

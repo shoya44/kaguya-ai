@@ -16,9 +16,12 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <table><tr><th>設定</th><th>意味</th></tr><tr><td>自発的な声かけを停止</td><td>ONでもユーザーからの会話には応答します</td></tr><tr><td>会話していない時間に記憶を自動整理する</td><td>ONなら、未整理の会話があり会話が5分以上途切れたときに少量ずつ実行します</td></tr><tr><td>実験機能「Kaguya Mind」を使う</td><td>ONにするとかぐや自身の感情・好み・気にかけていることが育ちます。OFFなら従来どおりです。<strong>この項目だけは切り替えた時点で反映され、「設定を保存」は不要です</strong></td></tr><tr><td>Kaguya Mindの蓄積を消す</td><td>育った感情・好み・気にかけていることだけを削除します。会話と記憶は消えません</td></tr><tr><td>声かけの間隔</td><td>60〜240分</td></tr><tr><td>整理APIの1日上限</td><td>1〜10回。1回で生の発言を30件処理します。既定の3なら1日90件ぶん</td></tr><tr><td>回答の出力上限</td><td>256〜8,192トークン</td></tr><tr><td>最前面表示</td><td>PC/Tauri画面に適用（iPhoneでは表示しません）</td></tr><tr><td>文字サイズ</td><td>12〜22</td></tr></table>
 <h2>基本操作</h2>
 <h3>画面</h3>
-<p>初期画面は「会話」です。「記憶」「設定」は補助画面で、「使い方」は設定画面の中にあります。</p>
+<p>初期画面は「会話」です。「記憶」「PC」「設定」は補助画面で、「使い方」は設定画面の中にあります。</p>
 <h3>会話</h3>
 <ul><li>PC: Enterで送信、Shift+Enterで改行</li><li>iPhone等のタッチ端末: <strong>改行キーは改行</strong>。送信は送信ボタンだけ</li><li>入力中はキャラクターが小さな顔表示に縮まり、そのぶん会話履歴が広がります</li><li>書きかけは端末内に保存され、送信が受理された時点で消えます（送信前にタブが閉じても戻ります）</li><li>過去の会話を読んでいる間は自動で最下部へ移動しません。「新しい返答 ↓」で戻ります</li><li>返答は届いた順に表示されます（ストリーミング）</li><li>返答のあとに「もっと詳しく」「例をあげて」「短くまとめて」が出ます。押すと普通の会話として送るだけです</li><li>返答の下に実測の所要時間（書き始めまで / 全体）を小さく出します</li><li>最大2,000文字</li><li>同時生成は1件</li><li>失敗した会話は「再送する」</li><li>回答生成済みで保存だけ失敗した場合は「保存のみ再試行」</li></ul>
+<h3>音声会話</h3>
+<p>「会話」画面の「音声で話す」から、Gemini Liveと双方向に音声会話できます。</p>
+<ul><li>1回最大10分</li><li>マイク音声は16kHz PCMとしてGemini Liveへ送信し、返答音声をその場で再生</li><li>かぐやの返答中に話しかけると、再生を止めて割り込めます</li><li>ユーザー発話と、かぐやの返答の字幕を通常の会話履歴へ保存します</li><li><strong>音声データ自体は保存しません</strong></li><li>通常の長期記憶・Relationship Memory・Kaguya Mindの文脈を会話開始時に参照します</li><li>音声通話中は文字チャットを同時実行できません</li><li>音声通話から天気・予定・BAT等の外部操作は実行しません</li><li>PC/Tauri、またはTailscaleのHTTPS接続で利用します。同一LANのHTTP接続ではブラウザのマイク制約により利用できません</li><li>Gemini Liveの利用量はGemini API側の課金・利用枠に従います</li></ul>
 <h3>進捗と接続状態</h3>
 <p>画面上部に接続状態（接続中… / 接続済み / 未接続）を常設し、生成中は「接続中」「回答を生成中」「保存中」を出します。実際には検索していないのに「記憶を探しているよ」のような演出は出しません。</p>
 <h3>終了</h3>
@@ -27,14 +30,37 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <h3>簡易表示</h3>
 <p>PC版では「簡易表示に切り替え」でキャラクター中心の小型表示へ切り替えられます。通常表示への復帰はダブルクリックまたは右クリックメニューです。</p>
 <h2>iPhoneから使う</h2>
-<p>PCとかぐやAIを起動した状態で、iPhoneを同じWi-Fiへ接続します。</p>
+<p>PCとかぐやAIを起動した状態で利用します。iPhoneはPC側と同じFastAPI・Gemini・PostgreSQLを使い、別アプリや別DBは作りません。</p>
+<h3>家庭内Wi-Fi</h3>
+<p>PCとiPhoneを同じWi-Fiへ接続し、Safariで開きます。</p>
 <pre><code>http://&lt;PCのLAN IP&gt;:8765/</code></pre>
-<p>iPhoneはPC側と同じFastAPI・Gemini・PostgreSQLを使います。別のiPhoneアプリや別DBではありません。</p>
-<p>利用可能：</p>
-<ul><li>通常チャット（ストリーミング表示）</li><li>記憶</li><li>天気</li><li>カレンダー</li><li>リマインダー（画面を開いている間）</li><li>参照ファイル</li><li>自分自身の仕様確認</li><li>Living Kaguya</li></ul>
+<p>文字チャット、記憶、天気、カレンダー、リマインダー、参照ファイル、Living Kaguya、PCタブを利用できます。HTTP接続のため、<strong>iPhoneの音声会話は利用できません</strong>。</p>
+<h3>外出先から使う（Tailscale）</h3>
+<p>Tailscale Serveを使い、インターネットへ公開せずに本人のTailnet内だけでHTTPSアクセスできます。<strong>Tailscale Funnelは使いません。</strong></p>
+<p>PC側でリポジトリ直下の <code>pc_setup.bat</code> を実行します。</p>
+<pre><code>C:\kaguya-ai\pc_setup.bat</code></pre>
+<ul><li><code>1</code> でTailscaleをインストール（未導入時）</li><li><code>2</code> でTailscaleへログインし、HTTPS Serveを設定</li><li>表示された <code>https://&lt;PC名&gt;.&lt;tailnet名&gt;.ts.net</code> を控える</li><li>iPhoneにもTailscaleを入れ、同じアカウントへログイン</li><li>Safariで上記HTTPS URLを開く</li></ul>
+<p><code>pc_setup.bat</code> は <code>backend/pc_access.json</code> に、許可するTailscaleのHTTPS Originとログイン名を保存します。アクセス時はTailscale Serveが付与するログイン情報と照合し、PC本体または設定済み本人のTailscale接続だけを許可します。</p>
+<p>既に別用途でTailscale Serveが設定されている場合は、既存設定を上書きせず終了します。内容を確認してから共存方法を決めてください。<code>6</code> を選ぶと、かぐや用の443番HTTPS Serveを停止し、ローカル利用はそのまま残します。</p>
+<h3>iPhoneで利用できる機能</h3>
+<ul><li>通常チャット（ストリーミング表示）</li><li>音声会話（Tailscale HTTPS接続時）</li><li>記憶</li><li>天気</li><li>カレンダー</li><li>リマインダー（画面を開いている間）</li><li>参照ファイル</li><li>自分自身の仕様確認</li><li>PC内MP4動画の再生</li><li>登録済みBATの確認・実行</li><li>Living Kaguya</li></ul>
 <p>制約：</p>
-<ul><li>PCが終了/スリープ中は使えない</li><li>HTTPS未実装</li><li>Web Push未実装</li><li>PC更新ボタン・最前面設定はiPhoneには出さない</li><li>ホーム画面へ追加した場合もSafariのタブとして開きます。マニフェストの <code>display</code> は <code>browser</code> のままです。iOSのスタンドアロン起動はHTTPS必須で、HTTP接続の本アプリでは 「HTTPS-Onlyが有効なHTTP URL」エラーになり起動できないためです</li></ul>
+<ul><li>PCが終了・スリープ中、またはかぐやAIが停止中は使えません</li><li>家庭内LANのiPhone接続はHTTPのままです</li><li>Web Pushは未実装です</li><li>PC更新ボタン・最前面設定はiPhoneには出しません</li><li>LANのHTTP URLをホーム画面へ追加してもSafariタブとして開きます。マニフェストの <code>display</code> は <code>browser</code> のままです</li><li>音声会話を使う場合は、TailscaleのHTTPS URLから開いてください</li></ul>
 <p>Living Kaguyaの表情はPC側のサーバが決めるため、PCとiPhoneで同じになります。最後に会った時刻と利用時間の学習も、どの端末で話した分も数えるので揃います。生活状態（読書・睡眠など）の見せ方だけが端末ごとです。</p>
+<h2>PC連携（動画・BAT）</h2>
+<p>「PC」タブから、PC内の許可した動画フォルダとBATだけを利用できます。任意のパスや任意のコマンドをブラウザから渡して実行する機能ではありません。</p>
+<h3>初期設定</h3>
+<p>リポジトリ直下の <code>pc_setup.bat</code> を実行します。</p>
+<pre><code>C:\kaguya-ai\pc_setup.bat</code></pre>
+<ul><li><code>3</code>：MP4動画を置いているフォルダを登録</li><li><code>4</code>：信頼できるBATを1本登録</li><li><code>5</code>：<code>backend/pc_access.json</code> をメモ帳で開き、登録内容を編集・削除</li></ul>
+<p><code>backend/pc_access.json</code> はGit管理対象外です。PC固有のパスやTailscaleログイン情報をリポジトリへコミットしません。</p>
+<h3>動画</h3>
+<ul><li>登録済みフォルダ以下の <code>.mp4</code> だけを検索・再生します</li><li>シンボリックリンクやジャンクションを辿りません</li><li>最大10,000ファイルまで走査し、一覧は30件ずつ表示します</li><li>再生時に一時的な再生URLを発行し、元の任意ファイルパスは公開しません</li><li>対応可否はブラウザ/WebViewのMP4コーデック対応にも依存します</li></ul>
+<h3>BAT</h3>
+<ul><li><code>pc_setup.bat</code> で事前登録した <code>.bat</code> だけ実行できます</li><li>実行前に表示名・説明・最大実行時間を表示し、ユーザー確認が必要です</li><li>ブラウザから任意の引数を渡すことはできません</li><li>確認後にBATや登録設定が変更されていた場合は実行しません</li><li>同時実行は1件です</li><li>既定の時間上限は300秒で、設定値は5〜3,600秒の範囲です</li><li>標準入力は無効です。<code>pause</code>、対話入力、管理者昇格を必要とするBATは登録しないでください</li><li>BAT終了後に別アプリを起動していた場合、その別アプリの処理完了までは保証しません</li></ul>
+<h3>チャットから使う</h3>
+<p>通常の文字チャットからも、明示的な動画/BAT依頼をPCタブへ引き継げます。</p>
+<ul><li>「旅行の動画を再生して」→ 依頼した端末のPCタブを開き、動画名で検索します。候補が1件なら再生画面まで準備します</li><li>「バックアップを実行して」→ 登録済みBAT名と一致すれば、そのBATの確認画面を開きます</li><li>BATはチャットだけでは実行されません。<strong>表示名・説明・最大実行時間を確認してOKした後にだけ実行</strong>します</li><li>任意パスや任意引数は受け取りません。登録済み許可リストの範囲だけです</li><li>この引き継ぎ判定はローカルで行い、PC操作のためだけに追加のGemini Function Callingを使いません</li></ul>
 <h2>Living Kaguya</h2>
 <p>追加のLLM/API呼び出しを使わず、キャラクターがアプリ内で生活しているように見せる軽量レイヤーです。</p>
 <p>状態例：</p>
@@ -97,6 +123,8 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <pre><code>自分の簡易表示の仕様をソースから調べて
 READMEを確認してiPhone対応を教えて</code></pre>
 <p><code>.git</code>, <code>.venv</code>, <code>node_modules</code>, <code>target</code>, <code>dist</code> 等は走査しません。ソースコードを書き換えるFunction Callingはありません。</p>
+<h3>PC動画・BAT</h3>
+<p>PC内動画の再生とBAT実行は、Function Callingで任意パスを操作する方式ではなく、<code>backend/pc_access.json</code> の明示的な許可リストを使う別機能です。安全のため、動画は登録フォルダ内のMP4、BATは事前登録済みファイルだけを対象にします。通常チャットからの依頼はサーバー側で保守的にローカル判定し、依頼元端末のPCタブを開くだけです。BATの実行そのものは従来どおり確認トークンを発行し、ブラウザで明示確認してから行います。</p>
 <h2>記憶</h2>
 <h3>3層</h3>
 <table><tr><th>層</th><th>画面上の呼び方</th><th>役割</th><th>できる操作</th></tr><tr><td><code>raw_memory</code></td><td>会話履歴</td><td>過去のやり取りを読み返す</td><td>訂正 / 削除</td></tr><tr><td><code>wisdom</code></td><td>あなたについて覚えていること</td><td>好み・習慣・続いている事情</td><td>訂正 / もう当てはまらない</td></tr><tr><td><code>persona</code></td><td>かぐやの接し方</td><td>呼び方、返答の長さ、相談時の接し方</td><td>変更 / 元に戻す</td></tr></table>
@@ -114,8 +142,8 @@ READMEを確認してiPhone対応を教えて</code></pre>
 <p>接し方（<code>persona</code>）の自動更新は従来どおり慎重で、週次かつ「明示された知恵」が3日以上の別々の日で確認できた場合だけ候補にします。手動で変更・保護した項目は上書きしません。</p>
 <p>自動整理の実行タイミングは「安定性優先の動作 → 記憶整理」を参照してください。</p>
 <h2>保存場所</h2>
-<table><tr><th>データ</th><th>保存先</th></tr><tr><td>会話/知恵/接し方/リマインダー</td><td>PostgreSQL</td></tr><tr><td>設定/整理回数</td><td>PostgreSQL <code>app_settings</code></td></tr><tr><td>ローカル予定</td><td>PostgreSQL <code>calendar_events</code></td></tr><tr><td>Kaguya Mind（実験機能）</td><td>PostgreSQL <code>mind_*</code></td></tr><tr><td>参照資料</td><td><code>%LOCALAPPDATA%\KaguyaAI\references</code></td></tr><tr><td>Living状態（生活状態・利用時間の学習）</td><td>各ブラウザ/WebViewのlocalStorage</td></tr><tr><td>更新ログ</td><td><code>%LOCALAPPDATA%\KaguyaAI\update.log</code></td></tr></table>
-<p>会話・設定・予定・MindのデータはPostgreSQLに集約しています。参照資料、接続設定、ログ、ブラウザ/WebView内の表示状態や書きかけは、それぞれのローカル保存先に残ります。</p>
+<table><tr><th>データ</th><th>保存先</th></tr><tr><td>会話/知恵/接し方/リマインダー</td><td>PostgreSQL</td></tr><tr><td>設定/整理回数</td><td>PostgreSQL <code>app_settings</code></td></tr><tr><td>ローカル予定</td><td>PostgreSQL <code>calendar_events</code></td></tr><tr><td>Kaguya Mind（実験機能）</td><td>PostgreSQL <code>mind_*</code></td></tr><tr><td>参照資料</td><td><code>%LOCALAPPDATA%\KaguyaAI\references</code></td></tr><tr><td>PC連携設定（動画フォルダ/BAT/Tailscale）</td><td><code>backend/pc_access.json</code>（Git管理外）</td></tr><tr><td>音声会話の字幕</td><td>通常会話と同じPostgreSQL</td></tr><tr><td>音声データ</td><td>保存しない</td></tr><tr><td>Living状態（生活状態・利用時間の学習）</td><td>各ブラウザ/WebViewのlocalStorage</td></tr><tr><td>更新ログ</td><td><code>%LOCALAPPDATA%\KaguyaAI\update.log</code></td></tr></table>
+<p>会話・設定・予定・MindのデータはPostgreSQLに集約しています。音声会話は字幕だけを通常会話として保存し、マイク音声・返答音声そのものは保存しません。参照資料、PC連携設定、ログ、ブラウザ/WebView内の表示状態や書きかけは、それぞれのローカル保存先に残ります。</p>
 <p>以前のバージョンから更新した場合、<code>settings.json</code> / <code>calendar.json</code> / <code>mind.db</code> は初回起動時に自動でDBへ取り込まれ、<code>*.migrated</code> という名前で元の場所に残ります。問題がなければ削除して構いません。</p>
 <h2>更新手順</h2>
 <p>エクスプローラーで <code>kaguya.bat</code> を<strong>ダブルクリック</strong>し、<code>1</code>（update）を選びます。コマンドで直接指定しても同じです。</p>
@@ -146,3 +174,9 @@ start.bat</code></pre>
 <p>を確認してください。現在版は <code>start.bat</code> から手動起動できます。</p>
 <h3>ポート8765</h3>
 <p>別のかぐやAI/uvicorn/開発サーバーが8765を使っていないか確認してください。</p>
+<h3>Tailscaleで開けない</h3>
+<ul><li>PC側でかぐやAIとTailscaleが起動していることを確認してください</li><li><code>pc_setup.bat</code> の <code>2</code> で表示されたHTTPS URLを使ってください</li><li>iPhoneが同じTailscaleアカウントへログインしていることを確認してください</li><li>既にTailscale Serveを別用途で使っている場合、セットアップは既存設定を上書きしません</li><li><code>backend/pc_access.json</code> の <code>tailscale_origin</code> / <code>tailscale_login</code> が現在のTailscale設定と一致していることを確認してください</li></ul>
+<h3>音声会話を開始できない</h3>
+<ul><li>PC/TauriまたはTailscaleのHTTPS URLから開いてください。LANのHTTP URLではiPhoneのマイクを利用できません</li><li>ブラウザのマイク許可を確認してください</li><li><code>GEMINI_API_KEY</code> と <code>GEMINI_LIVE_MODEL</code>、Gemini APIの利用枠を確認してください</li><li>音声通話中は文字チャットを同時実行できません</li></ul>
+<h3>PC動画・BATが使えない</h3>
+<ul><li><code>pc_setup.bat</code> で動画フォルダ/BATを登録してください</li><li>動画はMP4のみです</li><li>BATはWindows上の実在する <code>.bat</code> だけを登録してください</li><li>対話入力、<code>pause</code>、管理者昇格が必要なBATは対象外です</li><li>BAT実行前の確認後にファイル内容を変更した場合は、もう一度確認し直してください</li></ul>

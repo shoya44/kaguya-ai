@@ -136,6 +136,7 @@ fn spawn_backend(app: &AppHandle, instance: &str) -> std::io::Result<Child> {
             "uvicorn",
             "app.main:app",
             "--no-access-log",
+            "--no-proxy-headers",
             "--host",
             BACKEND_BIND_HOST,
             "--port",

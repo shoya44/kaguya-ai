@@ -154,7 +154,7 @@ export class Controls {
   }
 
   open(panel: string): void {
-    for (const name of ['chat', 'settings', 'memories', 'help']) {
+    for (const name of ['chat', 'settings', 'memories', 'help', 'pc']) {
       document.getElementById(name === 'chat' ? 'chat' : `${name}-panel`)!.hidden = name !== panel;
     }
     document.getElementById('character-view')!.hidden = panel !== 'chat';

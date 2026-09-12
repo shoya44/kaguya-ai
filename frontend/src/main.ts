@@ -3,6 +3,8 @@ import { Avatar } from './avatar';
 import { isTauri } from './tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { Controls } from './controls';
+import { PCPanel } from './pc';
+import { VoiceChat } from './voice';
 import { getCurrentWindow, currentMonitor, primaryMonitor, LogicalSize, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
 
@@ -19,6 +21,7 @@ const SESSION_KEY = 'kaguya.session';
 const CLIENT_KEY = 'kaguya.client';
 const MINI_MODE_KEY = 'kaguya.miniMode';
 const DRAFT_KEY = 'kaguya.draft.v1';
+let voiceActive = false;
 
 // 簡易版UI（デスクトップマスコット表示）: 透過・枠なしウィンドウを画面右下に
 // 固定する。位置はドラッグ不可・毎回右下に再計算するだけなので設定ファイル
@@ -603,9 +606,9 @@ function hideError(): void {
 function setBusy(value: boolean): void {
   busy = value;
   document.body.classList.toggle('chat-busy', busy);
-  sendBtn.disabled = busy || !synchronized || !!unsavedTurnId;
+  sendBtn.disabled = busy || voiceActive || !synchronized || !!unsavedTurnId;
   historyEl.querySelectorAll<HTMLButtonElement>('button').forEach(button => {
-    button.disabled = busy || !synchronized || !!unsavedTurnId;
+    button.disabled = busy || voiceActive || !synchronized || !!unsavedTurnId;
   });
   refreshAvatar();
   // PCでは返答後に入力へ戻す。iPhone等のタッチ端末では、ユーザーが閉じた
@@ -737,6 +740,15 @@ function scheduleReconnect(): void {
 function handleServerEvent(data: Record<string, unknown>): void {
   const type = data.type as string;
   switch (type) {
+    case 'pc.open': {
+      // A chat request should only move the tab on the device that sent it.
+      // Other connected devices still receive the broadcast but ignore it.
+      const target = typeof data.target_client_id === 'string' ? data.target_client_id : '';
+      if (target && session?.clientId !== target) return;
+      controls?.open('pc');
+      window.dispatchEvent(new CustomEvent('pc.open', { detail: data }));
+      return;
+    }
     case 'state.changed': {
       // 別の端末で話していた時間も「会っていた」に数える。この端末を開いた直後に
       // 「ちょっと寝てた」と言わないよう、サーバの最終会話時刻で揃える。
@@ -1011,6 +1023,11 @@ async function main(): Promise<void> {
   controls = new Controls(api, options => {
     quietMode = options.quiet === true;
     refreshAvatar();
+  });
+  new PCPanel(api, API_BASE);
+  new VoiceChat(API_BASE, ensureSession, active => {
+    voiceActive = active;
+    setBusy(busy);
   });
   setBusy(false);
 
