@@ -7,6 +7,9 @@ export class VoiceChat {
   private capture: AudioWorkletNode | null = null;
   private sources = new Set<AudioBufferSourceNode>();
   private nextAudio = 0;
+  // 再生待ちの上限（秒）。Geminiは実時間で届くので短くてよいが、PC側で
+  // 読み上げる場合は1文ぶんがまとめて届くため、同じ値だと誤検知する。
+  private maxLead = 10;
   private generation = 0;
   private active = false;
   private timer: number | undefined;
@@ -82,6 +85,7 @@ export class VoiceChat {
         const message = JSON.parse(event.data);
         if (message.type === 'ready') {
           window.clearTimeout(timeout);
+          this.maxLead = message.local_voice ? 30 : 10;
           const context = this.context!;
           this.capture = new AudioWorkletNode(context, 'pcm-capture');
           this.capture.port.onmessage = event => {
@@ -118,7 +122,7 @@ export class VoiceChat {
   private play(bytes: ArrayBuffer): void {
     const context = this.context;
     if (!context || bytes.byteLength % 2) return;
-    if (this.nextAudio - context.currentTime > 10) { this.stop('音声再生が遅れています。通話を再開してください。'); return; }
+    if (this.nextAudio - context.currentTime > this.maxLead) { this.stop('音声再生が遅れています。通話を再開してください。'); return; }
     const samples = new Int16Array(bytes);
     const buffer = context.createBuffer(1, samples.length, 24000);
     const output = buffer.getChannelData(0);
@@ -141,6 +145,7 @@ export class VoiceChat {
     ++this.generation;
     this.active = false;
     window.clearTimeout(this.timer);
+    this.maxLead = 10;
     this.stream?.getTracks().forEach(track => track.stop()); this.stream = null;
     this.capture?.disconnect(); this.capture = null;
     this.clearPlayback();

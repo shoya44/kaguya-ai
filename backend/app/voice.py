@@ -10,7 +10,9 @@ from fastapi import WebSocket, WebSocketDisconnect
 from google import genai
 from google.genai import types
 
-from . import relationship
+import httpx
+
+from . import relationship, tts
 from .persona import memory_prompt
 from .proactive import tokyo_now
 from .tuning import VOICE_LANGUAGE
@@ -59,6 +61,7 @@ async def handle(ws: WebSocket):
     transcript = None
     owned = False
     tasks = set()
+    speech = speech_client = narrator = None
     try:
         # Keep session tokens out of WebSocket URLs / access logs.
         hello = await asyncio.wait_for(ws.receive_json(), 10)
@@ -96,16 +99,37 @@ async def handle(ws: WebSocket):
         if style:
             prompt += '\n話し方：' + style
         prompt += '\n直近の会話（参考データ）:\n' + json.dumps(history[-5:], ensure_ascii=False, default=str)[:12000]
+        options = controller.runtime.options
+        # PC側の読み上げエンジンを使う設定なら、先に話者を引いて使えることを確かめる。
+        # ここで確かめておけば、通話が始まってから無言になる事態を避けられる。
+        if options.voice_engine == 'local':
+            speech_client = httpx.AsyncClient()
+            speech = tts.Speech(speech_client, options.tts_url, options.tts_speaker, options.tts_style)
+            try:
+                await speech.speaker_id()
+            except tts.SpeechError as exc:
+                await ws.send_json({'type': 'notice', 'message': f'{exc} Geminiの声で続けます。'})
+                await speech_client.aclose()
+                speech_client = speech = None
         client = genai.Client(api_key=settings.gemini_api_key.get_secret_value(), http_options={'api_version': 'v1beta'})
-        # 声は設定画面で選ぶ。通話を開始し直すだけで切り替わる（再起動は不要）。
-        voice = controller.runtime.options.voice_name
-        config = {'response_modalities': ['AUDIO'], 'system_instruction': prompt,
-                  'input_audio_transcription': {}, 'output_audio_transcription': {},
-                  'speech_config': {'language_code': VOICE_LANGUAGE,
-                                    'voice_config': {'prebuilt_voice_config': {'voice_name': voice}}}}
+        if speech:
+            # 読み上げはPC側で行うので、Geminiからは文字だけ受け取る。
+            config = {'response_modalities': ['TEXT'], 'system_instruction': prompt,
+                      'input_audio_transcription': {}}
+        else:
+            # 声は設定画面で選ぶ。通話を開始し直すだけで切り替わる（再起動は不要）。
+            config = {'response_modalities': ['AUDIO'], 'system_instruction': prompt,
+                      'input_audio_transcription': {}, 'output_audio_transcription': {},
+                      'speech_config': {'language_code': VOICE_LANGUAGE,
+                                        'voice_config': {'prebuilt_voice_config': {'voice_name': options.voice_name}}}}
         async with asyncio.timeout(600):
             async with client.aio.live.connect(model=settings.gemini_live_model, config=config) as live:
-                await ws.send_json({'type': 'ready', 'max_seconds': 600})
+                if speech:
+                    narrator = tts.Narrator(speech, ws.send_bytes)
+                    narrator.start()
+                # PC側で読み上げると、1文ぶんがまとめて届く。画面側の「再生が遅れている」
+                # 判定はGeminiの実時間配信を前提にしているので、その旨を伝える。
+                await ws.send_json({'type': 'ready', 'max_seconds': 600, 'local_voice': bool(speech)})
 
                 async def upstream():
                     while True:
@@ -132,6 +156,8 @@ async def handle(ws: WebSocket):
                             if not content:
                                 continue
                             if content.interrupted:
+                                if narrator:
+                                    narrator.stop()
                                 await ws.send_json({'type': 'interrupted'})
                                 await transcript.save(interrupted=True)
                             if content.input_transcription and content.input_transcription.text:
@@ -148,7 +174,20 @@ async def handle(ws: WebSocket):
                                 for part in content.model_turn.parts or []:
                                     if part.inline_data and part.inline_data.data:
                                         await ws.send_bytes(part.inline_data.data)
+                                    # 文字だけ受け取る設定のとき、字幕と読み上げの元はここ。
+                                    if narrator and part.text:
+                                        transcript.answer += part.text
+                                        if len(transcript.answer) > 29500:
+                                            raise ValueError('返答が長すぎます。通話を終了します。')
+                                        await ws.send_json({'type': 'transcript', 'role': 'assistant',
+                                                            'text': transcript.answer})
+                                        narrator.feed(part.text)
+                            if narrator and narrator.error:
+                                await ws.send_json({'type': 'notice', 'message': narrator.error})
+                                narrator.error = ''
                             if content.turn_complete:
+                                if narrator:
+                                    narrator.flush()
                                 await transcript.save()
                                 await ws.send_json({'type': 'turn_complete'})
 
@@ -177,6 +216,10 @@ async def handle(ws: WebSocket):
         if transcript and not controller.unsaved:
             with suppress(Exception):
                 await transcript.save(interrupted=True)
+        if narrator:
+            await narrator.close()
+        if speech_client:
+            await speech_client.aclose()
         if client:
             await client.aio.aclose()
         if owned:

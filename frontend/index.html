@@ -70,7 +70,17 @@
           <label>回答の出力上限（トークン）<input type="number" name="reply_tokens" min="256" max="8192" required></label>
           <label class="desktop-setting"><input type="checkbox" name="always_on_top">ウィンドウを最前面にする</label>
           <label>文字サイズ<input type="number" name="font_size" min="12" max="22" required></label>
-          <label>通話の声<input name="voice_name" list="voice-names" maxlength="40" pattern="[A-Za-z][A-Za-z0-9]*" required></label>
+          <label>通話の読み上げ
+            <select name="voice_engine">
+              <option value="gemini">Gemini（追加の用意は不要）</option>
+              <option value="local">PCの読み上げエンジン（AivisSpeech / VOICEVOX）</option>
+            </select>
+          </label>
+          <label>読み上げエンジンのURL<input name="tts_url" maxlength="200" required></label>
+          <label>話者<input name="tts_speaker" maxlength="80" required></label>
+          <label>スタイル<input name="tts_style" maxlength="80" required></label>
+          <p class="hint">PCの読み上げエンジンを使う場合は、先にそのアプリを起動してください。AivisSpeech は <code>http://127.0.0.1:10101</code>、VOICEVOX は <code>http://127.0.0.1:50021</code> です。話者とスタイルは、そのエンジンでの表示名をそのまま入れます（例：コハク／ノーマル）。繋がらない場合は Gemini の声で通話を続け、理由を表示します。</p>
+          <label>通話の声（Geminiのとき）<input name="voice_name" list="voice-names" maxlength="40" pattern="[A-Za-z][A-Za-z0-9]*" required></label>
           <datalist id="voice-names">
             <option value="Leda">若く明るい</option>
             <option value="Zephyr">明るい</option>
