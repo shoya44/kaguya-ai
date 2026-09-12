@@ -13,14 +13,19 @@ if errorlevel 1 (
   exit /b 21
 )
 
+rem どのブランチにいるのか、どう直すのかまで出す。名前が分からないと直しようがない。
+rem 入れ子の括弧は解釈を誤りやすいので、1行1処理で書く。
 for /f "delims=" %%B in ('git branch --show-current 2^>nul') do set "BRANCH=%%B"
-if /i not "%BRANCH%"=="main" (
-  echo [Update] Current branch is not main. Update was skipped.
-  exit /b 10
-)
+if /i "%BRANCH%"=="main" goto branch_ok
+if not defined BRANCH set "BRANCH=none (detached HEAD)"
+echo [Update] Current branch is "%BRANCH%", not main. Update was skipped.
+echo [Update] Run "git status" to check for local changes, then "git checkout main".
+exit /b 10
 
+:branch_ok
 for /f "delims=" %%S in ('git status --porcelain --untracked-files 2^>nul') do (
   echo [Update] Local changes exist. Update was skipped to protect them.
+  echo [Update] Run "git status" to see them, then keep or undo them and run update again.
   exit /b 10
 )
 
