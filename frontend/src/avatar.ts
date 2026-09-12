@@ -5,7 +5,9 @@ type LifeActivity = 'idle' | 'reading' | 'working' | 'playing' | 'snacking' | 'd
 // 一回性の動き。定常のゆれと違い、出来事に対して一度だけ返す。
 // nod=受け取った / hop=嬉しい / droop=しゅんとする / perk=顔を上げる
 // settle=座り直す / sink=寝入る / stretch=伸びをする
-export type Nudge = 'nod' | 'hop' | 'droop' | 'perk' | 'settle' | 'sink' | 'stretch';
+// beat=話しながらの拍 / inhale=話し出す前のひと呼吸 / call=呼びかける
+export type Nudge = 'nod' | 'hop' | 'droop' | 'perk' | 'settle' | 'sink' | 'stretch'
+  | 'beat' | 'inhale' | 'call';
 
 const SPRITES: Record<AvatarState, string[]> = {
   idle: ['/sprites/wave.png', '/sprites/book.png', '/sprites/laptop.png', '/sprites/cards.png'],
@@ -56,16 +58,25 @@ const MOOD_NUDGE: Partial<Record<LifeMood, Nudge>> = {
 };
 // 一回性の動き。rank が高いものだけが、実行中の動きに割り込める。
 // 呼吸と同じく、床から浮くのは hop だけ。跳ねる以外は接地したまま伸縮させる。
-const NUDGES: Record<Nudge, { transform: string; ms: number; rank: number }> = {
+// repeatMs は「前回からこの時間が経つまで同じ動きを繰り返さない」。何度も
+// 届く出来事（返答の流れ、キー入力）に繋ぐ動きだけが持つ。
+const NUDGES: Record<Nudge, { transform: string; ms: number; rank: number; repeatMs?: number }> = {
+  // 返答が流れてくる間の拍。数十ms間隔で届くので、ここで間隔を絞る。
+  beat: { transform: 'scaleY(0.995)', ms: 240, rank: 1, repeatMs: 900 },
   // 座り直し。何より弱い。話しかけられている最中に割り込んではいけない。
   settle: { transform: 'rotate(-0.6deg) scaleY(0.997)', ms: 620, rank: 1 },
   sink: { transform: 'scaleY(0.98)', ms: 900, rank: 2 },
   nod: { transform: 'scaleY(0.985)', ms: 260, rank: 3 },
-  perk: { transform: 'scaleY(1.025)', ms: 380, rank: 3 },
+  // 顔を上げる。キー入力ごとに届くので、一度上げたらしばらく上げ直さない。
+  perk: { transform: 'scaleY(1.025)', ms: 380, rank: 3, repeatMs: 20_000 },
+  // 話し出す前のひと呼吸。傾きの向きで perk と区別できるようにしてある。
+  inhale: { transform: 'scaleY(1.02) rotate(-0.25deg)', ms: 340, rank: 3 },
   stretch: { transform: 'scaleY(1.04)', ms: 760, rank: 3 },
   // 跳ねるときだけは足が床を離れる。
   hop: { transform: 'translateY(-9px) scaleY(1.01)', ms: 340, rank: 4 },
   droop: { transform: 'scaleY(0.975) rotate(-1deg)', ms: 420, rank: 4 },
+  // 呼びかけ。気づいてもらう必要があるので、ほかのどの動きにも飲まれない。
+  call: { transform: 'translateY(-6px) rotate(1.5deg) scaleY(1.02)', ms: 440, rank: 5 },
 };
 // 一回性の動きを続けて出さない下限。これより短い間隔で重ねるとガタガタする。
 const NUDGE_GAP_MS = 320;
@@ -130,6 +141,7 @@ export class Avatar {
   private nudgeTimer: number | null = null;
   private nudgeRank = 0;
   private nudgeEndedAt = 0;
+  private nudgeFiredAt: Partial<Record<Nudge, number>> = {};
   private breakTimer: number | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -188,16 +200,20 @@ export class Avatar {
     const style = this.canvas.style;
     if (!style) return;
     const move = NUDGES[nudge];
+    const now = Date.now();
+    // 何度も届く出来事に繋いだ動き。前回から間が空くまで繰り返さない。
+    if (move.repeatMs && now - (this.nudgeFiredAt[nudge] ?? -Infinity) < move.repeatMs) return;
     // 動いている最中。より強い動きでなければ、いまの動きを最後まで見せる。
     if (this.nudgeTimer !== null && move.rank <= this.nudgeRank) return;
     // 直前の動きが終わった直後。同じか弱い動きなら間を置く。
     if (this.nudgeTimer === null && move.rank <= this.nudgeRank
-        && Date.now() - this.nudgeEndedAt < NUDGE_GAP_MS) return;
+        && now - this.nudgeEndedAt < NUDGE_GAP_MS) return;
 
     if (this.nudgeTimer !== null) window.clearTimeout(this.nudgeTimer);
     if (this.motionTimer !== null) window.clearTimeout(this.motionTimer);
     this.motionTimer = null;
     this.nudgeRank = move.rank;
+    this.nudgeFiredAt[nudge] = now;
     style.transition = `transform ${move.ms}ms cubic-bezier(0.34, 1.4, 0.64, 1)`;
     style.transform = move.transform;
     this.nudgeTimer = window.setTimeout(() => {

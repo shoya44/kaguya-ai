@@ -221,3 +221,48 @@ test('眠ったように見えないなら、沈まない', () => {
   h.avatar.setState('sleeping');
   assert.notEqual(h.canvas.style.transform, 'scaleY(0.98)');
 });
+
+test('返答が流れてくる間の拍は、間隔を空けて出す', () => {
+  const h = harness();
+  const beat = 'scaleY(0.995)';
+  h.avatar.react('beat');
+  assert.equal(h.canvas.style.transform, beat);
+  h.settle();
+  // 拍は数十ms間隔で届く。そのまま出すと震えるので、続けては出さない。
+  h.avatar.react('beat');
+  assert.notEqual(h.canvas.style.transform, beat);
+});
+
+test('顔を上げるのは、打つたびではなく気づいた一度だけ', () => {
+  const h = harness();
+  const perk = 'scaleY(1.025)';
+  h.avatar.react('perk');
+  assert.equal(h.canvas.style.transform, perk);
+  h.settle();
+  h.avatar.react('perk');
+  assert.notEqual(h.canvas.style.transform, perk);
+});
+
+test('呼びかけは、ほかのどの動きにも飲まれない', () => {
+  const h = harness();
+  const call = 'translateY(-6px) rotate(1.5deg) scaleY(1.02)';
+  // いちばん強い hop / droop の最中でも割り込めること。
+  for (const strong of ['hop', 'droop']) {
+    const fresh = harness();
+    fresh.avatar.react(strong);
+    fresh.avatar.react('call');
+    assert.equal(fresh.canvas.style.transform, call, `${strong} の最中でも呼びかけられること`);
+  }
+  h.avatar.react('call');
+  // 逆に、呼びかけの最中はほかの動きが割り込めない。
+  h.avatar.react('hop');
+  assert.equal(h.canvas.style.transform, call);
+});
+
+test('拍は、話しかけへの反応より弱い', () => {
+  const h = harness();
+  h.avatar.react('inhale');
+  const inhale = h.canvas.style.transform;
+  h.avatar.react('beat');
+  assert.equal(h.canvas.style.transform, inhale);
+});
