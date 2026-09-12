@@ -1,11 +1,13 @@
-"""Small, atomic local settings and scheduler ledger. No conversation copies."""
-import json
-import os
-import tempfile
-from pathlib import Path
+"""Settings and the scheduler ledger. Stored in PostgreSQL, not in a file."""
+import logging
 from threading import RLock
 
+from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field
+
+from .db import Database
+
+_log = logging.getLogger(__name__)
 
 
 class Options(BaseModel):
@@ -28,19 +30,32 @@ class Options(BaseModel):
 
 
 class RuntimeStore:
-    def __init__(self, directory: Path):
-        self.path = directory / 'settings.json'
+    """app_settings の options / ledger 2行が実体。読みは頻繁なので手元に持つ。"""
+
+    def __init__(self, db: Database):
+        self.db = db
         self.lock = RLock()
         self.data = {'options': Options().model_dump(), 'ledger': {}}
-        if self.path.exists():
-            try:
-                loaded = json.loads(self.path.read_text(encoding='utf-8'))
-                self.data = {'options': Options.model_validate(loaded['options']).model_dump(),
-                             'ledger': loaded.get('ledger', {})}
-            except Exception:
-                # A damaged settings file must never stop the app from starting.
-                # Keep the unreadable copy aside and continue with defaults.
-                self.path.replace(self.path.with_suffix('.json.bad'))
+        self._load()
+
+    def _load(self) -> None:
+        with self.db.session() as conn:
+            rows = conn.execute("SELECT key,value FROM app_settings WHERE key IN ('options','ledger')").fetchall()
+        stored = {row['key']: row['value'] for row in rows}
+        ledger = stored.get('ledger')
+        self.data['ledger'] = ledger if isinstance(ledger, dict) else {}
+        if 'options' not in stored:
+            return
+        try:
+            self.data['options'] = Options.model_validate(stored['options']).model_dump()
+        except Exception:
+            # 壊れた設定でアプリが起動しなくなるのは困る。退避して既定値で続ける。
+            _log.warning('stored options were unreadable; defaults are used', exc_info=True)
+            with self.db.session() as conn:
+                conn.execute("""INSERT INTO app_settings(key,value,updated_at) VALUES ('options_bad',%s,now())
+                    ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at""",
+                             (Jsonb(stored['options']),))
+                conn.execute("DELETE FROM app_settings WHERE key='options'")
 
     @property
     def options(self):
@@ -50,18 +65,12 @@ class RuntimeStore:
         with self.lock:
             value = {'options': options if options is not None else self.data['options'],
                      'ledger': ledger if ledger is not None else self.data['ledger']}
-            self.path.parent.mkdir(parents=True, exist_ok=True)
-            fd, name = tempfile.mkstemp(prefix='settings-', suffix='.tmp', dir=self.path.parent)
-            try:
-                with os.fdopen(fd, 'w', encoding='utf-8') as stream:
-                    json.dump(value, stream, ensure_ascii=False, indent=2)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                os.replace(name, self.path)
-                self.data = value
-            finally:
-                if os.path.exists(name):
-                    os.unlink(name)
+            with self.db.session() as conn:
+                for key in ('options', 'ledger'):
+                    conn.execute("""INSERT INTO app_settings(key,value,updated_at) VALUES (%s,%s,now())
+                        ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at""",
+                                 (key, Jsonb(value[key])))
+            self.data = value
 
     def update(self, changes):
         with self.lock:

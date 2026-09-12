@@ -201,7 +201,7 @@ async def change_runtime_settings(body: dict, request: Request):
 @router.post('/calendar')
 def add_calendar_event(body: dict, request: Request):
     try:
-        return CalendarStore(request.app.state.settings.data_dir).add(
+        return CalendarStore(request.app.state.db).add(
             str(body.get('title', '')), str(body.get('start', '')),
             str(body['end']) if body.get('end') else None, str(body.get('note', '')),
         )
@@ -213,7 +213,7 @@ def add_calendar_event(body: dict, request: Request):
 def list_calendar_events(request: Request, start: str = Query(..., max_length=64),
                          end: str = Query(..., max_length=64)):
     try:
-        items = CalendarStore(request.app.state.settings.data_dir).list(start, end)
+        items = CalendarStore(request.app.state.db).list(start, end)
     except (TypeError, ValueError, OSError):
         raise HTTPException(400, '予定の検索期間を確認してください。') from None
     return {'ok': True, 'items': items}
@@ -222,7 +222,7 @@ def list_calendar_events(request: Request, start: str = Query(..., max_length=64
 @router.post('/calendar/remove')
 def remove_calendar_event(body: dict, request: Request):
     try:
-        result = CalendarStore(request.app.state.settings.data_dir).remove(
+        result = CalendarStore(request.app.state.db).remove(
             str(body.get('query', '')), str(body['start']) if body.get('start') else None,
             str(body['end']) if body.get('end') else None,
         )

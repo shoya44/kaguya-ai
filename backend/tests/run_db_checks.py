@@ -3,11 +3,7 @@
 Run with the existing Python dependencies and PostgreSQL binaries installed.
 The cluster, role, data and port are exclusively created for this process.
 """
-import os
-import socket
-import subprocess
 import sys
-import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -19,14 +15,15 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from app import memory_store as store
+import pgtemp
 
-DSN = ''
 
 
 class DatabaseChecks(unittest.TestCase):
     def connect(self):
-        return psycopg.connect(DSN, row_factory=dict_row)
+        return psycopg.connect(pgtemp.dsn(), row_factory=dict_row)
 
     def setUp(self):
         with self.connect() as conn:
@@ -185,37 +182,13 @@ class DatabaseChecks(unittest.TestCase):
 
 
 def main():
-    global DSN
-    project = Path(__file__).resolve().parents[2]
-    output = project / '.test-output'
-    output.mkdir(exist_ok=True)
-    binary = Path(os.environ.get('TEST_POSTGRES_BIN', r'C:\Program Files\PostgreSQL\18\bin'))
-    flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-    with tempfile.TemporaryDirectory(prefix='pg-stage4-', dir=output) as temp:
-        temp = Path(temp).resolve()
-        assert temp.is_relative_to(output.resolve())
-        data = temp / 'data'
-        subprocess.run([str(binary / 'initdb.exe'), '-D', str(data), '-A', 'trust', '-U', 'tester', '--no-locale', '-E', 'UTF8'],
-                       check=True, capture_output=True, creationflags=flags)
-        with socket.socket() as sock:
-            sock.bind(('127.0.0.1', 0)); port = sock.getsockname()[1]
-        startup = subprocess.run([str(binary / 'pg_ctl.exe'), '-D', str(data), '-l', str(temp / 'postgres.log'), '-w',
-                        '-o', f'-h 127.0.0.1 -p {port} -F', 'start'],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, creationflags=flags)
-        if startup.returncode:
-            log = temp / 'postgres.log'
-            print(log.read_text(encoding='utf-8', errors='replace') if log.exists() else 'Test PostgreSQL startup failed')
-            return 1
-        try:
-            DSN = f'host=127.0.0.1 port={port} user=tester dbname=postgres connect_timeout=5'
-            with psycopg.connect(DSN, autocommit=True) as conn:
-                for name in ['001_init.sql', '002_memory_jobs.sql', '003_reminders.sql']:
-                    conn.execute((project / 'backend' / 'migrations' / name).read_text(encoding='utf-8'))
-            result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(DatabaseChecks))
-            return 0 if result.wasSuccessful() else 1
-        finally:
-            subprocess.run([str(binary / 'pg_ctl.exe'), '-D', str(data), '-m', 'fast', '-w', 'stop'],
-                           check=True, capture_output=True, creationflags=flags)
+    # クラスタの用意は pgtemp に任せる。unittest 側と同じ作り方・同じ移行スクリプト。
+    if not pgtemp.available():
+        print(pgtemp.reason())
+        return 1
+    result = unittest.TextTestRunner(verbosity=2).run(
+        unittest.defaultTestLoader.loadTestsFromTestCase(DatabaseChecks))
+    return 0 if result.wasSuccessful() else 1
 
 
 if __name__ == '__main__':

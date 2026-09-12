@@ -1,13 +1,15 @@
-"""Small local stores for calendar events and user reference files."""
+"""Calendar events (PostgreSQL) and the user's own reference files (on disk).
+
+references/ stays a folder on purpose: the user drops files into it with
+Explorer, so there would be no way to put anything in if it lived in the DB.
+"""
 from __future__ import annotations
 
-import json
-import os
-import tempfile
 from datetime import datetime
 from pathlib import Path
-from threading import RLock
 from uuid import uuid4
+
+from .db import Database
 
 SAFE_REFERENCE_SUFFIXES = {'.md', '.txt', '.json', '.csv'}
 MAX_REFERENCE_BYTES = 200_000
@@ -15,31 +17,8 @@ MAX_REFERENCE_MATCHES = 8
 
 
 class CalendarStore:
-    def __init__(self, directory: Path):
-        self.path = directory / 'calendar.json'
-        self.lock = RLock()
-
-    def _load(self) -> list[dict]:
-        if not self.path.exists():
-            return []
-        try:
-            value = json.loads(self.path.read_text(encoding='utf-8'))
-            return value if isinstance(value, list) else []
-        except (OSError, ValueError, TypeError):
-            return []
-
-    def _save(self, items: list[dict]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        fd, name = tempfile.mkstemp(prefix='calendar-', suffix='.tmp', dir=self.path.parent)
-        try:
-            with os.fdopen(fd, 'w', encoding='utf-8') as stream:
-                json.dump(items, stream, ensure_ascii=False, indent=2)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(name, self.path)
-        finally:
-            if os.path.exists(name):
-                os.unlink(name)
+    def __init__(self, db: Database):
+        self.db = db
 
     @staticmethod
     def _stamp(value: str) -> datetime:
@@ -48,36 +27,36 @@ class CalendarStore:
             raise ValueError('timezone required')
         return stamp
 
+    @staticmethod
+    def _item(row: dict) -> dict:
+        """画面とツールが読む形はcalendar.json時代と同じにしておく。"""
+        return {'id': str(row['id']), 'title': row['title'],
+                'start': row['start_at'].isoformat(),
+                'end': row['end_at'].isoformat() if row['end_at'] else None,
+                'note': row['note']}
+
     def add(self, title: str, start: str, end: str | None = None, note: str = '') -> dict:
+        title = str(title).strip()
+        if not title:
+            raise ValueError('title required')
         start_at = self._stamp(start)
         end_at = self._stamp(end) if end else None
         if end_at and end_at <= start_at:
             raise ValueError('end must be after start')
-        item = {
-            'id': str(uuid4()), 'title': title, 'start': start_at.isoformat(),
-            'end': end_at.isoformat() if end_at else None, 'note': note,
-        }
-        with self.lock:
-            items = self._load()
-            items.append(item)
-            items.sort(key=lambda row: row['start'])
-            self._save(items)
-        return item
+        with self.db.session() as conn:
+            row = conn.execute("""INSERT INTO calendar_events(id,title,start_at,end_at,note)
+                VALUES (%s,%s,%s,%s,%s) RETURNING *""",
+                               (uuid4(), title, start_at, end_at, note)).fetchone()
+        return self._item(row)
 
     def list(self, start: str, end: str) -> list[dict]:
         start_at, end_at = self._stamp(start), self._stamp(end)
-        with self.lock:
-            items = self._load()
-        result = []
-        for item in items:
-            try:
-                item_start = self._stamp(item['start'])
-                item_end = self._stamp(item['end']) if item.get('end') else item_start
-            except (KeyError, TypeError, ValueError):
-                continue
-            if item_start < end_at and item_end >= start_at:
-                result.append(item)
-        return result[:30]
+        with self.db.session() as conn:
+            # 終了のない予定は開始時刻だけの点として扱う。calendar.json と同じ判定。
+            rows = conn.execute("""SELECT * FROM calendar_events
+                WHERE start_at < %s AND coalesce(end_at,start_at) >= %s
+                ORDER BY start_at LIMIT 30""", (end_at, start_at)).fetchall()
+        return [self._item(row) for row in rows]
 
     def remove(self, query: str, start: str | None = None, end: str | None = None) -> dict:
         needle = query.strip().lower()
@@ -85,26 +64,21 @@ class CalendarStore:
             return {'removed': False, 'error': '削除する予定の名前かIDが必要です。'}
         start_at = self._stamp(start) if start else None
         end_at = self._stamp(end) if end else None
-        with self.lock:
-            items = self._load()
-            matches = []
-            for item in items:
-                try:
-                    item_start = self._stamp(item['start'])
-                except (KeyError, TypeError, ValueError):
-                    continue
-                if start_at and item_start < start_at:
-                    continue
-                if end_at and item_start >= end_at:
-                    continue
-                if item.get('id') == query or needle in str(item.get('title', '')).lower():
-                    matches.append(item)
+        with self.db.session() as conn:
+            # 取り出しと削除を同じトランザクションで行い、間に増えた予定を消さない。
+            rows = conn.execute("""SELECT * FROM calendar_events
+                WHERE (%(start)s::timestamptz IS NULL OR start_at >= %(start)s)
+                  AND (%(end)s::timestamptz IS NULL OR start_at < %(end)s)
+                ORDER BY start_at""", {'start': start_at, 'end': end_at}).fetchall()
+            # IDはUUIDとは限らない文字列で来るため、突き合わせはPython側で行う。
+            matches = [row for row in rows
+                       if str(row['id']) == query or needle in str(row['title']).lower()]
             if len(matches) != 1:
-                return {'removed': False, 'matches': matches[:8],
+                return {'removed': False, 'matches': [self._item(row) for row in matches[:8]],
                         'error': '候補が1件に絞れませんでした。' if matches else '該当する予定がありません。'}
             target = matches[0]
-            self._save([item for item in items if item.get('id') != target.get('id')])
-        return {'removed': True, 'item': target}
+            conn.execute('DELETE FROM calendar_events WHERE id=%s', (target['id'],))
+        return {'removed': True, 'item': self._item(target)}
 
 
 class ReferenceLibrary:

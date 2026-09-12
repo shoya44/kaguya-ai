@@ -9,12 +9,12 @@ import logging
 import math
 import re
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Callable
 
 from ..tuning import (EMOTION_BASELINE, EMOTION_HALF_LIFE_HOURS, EMOTION_REACTION, EMOTION_THRESHOLD,
                       ENERGY_BY_HOUR, GROWTH_GROWING, GROWTH_GROWN, LOOP_CONCERN_AFTER, LOOP_DUE_HOUR,
                       LOOP_TODAY_AFTER, TRAIT_STABILITY, TRAIT_STANCE, TRAIT_VALENCE)
+from ..db import Database
 from .store import MindStore
 
 
@@ -74,9 +74,8 @@ def _due_at(word: str, now: datetime) -> datetime:
 
 
 class KaguyaMind:
-    def __init__(self, path: Path, enabled: Callable[[], bool]):
-        self.path = path
-        self.store = MindStore(path)
+    def __init__(self, db: Database, enabled: Callable[[], bool]):
+        self.store = MindStore(db)
         self._enabled = enabled
         self.last_error = ''
 
@@ -280,7 +279,7 @@ class KaguyaMind:
         try:
             self.store.reset()
             self.last_error = ''
-        except OSError as exc:
+        except Exception as exc:
             self.last_error = type(exc).__name__
             _log.warning('Kaguya Mind reset failed', exc_info=True)
             raise
@@ -317,5 +316,5 @@ class KaguyaMind:
             'growth': self._growth(stats),
             'stats': {**stats, 'open_loops': self.store.loop_stats()['open']},
             'shortcut_candidates': self.store.shortcut_candidates(5),
-            'db': self.path.name,
+            'store': 'PostgreSQL (mind_*)',
         }

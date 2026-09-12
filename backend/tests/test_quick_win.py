@@ -1,3 +1,4 @@
+import contextlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -5,6 +6,8 @@ from pathlib import Path
 from app import tools
 from app.personal_store import CalendarStore, ReferenceLibrary
 from app.runtime import Options
+
+import pgtemp
 
 
 class ToolRouterTests(unittest.TestCase):
@@ -29,9 +32,10 @@ class ToolRouterTests(unittest.TestCase):
 
 
 class LocalStoreTests(unittest.TestCase):
+    @unittest.skipUnless(pgtemp.available(), pgtemp.reason())
     def test_calendar_add_list_remove(self):
-        with tempfile.TemporaryDirectory() as temp:
-            store = CalendarStore(Path(temp))
+        with contextlib.closing(pgtemp.database()) as db:
+            store = CalendarStore(db)
             item = store.add('歯医者', '2026-09-12T15:00:00+09:00')
             rows = store.list('2026-09-12T00:00:00+09:00', '2026-09-13T00:00:00+09:00')
             self.assertEqual([row['title'] for row in rows], ['歯医者'])

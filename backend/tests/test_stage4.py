@@ -1,5 +1,5 @@
+import contextlib
 import json
-import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -17,21 +17,22 @@ from app.persona import memory_prompt
 from app.proactive import GREETINGS, JST, Proactive, time_slot
 from app.runtime import RuntimeStore
 
+import pgtemp
 
+
+@unittest.skipUnless(pgtemp.available(), pgtemp.reason())
 class LocalCase(unittest.TestCase):
     def setUp(self):
-        root = Path(__file__).resolve().parents[2] / '.test-output'
-        root.mkdir(exist_ok=True)
-        self.temp = tempfile.TemporaryDirectory(dir=root)
-        self.addCleanup(self.temp.cleanup)
-        self.store = RuntimeStore(Path(self.temp.name))
+        self.db = pgtemp.database()
+        self.addCleanup(self.db.close)
+        self.store = RuntimeStore(self.db)
         self.now = datetime(2026, 9, 11, 12, tzinfo=JST)
 
     def test_proactive_once_until_user_replies_even_after_restart(self):
         proactive = Proactive(self.store, self.now)
         self.assertIsNotNone(proactive.tick(True, False, self.now))
         self.assertIsNone(proactive.tick(True, False, self.now + timedelta(hours=2)))
-        restarted = Proactive(RuntimeStore(Path(self.temp.name)), self.now + timedelta(hours=3))
+        restarted = Proactive(RuntimeStore(self.db), self.now + timedelta(hours=3))
         self.assertIsNone(restarted.tick(True, False, self.now + timedelta(hours=3)))
         self.assertIsNotNone(proactive.activity(self.now + timedelta(minutes=10)))
         self.assertIsNone(proactive.tick(True, False, self.now + timedelta(minutes=69)))
@@ -87,12 +88,11 @@ class LocalCase(unittest.TestCase):
 
     def test_budget_persisted_before_call_and_resets_only_on_new_day(self):
         for _ in range(3): self.assertTrue(self.store.reserve_call('2026-09-11'))
-        restarted = RuntimeStore(Path(self.temp.name))
+        restarted = RuntimeStore(self.db)
         self.assertFalse(restarted.reserve_call('2026-09-11'))
         self.assertTrue(restarted.reserve_call('2026-09-12'))
         with self.assertRaises(ValidationError): self.store.update({'daily_call_limit': 11})
         with self.assertRaises(ValidationError): self.store.update({'quiet': 'false'})
-        self.assertFalse(list(Path(self.temp.name).glob('*.tmp')))
 
     def test_periods_use_japan_three_am_and_sunday(self):
         self.assertEqual(periods(datetime(2026, 9, 13, 2, 59, tzinfo=JST)), ('2026-09-12', '2026-09-06'))
@@ -119,10 +119,10 @@ class LocalCase(unittest.TestCase):
 
 class JobTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_generation_never_commits_or_auto_retries(self):
-        root = Path(__file__).resolve().parents[2] / '.test-output'
-        root.mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=root) as temp:
-            store = RuntimeStore(Path(temp))
+        if not pgtemp.available():
+            self.skipTest(pgtemp.reason())
+        with contextlib.closing(pgtemp.database()) as db:
+            store = RuntimeStore(db)
             memory = SimpleNamespace(call=AsyncMock(return_value={'raw': [{'status': 'completed'}], 'wisdom': []}))
             llm = SimpleNamespace(organize=AsyncMock(side_effect=ChatError('timeout', 'タイムアウト')))
             controller = SimpleNamespace(active=None, unsaved=None, editing=False, broadcast=AsyncMock())
@@ -135,10 +135,10 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('原文は保持', jobs.status)
 
     async def test_manual_run_also_stops_at_budget(self):
-        root = Path(__file__).resolve().parents[2] / '.test-output'
-        root.mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=root) as temp:
-            store = RuntimeStore(Path(temp))
+        if not pgtemp.available():
+            self.skipTest(pgtemp.reason())
+        with contextlib.closing(pgtemp.database()) as db:
+            store = RuntimeStore(db)
             from app.proactive import tokyo_now
             for _ in range(3): store.reserve_call(tokyo_now().date().isoformat())
             memory = SimpleNamespace(call=AsyncMock(return_value={'raw': [{'status': 'completed'}], 'wisdom': []}))

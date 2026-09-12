@@ -34,8 +34,15 @@ jobs:
       - name: install
         working-directory: backend
         run: python -m pip install -r requirements.txt
+      # 設定・予定・Mindの保存先がPostgreSQLになったので、テストも実物を使う。
+      # ランナーのPostgreSQLから使い捨てクラスタを1つ起動する（本番DBには触れない）。
+      # KAGUYA_REQUIRE_DB は、DBが無いまま全部skipされて緑になるのを防ぐ。両OSで
+      # 実際に起動することを確認済み（Windowsは管理者で動くため、pgtemp側で
+      # initdbの制限トークン対策をしている）。
       - name: unittest
         working-directory: backend
+        env:
+          KAGUYA_REQUIRE_DB: '1'
         run: python -B -m unittest discover -s tests
 
   frontend:
