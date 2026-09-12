@@ -13,7 +13,7 @@ export class PCPanel {
 
   private status(text: string): void { document.getElementById('pc-status')!.textContent = text; }
 
-  private static duration(value: unknown): string {
+  static duration(value: unknown): string {
     const total = Math.round(Number(value));
     if (!Number.isFinite(total) || total <= 0) return '';
     const pad = (n: number) => String(n).padStart(2, '0');
