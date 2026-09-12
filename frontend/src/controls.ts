@@ -62,6 +62,7 @@ export class Controls {
           proactive_minutes: Number(form.get('proactive_minutes')), daily_call_limit: Number(form.get('daily_call_limit')),
           reply_tokens: Number(form.get('reply_tokens')), font_size: Number(form.get('font_size')),
           voice_name: String(form.get('voice_name') || ''),
+          voice_style: String(form.get('voice_style') || ''),
         };
         const result = await this.api('/settings', { method: 'PATCH', body: JSON.stringify(options) });
         await this.applyOptions(result.options);
