@@ -21,6 +21,7 @@
         <nav aria-label="画面切替">
           <button data-panel="chat" aria-pressed="true">会話</button>
           <button data-panel="memories">記憶</button>
+          <button data-panel="pc">PC</button>
           <button data-panel="settings">設定</button>
         </nav>
         <div class="button-row">
@@ -39,6 +40,14 @@
         <div id="history"></div>
         <button id="latest-btn" type="button" hidden>新しい返答 ↓</button>
         <div id="error" class="error" hidden></div>
+        <details id="voice-panel">
+          <summary>音声で話す</summary>
+          <p class="hint">マイク音声をGeminiへ送信します（従量課金）。1回最大10分。字幕を会話履歴へ保存します。画面を閉じると終了します。</p>
+          <button id="voice-toggle" type="button">音声通話を開始</button>
+          <p id="voice-status" role="status"></p>
+          <p>あなた：<span id="voice-user"></span></p>
+          <p>かぐや：<span id="voice-answer"></span></p>
+        </details>
         <form id="input-form">
           <textarea id="text-input" rows="2" maxlength="2000" aria-label="かぐやへのメッセージ" placeholder="かぐやに話しかける"></textarea>
           <button type="submit" id="send-btn" aria-label="送信">送信</button>
@@ -70,7 +79,7 @@
         <p>起動・最後の会話から5分以上空くと、未整理の会話を少量ずつ整理します。確認間隔は15分、APIは1日上限内です。会話が来た場合は整理を中断します。</p>
         <button id="organize-btn">今すぐ整理</button>
         <p id="job-status" role="status"></p><p id="model-info"></p>
-        <p class="hint">自動整理が有効な場合、処理済みで7日を過ぎた元の会話は削除されます。知恵は残ります。音声入出力は未実装です。</p>
+        <p class="hint">自動整理が有効な場合、処理済みで7日を過ぎた元の会話は削除されます。知恵は残ります。音声会話は「会話」画面から利用できます。</p>
       </section>
       <section id="memories-panel" class="panel" hidden>
         <h1>あなたについて覚えていること</h1>
@@ -87,6 +96,23 @@
         <div class="button-row"><button id="memory-prev" disabled>前へ</button><span id="memory-page"></span><button id="memory-next" disabled>次へ</button></div>
       </section>
       <section id="help-panel" class="panel" hidden><iframe title="かぐやAI 操作マニュアル" src="/manual.html"></iframe></section>
+      <section id="pc-panel" class="panel" hidden>
+        <h1>PCの動画・登録した操作</h1>
+        <p id="pc-status" role="status"></p>
+        <form id="pc-filter" class="button-row">
+          <input id="pc-search" maxlength="200" placeholder="動画名で検索" aria-label="動画を検索">
+          <button type="submit">表示・更新</button>
+        </form>
+        <h2>動画</h2>
+        <p id="pc-now-playing"></p>
+        <video id="pc-video" controls playsinline preload="metadata" hidden></video>
+        <div id="pc-videos"></div>
+        <div class="button-row"><button id="pc-prev" disabled>前へ</button><button id="pc-next" disabled>次へ</button></div>
+        <h2>登録したBAT</h2>
+        <p class="hint">PC側の連携設定で登録したBATだけを実行できます。チャットからの依頼も、実行前にここで確認します。</p>
+        <div id="pc-commands"></div>
+        <h2>今回の実行状況</h2><ul id="pc-jobs"></ul>
+      </section>
     </div>
     <dialog id="memory-dialog">
       <h2 id="dialog-title"></h2><p id="dialog-description"></p>

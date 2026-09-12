@@ -8,7 +8,7 @@ from .mood import Mood
 from .tuning import FACE_REFRESH_TICKS
 from .proactive import Proactive, tokyo_now
 from .jobs import Jobs
-from . import relationship, tools
+from . import pc, relationship, tools
 
 
 class Controller:
@@ -27,6 +27,7 @@ class Controller:
         self.cancel_requested = False
         self.unsaved = None
         self.editing = False
+        self.voice_active = False
         self.runtime = runtime
         # Optional experimental dependency. Core chat never imports Mind internals.
         self.mind = mind
@@ -139,7 +140,7 @@ class Controller:
 
     async def send(self, turn: dict, emit):
         if self.editing:
-            await emit(ChatError('busy', '記憶の変更完了を待ってください。').event(turn['turn_id']))
+            await emit(ChatError('busy', '音声通話を終了してから送信してください。' if self.voice_active else '記憶の変更完了を待ってください。').event(turn['turn_id']))
             return
         if self.active:
             if turn['turn_id'] == self.active['turn_id']:
@@ -208,7 +209,15 @@ class Controller:
                 raise asyncio.CancelledError
             self.phase = 'generating'
             await self.broadcast(self.state())
-            answer = await tools.direct_reply(turn['text'], self.memory)
+            # PC操作は任意パス/任意コマンドを実行せず、PCタブへ安全に引き渡す。
+            # BATは既存の prepare -> ユーザー確認 -> run を必ず通る。
+            pc_action = pc.chat_action(turn['text'])
+            if pc_action:
+                await self.broadcast({'type': 'pc.open', 'target_client_id': str(turn['client_id']),
+                                      **pc_action['event']})
+                answer = pc_action['reply']
+            else:
+                answer = await tools.direct_reply(turn['text'], self.memory)
             if answer is None:
                 context = await self.memory.context()
                 hint = ' '.join(row['text'] for row in context[-2:])[:2000]

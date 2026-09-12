@@ -1,7 +1,7 @@
 # かぐやAI
 
-Windows PCを母艦にして、PCまたは同じ家庭内Wi-FiのiPhoneから使う個人用AIキャラクターです。
-日常の雑談・相談を中心に、長期記憶、リマインダー、簡易カレンダー、天気、参照ファイル検索、自分自身の仕様確認、軽い生活・感情演出を備えています。
+Windows PCを母艦にして、PC・家庭内Wi-FiのiPhone・Tailscale経由の外出先iPhoneから使う個人用AIキャラクターです。
+日常の雑談・相談を中心に、長期記憶、リマインダー、簡易カレンダー、天気、参照ファイル検索、自分自身の仕様確認、Gemini Liveによる音声会話、PC内動画の再生・登録済みBATの実行、軽い生活・感情演出を備えています。
 
 安定性と低トークン消費を優先しています。通常の雑談では不要なFunction Calling定義をGeminiへ送りません。天気のようにローカルで意図を確定できる処理はGeminiを経由しません。
 
@@ -24,6 +24,11 @@ Windows PCを母艦にして、PCまたは同じ家庭内Wi-FiのiPhoneから使
 - PC版の通常表示 / 簡易表示
 - `kaguya.bat` からの更新（ダブルクリックでメニュー）
 - 同一LAN内のiPhoneブラウザからの利用
+- Tailscale Serveによる、本人のTailscale環境からのプライベートHTTPSアクセス（Funnel不使用）
+- Gemini Liveによる双方向の音声会話（字幕を会話履歴へ保存、音声データ自体は保存しない）
+- PCタブから、登録したフォルダ内のMP4動画を検索・再生
+- PCタブから、事前登録したBATを確認付きで実行
+- 通常チャットから「○○の動画を再生して」「○○を実行して」と頼むと、依頼した端末のPCタブへ引き継ぎ（BATは必ず実行前確認）
 - Living Kaguya（生活状態、軽い感情、低負荷モーション、利用時間帯の学習）
 - Kaguya Mind（実験機能・既定OFF。かぐや自身の感情・好み・未完の話題をローカルに育てる）
 - 記憶画面の「かぐやの心」で、Mindの保存内容を日本語の項目名で閲覧・検索
@@ -115,6 +120,7 @@ Gemini APIは以下の方針です。
 | WebView2 Runtime | PC画面 |
 | PostgreSQL | 会話・長期記憶 |
 | Git | 更新（`kaguya.bat update`） |
+| Tailscale（任意） | 外出先からのプライベートHTTPS利用、iPhoneでの音声会話 |
 
 Python 3.13系でも、requirementsが正常にインストールできれば利用できます。
 
@@ -141,6 +147,7 @@ copy .env.example .env
 ```ini
 GEMINI_API_KEY=...
 GEMINI_MODEL=利用するGeminiモデル名
+GEMINI_LIVE_MODEL=gemini-3.1-flash-live-preview
 DATABASE_URL=postgresql://kaguya:<password>@127.0.0.1:5432/kaguya_ai
 ```
 
@@ -189,7 +196,7 @@ C:\kaguya-ai\start.bat
 
 ## 画面
 
-初期画面は「会話」です。「記憶」「設定」は補助画面で、「使い方」は設定画面の中にあります。
+初期画面は「会話」です。「記憶」「PC」「設定」は補助画面で、「使い方」は設定画面の中にあります。
 
 ## 会話
 
@@ -205,6 +212,21 @@ C:\kaguya-ai\start.bat
 - 同時生成は1件
 - 失敗した会話は「再送する」
 - 回答生成済みで保存だけ失敗した場合は「保存のみ再試行」
+
+## 音声会話
+
+「会話」画面の「音声で話す」から、Gemini Liveと双方向に音声会話できます。
+
+- 1回最大10分
+- マイク音声は16kHz PCMとしてGemini Liveへ送信し、返答音声をその場で再生
+- かぐやの返答中に話しかけると、再生を止めて割り込めます
+- ユーザー発話と、かぐやの返答の字幕を通常の会話履歴へ保存します
+- **音声データ自体は保存しません**
+- 通常の長期記憶・Relationship Memory・Kaguya Mindの文脈を会話開始時に参照します
+- 音声通話中は文字チャットを同時実行できません
+- 音声通話から天気・予定・BAT等の外部操作は実行しません
+- PC/Tauri、またはTailscaleのHTTPS接続で利用します。同一LANのHTTP接続ではブラウザのマイク制約により利用できません
+- Gemini Liveの利用量はGemini API側の課金・利用枠に従います
 
 ## 進捗と接続状態
 
@@ -227,39 +249,117 @@ PC版では「簡易表示に切り替え」でキャラクター中心の小型
 
 # iPhoneから使う
 
-PCとかぐやAIを起動した状態で、iPhoneを同じWi-Fiへ接続します。
+PCとかぐやAIを起動した状態で利用します。iPhoneはPC側と同じFastAPI・Gemini・PostgreSQLを使い、別アプリや別DBは作りません。
+
+## 家庭内Wi-Fi
+
+PCとiPhoneを同じWi-Fiへ接続し、Safariで開きます。
 
 ```text
 http://<PCのLAN IP>:8765/
 ```
 
-iPhoneはPC側と同じFastAPI・Gemini・PostgreSQLを使います。
-別のiPhoneアプリや別DBではありません。
+文字チャット、記憶、天気、カレンダー、リマインダー、参照ファイル、Living Kaguya、PCタブを利用できます。
+HTTP接続のため、**iPhoneの音声会話は利用できません**。
 
-利用可能：
+## 外出先から使う（Tailscale）
+
+Tailscale Serveを使い、インターネットへ公開せずに本人のTailnet内だけでHTTPSアクセスできます。**Tailscale Funnelは使いません。**
+
+PC側でリポジトリ直下の `pc_setup.bat` を実行します。
+
+```text
+C:\kaguya-ai\pc_setup.bat
+```
+
+- `1` でTailscaleをインストール（未導入時）
+- `2` でTailscaleへログインし、HTTPS Serveを設定
+- 表示された `https://<PC名>.<tailnet名>.ts.net` を控える
+- iPhoneにもTailscaleを入れ、同じアカウントへログイン
+- Safariで上記HTTPS URLを開く
+
+`pc_setup.bat` は `backend/pc_access.json` に、許可するTailscaleのHTTPS Originとログイン名を保存します。
+アクセス時はTailscale Serveが付与するログイン情報と照合し、PC本体または設定済み本人のTailscale接続だけを許可します。
+
+既に別用途でTailscale Serveが設定されている場合は、既存設定を上書きせず終了します。内容を確認してから共存方法を決めてください。
+`6` を選ぶと、かぐや用の443番HTTPS Serveを停止し、ローカル利用はそのまま残します。
+
+## iPhoneで利用できる機能
 
 - 通常チャット（ストリーミング表示）
+- 音声会話（Tailscale HTTPS接続時）
 - 記憶
 - 天気
 - カレンダー
 - リマインダー（画面を開いている間）
 - 参照ファイル
 - 自分自身の仕様確認
+- PC内MP4動画の再生
+- 登録済みBATの確認・実行
 - Living Kaguya
 
 制約：
 
-- PCが終了/スリープ中は使えない
-- HTTPS未実装
-- Web Push未実装
-- PC更新ボタン・最前面設定はiPhoneには出さない
-- ホーム画面へ追加した場合もSafariのタブとして開きます。マニフェストの `display` は
-  `browser` のままです。iOSのスタンドアロン起動はHTTPS必須で、HTTP接続の本アプリでは
-  「HTTPS-Onlyが有効なHTTP URL」エラーになり起動できないためです
+- PCが終了・スリープ中、またはかぐやAIが停止中は使えません
+- 家庭内LANのiPhone接続はHTTPのままです
+- Web Pushは未実装です
+- PC更新ボタン・最前面設定はiPhoneには出しません
+- LANのHTTP URLをホーム画面へ追加してもSafariタブとして開きます。マニフェストの `display` は `browser` のままです
+- 音声会話を使う場合は、TailscaleのHTTPS URLから開いてください
 
 Living Kaguyaの表情はPC側のサーバが決めるため、PCとiPhoneで同じになります。
 最後に会った時刻と利用時間の学習も、どの端末で話した分も数えるので揃います。
 生活状態（読書・睡眠など）の見せ方だけが端末ごとです。
+
+---
+
+# PC連携（動画・BAT）
+
+「PC」タブから、PC内の許可した動画フォルダとBATだけを利用できます。
+任意のパスや任意のコマンドをブラウザから渡して実行する機能ではありません。
+
+## 初期設定
+
+リポジトリ直下の `pc_setup.bat` を実行します。
+
+```text
+C:\kaguya-ai\pc_setup.bat
+```
+
+- `3`：MP4動画を置いているフォルダを登録
+- `4`：信頼できるBATを1本登録
+- `5`：`backend/pc_access.json` をメモ帳で開き、登録内容を編集・削除
+
+`backend/pc_access.json` はGit管理対象外です。PC固有のパスやTailscaleログイン情報をリポジトリへコミットしません。
+
+## 動画
+
+- 登録済みフォルダ以下の `.mp4` だけを検索・再生します
+- シンボリックリンクやジャンクションを辿りません
+- 最大10,000ファイルまで走査し、一覧は30件ずつ表示します
+- 再生時に一時的な再生URLを発行し、元の任意ファイルパスは公開しません
+- 対応可否はブラウザ/WebViewのMP4コーデック対応にも依存します
+
+## BAT
+
+- `pc_setup.bat` で事前登録した `.bat` だけ実行できます
+- 実行前に表示名・説明・最大実行時間を表示し、ユーザー確認が必要です
+- ブラウザから任意の引数を渡すことはできません
+- 確認後にBATや登録設定が変更されていた場合は実行しません
+- 同時実行は1件です
+- 既定の時間上限は300秒で、設定値は5〜3,600秒の範囲です
+- 標準入力は無効です。`pause`、対話入力、管理者昇格を必要とするBATは登録しないでください
+- BAT終了後に別アプリを起動していた場合、その別アプリの処理完了までは保証しません
+
+## チャットから使う
+
+通常の文字チャットからも、明示的な動画/BAT依頼をPCタブへ引き継げます。
+
+- 「旅行の動画を再生して」→ 依頼した端末のPCタブを開き、動画名で検索します。候補が1件なら再生画面まで準備します
+- 「バックアップを実行して」→ 登録済みBAT名と一致すれば、そのBATの確認画面を開きます
+- BATはチャットだけでは実行されません。**表示名・説明・最大実行時間を確認してOKした後にだけ実行**します
+- 任意パスや任意引数は受け取りません。登録済み許可リストの範囲だけです
+- この引き継ぎ判定はローカルで行い、PC操作のためだけに追加のGemini Function Callingを使いません
 
 ---
 
@@ -448,6 +548,12 @@ READMEを確認してiPhone対応を教えて
 `.git`, `.venv`, `node_modules`, `target`, `dist` 等は走査しません。
 ソースコードを書き換えるFunction Callingはありません。
 
+## PC動画・BAT
+
+PC内動画の再生とBAT実行は、Function Callingで任意パスを操作する方式ではなく、`backend/pc_access.json` の明示的な許可リストを使う別機能です。
+安全のため、動画は登録フォルダ内のMP4、BATは事前登録済みファイルだけを対象にします。
+通常チャットからの依頼はサーバー側で保守的にローカル判定し、依頼元端末のPCタブを開くだけです。BATの実行そのものは従来どおり確認トークンを発行し、ブラウザで明示確認してから行います。
+
 ---
 
 # 記憶
@@ -510,11 +616,14 @@ READMEを確認してiPhone対応を教えて
 | ローカル予定 | PostgreSQL `calendar_events` |
 | Kaguya Mind（実験機能） | PostgreSQL `mind_*` |
 | 参照資料 | `%LOCALAPPDATA%\KaguyaAI\references` |
+| PC連携設定（動画フォルダ/BAT/Tailscale） | `backend/pc_access.json`（Git管理外） |
+| 音声会話の字幕 | 通常会話と同じPostgreSQL |
+| 音声データ | 保存しない |
 | Living状態（生活状態・利用時間の学習） | 各ブラウザ/WebViewのlocalStorage |
 | 更新ログ | `%LOCALAPPDATA%\KaguyaAI\update.log` |
 
-会話・設定・予定・MindのデータはPostgreSQLに集約しています。参照資料、接続設定、ログ、
-ブラウザ/WebView内の表示状態や書きかけは、それぞれのローカル保存先に残ります。
+会話・設定・予定・MindのデータはPostgreSQLに集約しています。音声会話は字幕だけを通常会話として保存し、マイク音声・返答音声そのものは保存しません。
+参照資料、PC連携設定、ログ、ブラウザ/WebView内の表示状態や書きかけは、それぞれのローカル保存先に残ります。
 
 以前のバージョンから更新した場合、`settings.json` / `calendar.json` / `mind.db` は
 初回起動時に自動でDBへ取り込まれ、`*.migrated` という名前で元の場所に残ります。
@@ -528,21 +637,28 @@ READMEを確認してiPhone対応を教えて
 ```text
 PC / iPhone Web UI
         |
-   HTTP / WebSocket
+ HTTP / WebSocket
+ or Tailscale Serve HTTPS
         |
       FastAPI
-   /      |       \
-Gemini  PostgreSQL  Local tools
-                   |- weather (Open-Meteo)
-                   |- calendar (PostgreSQL)
-                   |- references/
-                   |- project inspector
-                   |- Kaguya Mind (実験機能。OFF時は会話への寄与を停止、保存内容は閲覧可能)
+   /       |          \
+Gemini   PostgreSQL   Local tools
+ |                     |- weather (Open-Meteo)
+ |- Text chat           |- calendar (PostgreSQL)
+ |- Gemini Live voice   |- references/
+                        |- project inspector
+                        |- PC access (MP4 / registered BAT)
+                        |- Kaguya Mind
 
 PCのみ: Tauri
  |- tray / mini window
  |- backend child process
  |- explicit repository updater
+
+外出先: Tailscale Serve
+ |- HTTPS -> 127.0.0.1:8765
+ |- Tailscale user loginを照合
+ |- Funnelは使用しない
 ```
 
 主要技術：
@@ -552,18 +668,20 @@ PCのみ: Tauri
 - PostgreSQL / psycopg
 - TypeScript / Vite
 - Tauri / Rust
+- Tailscale Serve
 - Open-Meteo
 
 ---
 
 # リポジトリ直下のbat
 
-日常で使うのは2つだけです。
+通常の起動・終了は `start.bat` / `stop.bat`、PC連携の初期設定は `pc_setup.bat` を使います。
 
 | ファイル | 用途 |
 |---|---|
 | `start.bat` | 起動。DBマイグレーションとローカルビルドを行います |
 | `stop.bat` | 終了 |
+| `pc_setup.bat` | Tailscale、動画フォルダ、BATの連携設定 |
 | `kaguya.bat <command>` | 開発・保守 |
 
 `kaguya.bat` は**ダブルクリックするとメニューが出ます**。番号を選ぶだけで、コマンドを打つ必要はありません。
@@ -682,14 +800,38 @@ start.bat
 
 別のかぐやAI/uvicorn/開発サーバーが8765を使っていないか確認してください。
 
+## Tailscaleで開けない
+
+- PC側でかぐやAIとTailscaleが起動していることを確認してください
+- `pc_setup.bat` の `2` で表示されたHTTPS URLを使ってください
+- iPhoneが同じTailscaleアカウントへログインしていることを確認してください
+- 既にTailscale Serveを別用途で使っている場合、セットアップは既存設定を上書きしません
+- `backend/pc_access.json` の `tailscale_origin` / `tailscale_login` が現在のTailscale設定と一致していることを確認してください
+
+## 音声会話を開始できない
+
+- PC/TauriまたはTailscaleのHTTPS URLから開いてください。LANのHTTP URLではiPhoneのマイクを利用できません
+- ブラウザのマイク許可を確認してください
+- `GEMINI_API_KEY` と `GEMINI_LIVE_MODEL`、Gemini APIの利用枠を確認してください
+- 音声通話中は文字チャットを同時実行できません
+
+## PC動画・BATが使えない
+
+- `pc_setup.bat` で動画フォルダ/BATを登録してください
+- 動画はMP4のみです
+- BATはWindows上の実在する `.bat` だけを登録してください
+- 対話入力、`pause`、管理者昇格が必要なBATは対象外です
+- BAT実行前の確認後にファイル内容を変更した場合は、もう一度確認し直してください
+
 ---
 
 <!-- manual:end -->
 # 未実装・制約
 
-- iPhone接続のHTTPS化
+- 家庭内LANのiPhone接続はHTTPのまま（外出先/音声用のHTTPSはTailscale Serveで対応）
 - Web Push
-- 音声入出力
+- 音声通話からの天気・予定・PC操作などの外部ツール実行
+- MP4以外の動画形式のPCタブ再生
 - 配布用インストーラー
 - LLMによる自己ソース書き換え
 - 本格的な感情モデル / Fine-tuning

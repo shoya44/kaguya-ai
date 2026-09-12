@@ -310,6 +310,16 @@ input[type="checkbox"] {
   color: var(--muted);
 }
 
+#pc-video { width: 100%; max-height: 45vh; background: #000; }
+#pc-videos, #pc-commands { display: grid; gap: 10px; margin: 12px 0; }
+#pc-jobs, #pc-status, #pc-now-playing { overflow-wrap: anywhere; }
+#voice-panel { padding: 8px; border: 1px solid var(--accent); border-radius: 8px; }
+/* Low desktop windows (the default 420x640 size) cannot fit the expanded voice
+   panel plus the fixed input row. Let only the voice panel shrink/scroll so the
+   header, character and composer remain visible. Taller/mobile layouts are unchanged. */
+#voice-panel[open] { min-height: 0; overflow-y: auto; }
+#voice-panel p { margin: 6px 0; overflow-wrap: anywhere; }
+
 .mind-fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
