@@ -64,7 +64,7 @@ class JobPacingTests(unittest.TestCase):
         with temp:
             jobs = Jobs(None, None, store, None)
             now = tokyo_now()
-            for _ in range(store.options.daily_call_limit):
+            for _ in range(store.options.auto_call_limit):
                 store.reserve_call(now.date().isoformat())
             self.assertFalse(jobs.due(now))
 

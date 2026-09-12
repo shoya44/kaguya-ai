@@ -48,8 +48,8 @@ class SettingsMemoryApiTests(unittest.TestCase):
         self.assertTrue(reloaded.options.quiet)
         self.assertEqual(reloaded.options.reply_tokens, 768)
         # よく話した日に追いつけるよう上限は10まで許す。
-        self.assertEqual(self.client.patch('/settings', headers=self.headers, json={'daily_call_limit': 10}).status_code, 200)
-        self.assertEqual(self.client.patch('/settings', headers=self.headers, json={'daily_call_limit': 11}).status_code, 422)
+        self.assertEqual(self.client.patch('/settings', headers=self.headers, json={'auto_call_limit': 10}).status_code, 200)
+        self.assertEqual(self.client.patch('/settings', headers=self.headers, json={'auto_call_limit': 11}).status_code, 422)
         self.assertEqual(self.client.patch('/settings', headers=self.headers, json={'gemini_api_key': 'not-a-key'}).status_code, 422)
 
     def test_memory_mutation_requires_confirmation_and_idle_state(self):

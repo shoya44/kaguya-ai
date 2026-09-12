@@ -11,7 +11,7 @@ from pydantic import ValidationError
 
 from app.controller import Controller
 from app.errors import ChatError
-from app.jobs import Jobs, periods
+from app.jobs import MANUAL_BATCHES, Jobs, periods
 from app.proactive import tokyo_now
 from app.memory_store import validate_batch
 from app.persona import memory_prompt
@@ -87,6 +87,33 @@ class LocalCase(unittest.TestCase):
         self.assertIsNotNone(proactive.tick(True, False, self.now + timedelta(hours=1)))
         self.assertIsNone(proactive.tick(True, False, self.now + timedelta(hours=5)))
 
+    def test_auto_waits_until_enough_piles_up(self):
+        """1回の整理は最大60件を扱う。数件のために呼ぶと1件あたりの消費が跳ねる。"""
+        from app.jobs import Jobs
+        jobs = Jobs(SimpleNamespace(), SimpleNamespace(), self.store, SimpleNamespace())
+        now = tokyo_now()
+        few = {'pending': 5, 'oldest_pending': now.isoformat()}
+        self.assertFalse(jobs.worth_organizing(few))
+        self.assertTrue(jobs.worth_organizing({'pending': 30, 'oldest_pending': now.isoformat()}))
+        self.assertFalse(jobs.worth_organizing({'pending': 0, 'oldest_pending': None}))
+
+    def test_old_rows_are_organized_even_if_there_are_few(self):
+        """件数だけで待つと、あまり話さなかった週の数件が置き去りになる。"""
+        from app.jobs import Jobs
+        jobs = Jobs(SimpleNamespace(), SimpleNamespace(), self.store, SimpleNamespace())
+        old = (tokyo_now() - timedelta(hours=25)).isoformat()
+        self.assertTrue(jobs.worth_organizing({'pending': 3, 'oldest_pending': old}))
+
+    def test_manual_is_counted_but_never_blocked(self):
+        """手動は本人が押したもの。待たせないが、使った回数は数えておく。"""
+        day = '2026-09-11'
+        for _ in range(self.store.options.auto_call_limit):
+            self.assertTrue(self.store.reserve_call(day))
+        self.assertFalse(self.store.reserve_call(day), '自動は上限で止まる')
+        self.assertTrue(self.store.reserve_call(day, limited=False), '手動は止まらない')
+        self.assertEqual(self.store.data['ledger']['calls'],
+                         self.store.options.auto_call_limit + 1, '手動も数える')
+
     def test_failed_call_gives_the_budget_back(self):
         """使えなかった枠は戻す。
 
@@ -117,12 +144,12 @@ class LocalCase(unittest.TestCase):
         self.assertFalse(self.store.failing('2026-09-11'))
 
     def test_budget_persisted_before_call_and_resets_only_on_new_day(self):
-        for _ in range(self.store.options.daily_call_limit):
+        for _ in range(self.store.options.auto_call_limit):
             self.assertTrue(self.store.reserve_call('2026-09-11'))
         restarted = RuntimeStore(self.db)
         self.assertFalse(restarted.reserve_call('2026-09-11'))
         self.assertTrue(restarted.reserve_call('2026-09-12'))
-        with self.assertRaises(ValidationError): self.store.update({'daily_call_limit': 11})
+        with self.assertRaises(ValidationError): self.store.update({'auto_call_limit': 11})
         with self.assertRaises(ValidationError): self.store.update({'quiet': 'false'})
 
     def test_periods_use_japan_three_am_and_sunday(self):
@@ -175,22 +202,29 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(store.data['ledger']['calls'], 0)
             self.assertTrue(store.failing(tokyo_now().date().isoformat()))
 
-    async def test_manual_run_also_stops_at_budget(self):
+    async def test_manual_runs_even_after_the_automatic_budget_is_gone(self):
+        """自動の枠を使い切っていても、本人が押したなら動く。
+
+        上限は「勝手に使いすぎない」ためのもので、本人の操作を止める理由にはしない。
+        ただし1回押すたびに延々と呼び続けないよう、回数は区切る。
+        """
         if not pgtemp.available():
             self.skipTest(pgtemp.reason())
         with contextlib.closing(pgtemp.database()) as db:
             store = RuntimeStore(db)
-            from app.proactive import tokyo_now
             # 上限は設定値。既定を変えてもこのテストが意味を保つよう、値を読んで使い切る。
-            for _ in range(store.options.daily_call_limit):
+            for _ in range(store.options.auto_call_limit):
                 store.reserve_call(tokyo_now().date().isoformat())
+            self.assertFalse(store.reserve_call(tokyo_now().date().isoformat()))
             memory = SimpleNamespace(call=AsyncMock(return_value={'raw': [{'status': 'completed'}], 'wisdom': []}))
-            llm = SimpleNamespace(organize=AsyncMock())
+            llm = SimpleNamespace(organize=AsyncMock(return_value={'items': []}))
             controller = SimpleNamespace(active=None, unsaved=None, editing=False, broadcast=AsyncMock())
             jobs = Jobs(memory, llm, store, controller)
             await jobs.run(manual=True)
-            llm.organize.assert_not_called()
-            self.assertIn('上限', jobs.status)
+            llm.organize.assert_called()
+            self.assertLessEqual(llm.organize.await_count, MANUAL_BATCHES,
+                                 '1回押したぶんで区切る')
+            self.assertNotIn('上限', jobs.status)
 
 
 @unittest.skipUnless(pgtemp.available(), pgtemp.reason())

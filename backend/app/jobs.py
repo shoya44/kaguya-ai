@@ -9,6 +9,11 @@ from .proactive import tokyo_now
 
 # 自動整理1回で続けるバッチ数。会話が始まれば各バッチの先頭で中断する。
 AUTO_BATCHES = 3
+# 手動の「今すぐ整理」1回ぶん。これで足りなければもう一度押す。
+MANUAL_BATCHES = 5
+# 件数が下限に届かなくても、これだけ経った原文は整理する。少ししか話さなかった
+# 週の数件が、いつまでも知恵にならないのを避ける。
+ORGANIZE_MAX_WAIT = timedelta(hours=24)
 
 
 def periods(now):
@@ -38,8 +43,29 @@ class Jobs:
         # 「今すぐ整理」を押せば、手動はいつでも動く。
         if self.store.failing(day):
             return False
-        return used < self.store.options.daily_call_limit and (not last or
+        return used < self.store.options.auto_call_limit and (not last or
             now - datetime.fromisoformat(last) >= timedelta(minutes=15))
+
+    def worth_organizing(self, summary) -> bool:
+        """いま自動整理を始める価値があるか。
+
+        1回の整理は最大60件をまとめて扱うので、数件のために呼ぶと1件あたりの
+        API消費が跳ね上がる。ある程度たまるまで待つ。
+
+        ただし件数だけで待つと、あまり話さなかった週の数件が置き去りになる。
+        古くなったものは件数に関わらず整理する。
+        """
+        pending = int(summary.get('pending') or 0)
+        if not pending:
+            return False
+        if pending >= self.store.options.organize_min_rows:
+            return True
+        oldest = summary.get('oldest_pending')
+        if not oldest:
+            return False
+        if isinstance(oldest, str):
+            oldest = datetime.fromisoformat(oldest)
+        return tokyo_now() - oldest >= ORGANIZE_MAX_WAIT
 
     def weekly_due(self):
         return self.store.data['ledger'].get('weekly_done') != periods(tokyo_now())[1]
@@ -83,12 +109,17 @@ class Jobs:
             # 同じ自動処理を何度も繰り返さないため、試行日は先に記録する。
             self.store.record(daily_attempt=daily, weekly_attempt=weekly, job_attempt_at=now.isoformat())
             processed = 0
-            max_batches = max(1, self.store.options.daily_call_limit - int(weekly_due))
-            if not manual:
+            if manual:
+                # 手動は1日の上限で止めないが、1回押すたびに延々と呼び続けない。
+                # 足りなければもう一度押せばよい。押した瞬間に何十回も呼ぶ作りだと
+                # 押しづらくなる。
+                max_batches = MANUAL_BATCHES
+            else:
                 # 自動実行でも数回は続ける。1回だけだと、15分間隔・会話の切れ目という
                 # 条件と重なって1日あたり数十件しか進まない。各回の先頭で
                 # can_continue() を見るので、話しかけられた時点で止まる。
-                max_batches = min(max_batches, AUTO_BATCHES)
+                max_batches = max(1, min(AUTO_BATCHES,
+                                         self.store.options.auto_call_limit - int(weekly_due)))
             for _ in range(max_batches):
                 if not can_continue():
                     return
@@ -99,8 +130,8 @@ class Jobs:
                     break
                 if any(row['status'] != 'cancelled' for row in snap['raw']):
                     day = tokyo_now().date().isoformat()
-                    if not self.store.reserve_call(day):
-                        self.status = '本日の整理API上限に達しました。原文は保持しています。'
+                    if not self.store.reserve_call(day, limited=not manual):
+                        self.status = '本日の自動整理の上限に達しました。原文は保持しています。'
                         return
                     try:
                         result = await self.llm.organize(snap)
@@ -119,8 +150,8 @@ class Jobs:
                     return
                 if snap['wisdom'] and snap['persona']:
                     day = tokyo_now().date().isoformat()
-                    if not self.store.reserve_call(day):
-                        self.status = '知恵化は完了。接し方の更新は本日のAPI上限で保留中です。'
+                    if not self.store.reserve_call(day, limited=not manual):
+                        self.status = '知恵化は完了。接し方の更新は本日の自動整理の上限で保留中です。'
                         return
                     try:
                         result = await self.llm.update_persona(snap)

@@ -27,7 +27,11 @@ class Options(BaseModel):
     # 1回の整理で生の発言60件を処理する。既定8なら1日480件ぶん。既定3・30件では
     # よく話した日に追いつけず、反映待ちが数百件たまったまま上限に当たっていた。
     # 未整理の原文は消えず溜まるだけなので、上限は「その日の追いつきやすさ」で決める。
-    daily_call_limit: int = Field(default=8, ge=1, le=10)
+    # 自動整理だけの1日上限。手動の「今すぐ整理」は本人が押したものなので数えない。
+    auto_call_limit: int = Field(default=3, ge=1, le=10)
+    # 未処理がこの件数に届くまで、自動整理は動かない。1回の整理は最大60件を
+    # まとめて扱うので、少ない件数で呼ぶほど1件あたりのAPI消費が増える。
+    organize_min_rows: int = Field(default=30, ge=1, le=200)
     # Thinking-capable models consume this budget before writing the answer,
     # so the ceiling has to allow more than a plain reply would need.
     reply_tokens: int = Field(default=1024, ge=256, le=8192)
@@ -106,11 +110,16 @@ class RuntimeStore:
         with self.lock:
             self.save(ledger=self.data['ledger'] | changes)
 
-    def reserve_call(self, day: str):
+    def reserve_call(self, day: str, limited: bool = True):
+        """整理APIの枠を1つ引く。limited=False（手動）は上限で止めない。
+
+        手動は本人が押したものなので待たせない。ただし数えてはおく。
+        どれだけ使ったかが分からなくなると、あとで調べようがない。
+        """
         with self.lock:
             ledger = self.data['ledger']
             used = ledger.get('calls', 0) if ledger.get('call_day') == day else 0
-            if used >= self.options.daily_call_limit:
+            if limited and used >= self.options.auto_call_limit:
                 return False
             # 先に引いておく。落ちた場合も二重に使わないため。呼び出しが
             # 失敗したと分かった時点で release_call が戻す。

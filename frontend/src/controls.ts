@@ -126,7 +126,7 @@ export class Controls {
   async refreshSettings(): Promise<void> {
     const body = await this.api('/settings');
     await this.applyOptions(body.options);
-    document.getElementById('job-status')!.textContent = `${body.jobs.running ? '整理中' : body.jobs.last_status || body.jobs.status}（本日 ${body.jobs.calls_today}/${body.options.daily_call_limit} 回）`;
+    document.getElementById('job-status')!.textContent = `${body.jobs.running ? '整理中' : body.jobs.last_status || body.jobs.status}（本日 ${body.jobs.calls_today} 回／自動は ${body.options.auto_call_limit} 回まで）`;
     document.getElementById('model-info')!.textContent = `モデル：${body.model || '未設定'} ／ API設定：${body.configured ? 'あり' : 'なし'}`;
     (document.getElementById('organize-btn') as HTMLButtonElement).disabled = body.jobs.running;
     this.renderReminders(body.reminders ?? []);
