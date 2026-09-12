@@ -2,6 +2,8 @@
 import asyncio
 import base64
 import json
+import logging
+import re
 import time
 from contextlib import suppress
 from uuid import uuid4
@@ -16,6 +18,17 @@ from . import relationship, tts
 from .persona import memory_prompt
 from .proactive import tokyo_now
 from .tuning import VOICE_LANGUAGE
+
+_log = logging.getLogger(__name__)
+
+# 例外文にはURLごと入ることがあり、Live APIのURLにはAPIキーが載る。画面へ出す前に消す。
+_SECRET = re.compile(r'(?i)\b(key|token|authorization)=[^&\s\'"]+')
+
+
+def _reason(exc: BaseException) -> str:
+    """何が起きたかを画面で分かる形にする。種類だけでも原因の切り分けに足りる。"""
+    detail = _SECRET.sub(r'\1=***', str(exc)).replace('\n', ' ').strip()[:300]
+    return type(exc).__name__ + (f': {detail}' if detail else '')
 
 
 class Transcript:
@@ -203,12 +216,16 @@ async def handle(ws: WebSocket):
     except TimeoutError:
         with suppress(Exception):
             await ws.send_json({'type': 'error', 'message': '通話の時間上限または通信待ち時間を超えました。必要なら再開してください。'})
-    except Exception:
+    except Exception as exc:
+        # ここに落ちると原因が追えない。画面にも残し、ログにも出す。
+        _log.warning('voice session failed', exc_info=True)
         with suppress(Exception):
+            using = '読み上げ: PCのエンジン' if speech else (
+                f'読み上げ: Gemini（声: {controller.runtime.options.voice_name} / 言語: {VOICE_LANGUAGE}）')
             await ws.send_json({'type': 'error', 'message':
-                '音声接続または保存に失敗しました。PCのAPI設定・利用枠・DBを確認して再開してください。'
-                f'（声: {controller.runtime.options.voice_name} / 言語: {VOICE_LANGUAGE}。'
-                '声の名前が無効だとここで失敗します。設定画面で別の名前を試してください）'})
+                f'音声を続けられませんでした：{_reason(exc)}'
+                f'（{using}）'
+                ' PCのAPI設定・利用枠・DB・読み上げエンジンの状態を確認して再開してください。'})
     finally:
         for task in tasks:
             task.cancel()
