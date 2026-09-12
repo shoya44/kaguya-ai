@@ -14,6 +14,7 @@ const compiled = ts.transpileModule(source, {
 class Element {
   constructor(tag) { this.tag = tag; this.children = []; this.handlers = {}; this.value = ''; }
   addEventListener(event, handler) { this.handlers[event] = handler; }
+  setAttribute(key, value) { this[key] = value; }
   append(...children) { this.children.push(...children); }
   replaceChildren() { this.children = []; this.textContent = ''; }
 }
@@ -84,6 +85,50 @@ test('empty Mind displays an empty state', async () => {
   await controls.refreshMemories();
   assert.equal(elements['memory-list'].textContent, '該当する記憶はありません。');
   assert.equal(elements['memory-next'].disabled, true);
+  assert.equal(elements['memory-page'].textContent, '0件');
+});
+
+test('loading clears stale cards and failed loads remain retryable without stale paging', async () => {
+  let reject;
+  const { controls, elements } = harness(() => new Promise((_, fail) => { reject = fail; }));
+  elements['memory-list'] = new Element('div');
+  elements['memory-list'].append(new Element('article'));
+  controls.nextOffset = 30;
+  const loading = controls.refreshMemories();
+  assert.equal(elements['memory-list'].children.length, 0);
+  assert.equal(elements['memory-list']['aria-busy'], 'true');
+  assert.equal(elements['memory-next'].disabled, true);
+  reject(new Error('offline'));
+  await assert.rejects(loading, /offline/);
+  assert.match(elements['memory-list'].textContent, /再試行/);
+  assert.equal(elements['memory-list']['aria-busy'], 'false');
+  controls.api = async () => ({ items: [], next_offset: null });
+  await controls.refreshMemories();
+  assert.equal(elements['memory-page'].textContent, '0件');
+});
+
+test('summary failure does not prevent browsing memories', async () => {
+  const { controls, elements } = harness(async () => ({ items: [], next_offset: null }));
+  controls.refreshSummary = async () => { throw new Error('summary unavailable'); };
+  await controls.refreshMemories();
+  assert.match(elements['memory-summary'].textContent, /取得できません/);
+  assert.equal(elements['memory-list'].textContent, '該当する記憶はありません。');
+});
+
+test('action buttons prevent duplicate requests and re-enable after failure', async () => {
+  const { controls } = harness(async () => ({}));
+  let calls = 0, reject, pending;
+  controls.perform = action => { pending = action().catch(() => {}); };
+  const button = controls.button('取り消す', () => {
+    calls += 1;
+    return new Promise((_, fail) => { reject = fail; });
+  });
+  button.handlers.click(); button.handlers.click();
+  assert.equal(calls, 1);
+  assert.equal(button.disabled, true);
+  reject(new Error('failed'));
+  await pending;
+  assert.equal(button.disabled, false);
 });
 
 test('older requests cannot replace the newly selected memory layer', async () => {

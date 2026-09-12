@@ -250,10 +250,32 @@ export class Controls {
     const layer = this.layer;
     const offset = this.offset;
     const q = (document.getElementById('memory-search') as HTMLInputElement).value;
-    await this.refreshSummary();
-    const body = await this.api(`/memories/${layer}?${new URLSearchParams({ q, offset: String(offset) })}`);
-    if (request !== this.memoryRequest) return;
     const list = document.getElementById('memory-list')!;
+    list.replaceChildren();
+    list.textContent = '記憶を読み込み中…';
+    list.setAttribute('aria-busy', 'true');
+    this.nextOffset = null;
+    (document.getElementById('memory-next') as HTMLButtonElement).disabled = true;
+    (document.getElementById('memory-prev') as HTMLButtonElement).disabled = true;
+    document.getElementById('memory-page')!.textContent = '';
+    // 概要の取得失敗だけで、個別の記憶まで閲覧不能にしない。
+    const summary = this.refreshSummary().catch(() => {
+      if (request === this.memoryRequest) {
+        document.getElementById('memory-summary')!.textContent = '記憶の整理状況を取得できませんでした。';
+      }
+    });
+    let body;
+    try {
+      body = await this.api(`/memories/${layer}?${new URLSearchParams({ q, offset: String(offset) })}`);
+      await summary;
+    } catch (error) {
+      if (request !== this.memoryRequest) return;
+      list.textContent = '記憶を取得できませんでした。「表示・更新」で再試行してください。';
+      throw error;
+    } finally {
+      if (request === this.memoryRequest) list.setAttribute('aria-busy', 'false');
+    }
+    if (request !== this.memoryRequest) return;
     list.replaceChildren();
     for (const row of body.items as Row[]) {
       const card = document.createElement('article'); card.className = 'memory-card';
@@ -321,7 +343,8 @@ export class Controls {
     this.nextOffset = body.next_offset;
     (document.getElementById('memory-next') as HTMLButtonElement).disabled = this.nextOffset === null;
     (document.getElementById('memory-prev') as HTMLButtonElement).disabled = this.offset === 0;
-    document.getElementById('memory-page')!.textContent = `${this.offset + 1}件目から表示`;
+    document.getElementById('memory-page')!.textContent = body.items.length
+      ? `${offset + 1}〜${offset + body.items.length}件目` : '0件';
   }
 
   async refreshSummary(): Promise<void> {
@@ -341,7 +364,14 @@ export class Controls {
 
   private button(label: string, action: () => Promise<void>): HTMLButtonElement {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = label;
-    button.addEventListener('click', () => this.perform(action)); return button;
+    button.addEventListener('click', () => {
+      if (button.disabled) return;
+      button.disabled = true;
+      this.perform(async () => {
+        try { await action(); } finally { button.disabled = false; }
+      });
+    });
+    return button;
   }
 
   private confirm(title: string, description: string, action: () => Promise<void>): void {
