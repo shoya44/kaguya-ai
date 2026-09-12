@@ -20,18 +20,8 @@ class Element {
   addEventListener(name, callback) { this.handlers[name] = callback; }
 }
 
-function harness(seed) {
-  // living.ts only resolves text-input when the submit handler runs, while the
-  // real page already contains both elements. Pre-create that real DOM shape
-  // so tests do not depend on lazy getElementById side effects.
-  const elements = {
-    'input-form': new Element(),
-    'text-input': new Element(),
-  };
-  const storage = new Map();
-  // 既に使ったことのある端末を再現する。新品の端末はlastSeenが「今」になるため、
-  // サーバ時刻との前後関係がテストごとにぶれる。
-  if (seed) storage.set('kaguya.life.v1', JSON.stringify(seed));
+function harness() {
+  const elements = { 'proactive-bubble': new Element() };
   const emitted = [];
   const timers = [];
   const docHandlers = {};
@@ -42,10 +32,6 @@ function harness(seed) {
   }
 
   const ctx = vm.createContext({
-    localStorage: {
-      getItem: key => storage.get(key) ?? null,
-      setItem: (key, value) => storage.set(key, value),
-    },
     document: {
       visibilityState: 'visible',
       getElementById: id => elements[id] ??= new Element(),
@@ -54,82 +40,84 @@ function harness(seed) {
     window: {
       addEventListener: (name, callback) => { winHandlers[name] = callback; },
       dispatchEvent: event => { emitted.push(event); return true; },
-      setInterval: () => 1,
       setTimeout: callback => { timers.push(callback); return timers.length; },
       clearTimeout: () => {},
     },
     CustomEvent: FakeCustomEvent,
-    Date, JSON, Math, Number, Set,
+    Date, JSON, Math, Number, String,
   });
 
   vm.runInContext(compiled, ctx);
-  return { elements, storage, emitted, timers, docHandlers, winHandlers };
+  return { elements, emitted, timers, docHandlers, winHandlers };
 }
 
-test('living module emits local state without network dependencies', () => {
+const last = h => h.emitted.at(-1).detail;
+
+test('画面を開いた時点で、いまの状態を1度だけ出す', () => {
   const h = harness();
-  assert.ok(h.emitted.some(event => event.type === 'kaguya-life'));
-  const detail = h.emitted.find(event => event.type === 'kaguya-life').detail;
-  assert.ok(['idle', 'reading', 'working', 'playing', 'snacking', 'daydreaming', 'sleeping'].includes(detail.activity));
-  assert.equal(typeof detail.energy, 'number');
+  assert.equal(h.emitted.length, 1);
+  assert.equal(h.emitted[0].type, 'kaguya-life');
+  assert.equal(last(h).activity, 'idle');
+  assert.equal(typeof last(h).energy, 'number');
 });
 
-test('sending marks the visit but does not decide the mood or count the turn', () => {
-  const h = harness();
-  const before = JSON.parse(h.storage.get('kaguya.life.v1') ?? 'null');
-  h.elements['text-input'].value = 'かぐや、かわいい。ありがとう';
-  h.elements['input-form'].handlers.submit();
-  const saved = JSON.parse(h.storage.get('kaguya.life.v1'));
-  // 回数と時間帯は会話が成立してから数える。表情と親密度はサーバ側が持つ。
-  assert.equal(saved.interactions, 0);
-  assert.equal(saved.hourCounts.reduce((sum, value) => sum + value, 0), 0);
-  assert.ok(!('mood' in saved));
-  assert.ok(!('affection' in saved));
-  assert.ok(before === null || saved.lastSeen >= before.lastSeen);
-});
-
-test('a conversation on any device counts once and keeps the visit fresh', () => {
-  const h = harness();
-  const at = Date.now();
-  h.winHandlers['kaguya-served']({ detail: { at, counted: true } });
-  const saved = JSON.parse(h.storage.get('kaguya.life.v1'));
-  assert.equal(saved.interactions, 1);
-  assert.equal(saved.hourCounts[new Date(at).getHours()], 1);
-  assert.equal(saved.lastSeen, at);
-});
-
-test('the server last-activity only refreshes the visit, it does not count a turn', () => {
-  const at = Date.now();
-  const h = harness({ lastSeen: at - 3600_000, interactions: 4, hourCounts: Array(24).fill(0) });
-  h.winHandlers['kaguya-served']({ detail: { at, counted: false } });
-  const saved = JSON.parse(h.storage.get('kaguya.life.v1'));
-  assert.equal(saved.interactions, 4);
-  assert.equal(saved.lastSeen, at);
-});
-
-test('an older timestamp never moves the visit backwards', () => {
-  const now = Date.now();
-  const h = harness({ lastSeen: now - 7200_000, interactions: 0, hourCounts: Array(24).fill(0) });
-  h.winHandlers['kaguya-served']({ detail: { at: now, counted: false } });
-  h.winHandlers['kaguya-served']({ detail: { at: now - 3600_000, counted: false } });
-  assert.equal(JSON.parse(h.storage.get('kaguya.life.v1')).lastSeen, now);
-});
-
-test('the mood comes from the server so every device shows the same face', () => {
+test('表情はサーバが決めるので、どの端末でも同じ顔になる', () => {
   const h = harness();
   h.winHandlers['kaguya-mood']({ detail: { mood: 'sulky' } });
-  assert.equal(h.emitted.at(-1).detail.mood, 'sulky');
+  assert.equal(last(h).mood, 'sulky');
 
   const before = h.emitted.length;
   h.winHandlers['kaguya-mood']({ detail: { mood: 'sulky' } });
   assert.equal(h.emitted.length, before, '同じ表情の再送では再描画しない');
 
   h.winHandlers['kaguya-mood']({ detail: { mood: 'unknown' } });
-  assert.equal(h.emitted.at(-1).detail.mood, 'sulky', '未知の値は無視する');
+  assert.equal(last(h).mood, 'sulky', '未知の値は無視する');
 });
 
-test('pagehide persists state without any server dependency', () => {
+test('活動と元気さもサーバが決める', () => {
+  const h = harness();
+  h.winHandlers['kaguya-living']({ detail: { activity: 'reading', energy: 41 } });
+  assert.equal(last(h).activity, 'reading');
+  assert.equal(last(h).energy, 41);
+});
+
+test('同じ活動が届いても描き直さない', () => {
+  const h = harness();
+  h.winHandlers['kaguya-living']({ detail: { activity: 'reading', energy: 41 } });
+  const before = h.emitted.length;
+  h.winHandlers['kaguya-living']({ detail: { activity: 'reading', energy: 41 } });
+  assert.equal(h.emitted.length, before);
+});
+
+test('知らない活動は無視して、いまの表示を保つ', () => {
+  const h = harness();
+  h.winHandlers['kaguya-living']({ detail: { activity: 'reading', energy: 50 } });
+  h.winHandlers['kaguya-living']({ detail: { activity: 'dancing', energy: 50 } });
+  assert.equal(last(h).activity, 'reading');
+});
+
+test('久しぶりに開いたときだけ、何をしていたかを一言だけ言う', () => {
+  const h = harness();
+  const old = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  h.winHandlers['kaguya-living']({ detail: { activity: 'reading', energy: 50, last_seen_at: old } });
+  h.winHandlers.pageshow();
+  assert.equal(h.elements['proactive-bubble'].hidden, false);
+  assert.match(h.elements['proactive-bubble'].textContent, /本読/);
+});
+
+test('すぐ戻ってきたときは黙っている', () => {
+  const h = harness();
+  const justNow = new Date().toISOString();
+  h.winHandlers['kaguya-living']({ detail: { activity: 'reading', energy: 50, last_seen_at: justNow } });
+  h.winHandlers.pageshow();
+  assert.equal(h.elements['proactive-bubble'].hidden, true);
+});
+
+test('端末に状態を溜めない（localStorageを使わない）', () => {
+  // ctx に localStorage を渡していないので、触れば ReferenceError で落ちる。
+  // 落ちずにここまで来ること自体が、端末側に状態を持たない証拠になる。
   const h = harness();
   h.winHandlers.pagehide();
-  assert.ok(h.storage.has('kaguya.life.v1'));
+  h.docHandlers.visibilitychange();
+  assert.ok(h.emitted.length >= 1);
 });

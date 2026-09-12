@@ -66,7 +66,8 @@ class Transcript:
             await c.broadcast(c.unsaved_event())
             raise
         c.unsaved = None
-        relationship.record_success(c.runtime, tokyo_now())
+        if c.living:
+            c.living.seen(tokyo_now(), counted=True)
         if c.mind and not interrupted:
             c.mind.after_reply(text, answer, tokyo_now())
         await c.broadcast({'type': 'chat.completed', 'turn_id': turn['turn_id'], 'text': text, 'answer': answer})
@@ -103,7 +104,7 @@ async def handle(ws: WebSocket):
         history = await controller.memory.context()
         hint = ' '.join(row['text'] for row in history[-2:])[:2000]
         recalled = await controller.memory.call('GET', '/recall', params={'text': hint or '会話', 'context': hint})
-        recalled['relationship'] = relationship.context(controller.runtime)
+        recalled['relationship'] = relationship.context(controller.living) if controller.living else {}
         if controller.mind:
             snapshot = controller.mind.snapshot(tokyo_now())
             if snapshot.get('enabled'):

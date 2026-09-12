@@ -10,14 +10,13 @@ from .proactive import Proactive, tokyo_now
 from .jobs import Jobs
 from . import pc, relationship, tools
 
-
 class Controller:
     """One active turn and at most one unsaved answer, owned by the process.
 
     Socket disconnects do not abort a turn. The same ID may be used to recover
     the result. Never automatically regenerate after an ambiguous save failure.
     """
-    def __init__(self, memory, llm, broadcast, runtime, mind=None):
+    def __init__(self, memory, llm, broadcast, runtime, mind=None, living=None):
         self.memory = memory
         self.llm = llm
         self.broadcast = broadcast
@@ -29,6 +28,8 @@ class Controller:
         self.editing = False
         self.voice_active = False
         self.runtime = runtime
+        # かぐやの「いまの状態」。端末ごとではなくここで決めて全端末へ配る。
+        self.living = living
         # Optional experimental dependency. Core chat never imports Mind internals.
         self.mind = mind
         # 表情は端末ではなくここで決める。MindがONならMind、OFFならこの簡易判定。
@@ -36,6 +37,7 @@ class Controller:
         self.mind_face = ''
         self.last_face = ''
         self.mood_ticks = 0
+        self.last_living = None
         self.proactive = Proactive(runtime)
         self.jobs = Jobs(memory, llm, runtime, self)
         self.presence = {}
@@ -55,6 +57,15 @@ class Controller:
     def face(self, now=None) -> str:
         """いま画面に出すべき表情。MindがONならMindの気分を優先する。"""
         return self.mind_face or self.mood.current(now or tokyo_now())
+
+    async def emit_living(self) -> None:
+        """活動・元気さを全端末へ配る。かぐやは1人なので、どの画面でも同じ行動になる。"""
+        if not self.living:
+            return
+        state = self.living.state(tokyo_now())
+        if state != self.last_living:
+            self.last_living = state
+            await self.broadcast({'type': 'living.changed', **state})
 
     async def emit_mood(self, refresh=False) -> None:
         """表情が変わったときだけ全端末へ配信する。PCとiPhoneで同じ顔になる。"""
@@ -81,6 +92,7 @@ class Controller:
                 # Mindの感情は半減期が長いので、読み直しは1分に1回でよい。
                 # 起動直後の1回目は読む（それまではOFF相当の簡易判定になるため）。
                 await self.emit_mood(refresh=self.mood_ticks % FACE_REFRESH_TICKS == 1)
+                await self.emit_living()
                 await self.deliver_reminders()
 
                 await self.maybe_organize()
@@ -221,7 +233,13 @@ class Controller:
             admitted = True
             await self.broadcast({'type': 'chat.accepted', 'turn_id': turn_id,
                                   'text': turn['text'], 'client_id': turn['client_id']})
-            relationship.capture_feedback(self.runtime, turn['text'], tokyo_now())
+            if self.living:
+                self.living.seen(tokyo_now(), counted=False)
+            hint = relationship.style_feedback(turn['text'])
+            if hint:
+                # 接し方と同じ場所へ残す。演出用なので、保存できなくても会話は続ける。
+                with suppress(ChatError):
+                    await self.memory.call('POST', '/persona/style', json={'value': hint})
             self.mood.react(turn['text'], tokyo_now())
             mind_context = self.mind.before_reply(turn['text'], tokyo_now()) if self.mind else {}
             await self.emit_mood(refresh=True)
@@ -248,7 +266,7 @@ class Controller:
                 context = await self.memory.context()
                 hint = ' '.join(row['text'] for row in context[-2:])[:2000]
                 recalled = await self.memory.call('GET', '/recall', params={'text': turn['text'], 'context': hint})
-                recalled['relationship'] = relationship.context(self.runtime)
+                recalled['relationship'] = relationship.context(self.living) if self.living else {}
                 if mind_context:
                     recalled['mind'] = mind_context
                 self.references = ([{'label': row['topic_key'], 'text': row['summary']}
@@ -270,7 +288,8 @@ class Controller:
                 await self.broadcast(self.unsaved_event())
                 return
             self.unsaved = None
-            relationship.record_success(self.runtime, tokyo_now())
+            if self.living:
+                self.living.seen(tokyo_now(), counted=True)
             if self.mind:
                 self.mind.after_reply(turn['text'], answer, tokyo_now())
             self.proactive.last_activity = tokyo_now()
@@ -326,7 +345,8 @@ class Controller:
             await self.broadcast(self.state())
             await self.memory.complete(turn_id, answer)
             self.unsaved = None
-            relationship.record_success(self.runtime, tokyo_now())
+            if self.living:
+                self.living.seen(tokyo_now(), counted=True)
             if self.mind:
                 self.mind.after_reply(turn['text'], answer, tokyo_now())
             await self.broadcast({'type': 'chat.completed', 'turn_id': turn_id,

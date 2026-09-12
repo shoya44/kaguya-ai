@@ -51,13 +51,13 @@ ORGANIZE_CHARS = 12000
 
 
 def snapshot(conn):
-    rows = conn.execute("""SELECT id,turn_id,content,status,revision,created_at FROM raw_memory
+    rows = conn.execute("""SELECT id,turn_id,content,status,revision,created_at FROM memory_short
         WHERE role='user' AND processed_at IS NULL AND status <> 'pending'
         ORDER BY created_at,id LIMIT %s""", (ORGANIZE_ROWS,)).fetchall()
     replies = {}
     if rows:
         replies = {row['turn_id']: row['content'] for row in conn.execute(
-            """SELECT turn_id,content FROM raw_memory WHERE role='assistant' AND turn_id=ANY(%s)""",
+            """SELECT turn_id,content FROM memory_short WHERE role='assistant' AND turn_id=ANY(%s)""",
             ([row['turn_id'] for row in rows],)).fetchall()}
     chosen, size = [], 0
     for row in rows:
@@ -67,7 +67,7 @@ def snapshot(conn):
             break
         chosen.append(row)
         size += cost
-    wisdom = conn.execute('SELECT * FROM wisdom ORDER BY updated_at DESC LIMIT 8').fetchall()
+    wisdom = conn.execute('SELECT * FROM memory_long ORDER BY updated_at DESC LIMIT 8').fetchall()
     # Bound the prompt, not the database. Missing update targets cause a conflict.
     return {'raw': chosen, 'wisdom': wisdom}
 
@@ -91,7 +91,7 @@ def commit_wisdom(conn, snap, batch):
     raw = {str(row['id']): row for row in snap['raw']}
     if not raw:
         return {'processed': 0, 'updated': 0}
-    actual = conn.execute('SELECT * FROM raw_memory WHERE id=ANY(%s) FOR UPDATE',
+    actual = conn.execute('SELECT * FROM memory_short WHERE id=ANY(%s) FOR UPDATE',
                           ([UUID(key) for key in raw],)).fetchall()
     if len(actual) != len(raw) or any(row['processed_at'] is not None or
             row['revision'] != raw[str(row['id'])]['revision'] or row['status'] == 'pending' or
@@ -100,7 +100,7 @@ def commit_wisdom(conn, snap, batch):
     revisions = {row['topic_key']: row['revision'] for row in snap['wisdom']}
     supported = set()
     for item in result.items:
-        old = conn.execute('SELECT * FROM wisdom WHERE topic_key=%s FOR UPDATE', (item.topic_key,)).fetchone()
+        old = conn.execute('SELECT * FROM memory_long WHERE topic_key=%s FOR UPDATE', (item.topic_key,)).fetchone()
         if (old and (old['revision'] != revisions.get(item.topic_key) or old['locked'])) or (
                 not old and item.topic_key in revisions):
             raise HTTPException(409, 'memory_changed')
@@ -117,15 +117,15 @@ def commit_wisdom(conn, snap, batch):
         last_seen = max(entry['date'] for entry in evidence.values()) + 'T00:00:00+09:00'
         value = (item.summary, item.kind, support, item.importance, Jsonb(list(evidence.values())))
         if old:
-            conn.execute('''UPDATE wisdom SET summary=%s,kind=%s,support_level=%s,importance=%s,evidence=%s,
+            conn.execute('''UPDATE memory_long SET summary=%s,kind=%s,support_level=%s,importance=%s,evidence=%s,
                 last_seen_at=%s,revision=revision+1,updated_at=now() WHERE id=%s''', (*value, last_seen, old['id']))
         else:
-            conn.execute('''INSERT INTO wisdom (id,topic_key,summary,kind,support_level,importance,evidence,last_seen_at)
+            conn.execute('''INSERT INTO memory_long (id,topic_key,summary,kind,support_level,importance,evidence,last_seen_at)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s)''', (uuid4(), item.topic_key, *value, last_seen))
     for row in actual:
         reason = 'cancelled' if row['status'] == 'cancelled' else (
             'wisdom' if str(row['id']) in supported else 'no_durable_fact')
-        conn.execute('''UPDATE raw_memory SET processed_at=now(),processing_reason=%s
+        conn.execute('''UPDATE memory_short SET processed_at=now(),processing_reason=%s
             WHERE turn_id=%s AND status <> 'pending' ''', (reason, row['turn_id']))
     return {'processed': len(actual), 'updated': len(result.items)}
 
@@ -146,7 +146,7 @@ def recall(conn, text, context=''):
     terms = primary + secondary
     patterns = ['%' + term + '%' for term in terms]
     current_patterns = ['%' + term + '%' for term in primary]
-    rows = conn.execute('''SELECT * FROM wisdom WHERE topic_key ILIKE ANY(%s) OR summary ILIKE ANY(%s)
+    rows = conn.execute('''SELECT * FROM memory_long WHERE topic_key ILIKE ANY(%s) OR summary ILIKE ANY(%s)
         ORDER BY (topic_key ILIKE ANY(%s) OR summary ILIKE ANY(%s)) DESC,
         updated_at DESC LIMIT 100''', (patterns, patterns, current_patterns, current_patterns)).fetchall() if patterns else []
 
@@ -162,23 +162,23 @@ def recall(conn, text, context=''):
     rows.sort(key=relevance, reverse=True)
     selected = rows[:5]
     if selected:
-        conn.execute('UPDATE wisdom SET last_used_at=now() WHERE id=ANY(%s)', ([row['id'] for row in selected],))
-    persona = conn.execute("SELECT * FROM persona ORDER BY key LIMIT 12").fetchall()
+        conn.execute('UPDATE memory_long SET last_used_at=now() WHERE id=ANY(%s)', ([row['id'] for row in selected],))
+    persona = conn.execute("SELECT * FROM persona_character ORDER BY key LIMIT 12").fetchall()
     return {'wisdom': selected, 'persona': persona}
 
 
 def summary(conn):
-    pending = conn.execute("""SELECT count(*) AS n FROM raw_memory
+    pending = conn.execute("""SELECT count(*) AS n FROM memory_short
         WHERE role='user' AND processed_at IS NULL AND status <> 'pending'""").fetchone()['n']
-    recent = conn.execute('''SELECT id,topic_key,summary,updated_at FROM wisdom
+    recent = conn.execute('''SELECT id,topic_key,summary,updated_at FROM memory_long
         ORDER BY updated_at DESC,id DESC LIMIT 5''').fetchall()
     return {'pending': pending, 'recent': recent}
 
 
 def weekly_snapshot(conn):
-    wisdom = conn.execute("SELECT * FROM wisdom WHERE kind='explicit' AND support_level='repeated' ORDER BY updated_at DESC LIMIT 50").fetchall()
+    wisdom = conn.execute("SELECT * FROM memory_long WHERE kind='explicit' AND support_level='repeated' ORDER BY updated_at DESC LIMIT 50").fetchall()
     wisdom = [row for row in wisdom if len({entry['date'] for entry in row['evidence']}) >= 3][:5]
-    persona = conn.execute('SELECT * FROM persona WHERE key=ANY(%s) AND NOT locked', (list(PERSONA_KEYS),)).fetchall()
+    persona = conn.execute('SELECT * FROM persona_character WHERE key=ANY(%s) AND NOT locked', (list(PERSONA_KEYS),)).fetchall()
     newest = max((row['updated_at'] for row in wisdom), default=None)
     if not newest or not any(row['updated_at'] < newest for row in persona):
         wisdom = []
@@ -194,14 +194,14 @@ def commit_persona(conn, snap, candidate):
         raise ValueError('insufficient evidence')
     lock(conn)
     for source in sources:
-        current = conn.execute('SELECT revision FROM wisdom WHERE id=%s', (UUID(source),)).fetchone()
+        current = conn.execute('SELECT revision FROM memory_long WHERE id=%s', (UUID(source),)).fetchone()
         if not current or current['revision'] != known[source]['revision']:
             raise HTTPException(409, 'memory_changed')
-    old = conn.execute('SELECT * FROM persona WHERE key=%s FOR UPDATE', (item.key,)).fetchone()
+    old = conn.execute('SELECT * FROM persona_character WHERE key=%s FOR UPDATE', (item.key,)).fetchone()
     expected = next((row for row in snap['persona'] if row['key'] == item.key), None)
     if not old or old['locked'] or not expected or old['revision'] != expected['revision']:
         raise HTTPException(409, 'memory_changed')
-    conn.execute('''UPDATE persona SET previous_value=value, previous_source_wisdom_ids=source_wisdom_ids,
+    conn.execute('''UPDATE persona_character SET previous_value=value, previous_source_wisdom_ids=source_wisdom_ids,
         value=%s,source_wisdom_ids=%s,revision=revision+1,updated_at=now() WHERE key=%s''',
                  (Jsonb(item.value), Jsonb(sources), item.key))
     return {'updated': 1}
@@ -212,24 +212,21 @@ def list_memories(conn, layer, query='', offset=0):
     # 全角・半角をNFKCで揃えてから部分一致で探す（「github」で「ＧｉｔＨｕｂ」が出る）。
     pattern = '%' + unicodedata.normalize('NFKC', query) + '%'
     if layer == 'raw':
-        rows = conn.execute('''SELECT * FROM raw_memory WHERE normalize(content, NFKC) ILIKE %s
+        rows = conn.execute('''SELECT * FROM memory_short WHERE normalize(content, NFKC) ILIKE %s
             ORDER BY created_at DESC,id DESC LIMIT 31 OFFSET %s''', (pattern, offset)).fetchall()
     elif layer == 'wisdom':
-        rows = conn.execute('''SELECT * FROM wisdom
+        rows = conn.execute('''SELECT * FROM memory_long
             WHERE normalize(summary, NFKC) ILIKE %s OR normalize(topic_key, NFKC) ILIKE %s
             ORDER BY updated_at DESC,id DESC LIMIT 31 OFFSET %s''', (pattern, pattern, offset)).fetchall()
     elif layer == 'persona':
-        rows = conn.execute('SELECT * FROM persona ORDER BY key LIMIT 31 OFFSET %s', (offset,)).fetchall()
+        rows = conn.execute('SELECT * FROM persona_character ORDER BY key LIMIT 31 OFFSET %s', (offset,)).fetchall()
     elif layer == 'mind':
-        # 固定の6テーブルのみ。初期値の作成・感情の減衰などは行わず保存値を読む。
+        # 固定の4テーブルのみ。初期値の作成・感情の減衰などは行わず保存値を読む。
         rows = conn.execute('''SELECT * FROM (
-            SELECT 'emotions' AS category, name AS title, to_jsonb(m) AS data FROM mind_emotions m
-            UNION ALL SELECT 'traits', name, to_jsonb(m) FROM mind_traits m
-            UNION ALL SELECT 'phrases', text, to_jsonb(m) FROM mind_phrases m
-            UNION ALL SELECT 'graph_edges', subject || ' / ' || relation || ' / ' || object,
-                to_jsonb(m) FROM mind_graph_edges m
-            UNION ALL SELECT 'open_loops', topic, to_jsonb(m) FROM mind_open_loops m
-            UNION ALL SELECT 'meta', key, to_jsonb(m) FROM mind_meta m
+            SELECT 'emotions' AS category, name AS title, to_jsonb(m) AS data FROM living_emotion m
+            UNION ALL SELECT 'traits', name, to_jsonb(m) FROM persona_favorite m
+            UNION ALL SELECT 'open_loops', topic, to_jsonb(m) FROM memory_concern m
+            UNION ALL SELECT 'activity', 'いまの状態', to_jsonb(m) FROM living_activity m
             ) AS mind WHERE normalize(data::text, NFKC) ILIKE %s
             ORDER BY category,title,data::text LIMIT 31 OFFSET %s''', (pattern, offset)).fetchall()
     else:
@@ -239,20 +236,20 @@ def list_memories(conn, layer, query='', offset=0):
 
 def impact(conn, layer, key):
     if layer == 'raw':
-        selected = conn.execute('SELECT * FROM raw_memory WHERE id=%s', (UUID(key),)).fetchone()
+        selected = conn.execute('SELECT * FROM memory_short WHERE id=%s', (UUID(key),)).fetchone()
     elif layer == 'wisdom':
-        selected = conn.execute('SELECT * FROM wisdom WHERE id=%s', (UUID(key),)).fetchone()
+        selected = conn.execute('SELECT * FROM memory_long WHERE id=%s', (UUID(key),)).fetchone()
     elif layer == 'persona' and key in PERSONA_KEYS:
-        selected = conn.execute('SELECT * FROM persona WHERE key=%s', (key,)).fetchone()
+        selected = conn.execute('SELECT * FROM persona_character WHERE key=%s', (key,)).fetchone()
     else:
         raise HTTPException(400, '固定性格は変更できません。')
     if not selected:
         raise HTTPException(404, '記憶が見つかりません。')
-    all_wisdom = conn.execute('SELECT * FROM wisdom').fetchall()
-    all_persona = conn.execute('SELECT * FROM persona').fetchall()
+    all_wisdom = conn.execute('SELECT * FROM memory_long').fetchall()
+    all_persona = conn.execute('SELECT * FROM persona_character').fetchall()
     raw_ids, wisdom_ids, persona_keys = set(), set(), set()
     if layer == 'raw':
-        paired = conn.execute('SELECT id FROM raw_memory WHERE turn_id=%s', (selected['turn_id'],)).fetchall()
+        paired = conn.execute('SELECT id FROM memory_short WHERE turn_id=%s', (selected['turn_id'],)).fetchall()
         raw_ids.update(str(row['id']) for row in paired)
     elif layer == 'wisdom':
         wisdom_ids.add(str(selected['id']))
@@ -270,10 +267,10 @@ def impact(conn, layer, key):
     for row in all_persona:
         if set(row['source_wisdom_ids'] + row['previous_source_wisdom_ids']) & wisdom_ids:
             persona_keys.add(row['key'])
-    turns = conn.execute('SELECT DISTINCT turn_id FROM raw_memory WHERE id=ANY(%s)',
+    turns = conn.execute('SELECT DISTINCT turn_id FROM memory_short WHERE id=ANY(%s)',
                          ([UUID(key) for key in raw_ids],)).fetchall() if raw_ids else []
     raw_turns = [row['turn_id'] for row in turns]
-    affected_raw = conn.execute('SELECT id,revision FROM raw_memory WHERE turn_id=ANY(%s)', (raw_turns,)).fetchall() if raw_turns else []
+    affected_raw = conn.execute('SELECT id,revision FROM memory_short WHERE turn_id=ANY(%s)', (raw_turns,)).fetchall() if raw_turns else []
     versions = {'selected': selected['revision'],
                 'raw': sorted((str(row['id']), row['revision']) for row in affected_raw),
                 'wisdom': sorted((str(row['id']), row['revision']) for row in all_wisdom if str(row['id']) in wisdom_ids),
@@ -298,26 +295,26 @@ def mutate(conn, layer, key, body, delete=False):
     for persona_key in affected['persona_keys']:
         if persona_key not in PERSONA_KEYS:
             continue
-        conn.execute('''UPDATE persona SET value=%s,source_wisdom_ids='[]',previous_value=NULL,
+        conn.execute('''UPDATE persona_character SET value=%s,source_wisdom_ids='[]',previous_value=NULL,
             previous_source_wisdom_ids='[]',revision=revision+1,updated_at=now()
             WHERE key=%s''', (Jsonb('現在のユーザーの要望を優先する。'), persona_key))
     if affected['wisdom_ids']:
-        conn.execute('DELETE FROM wisdom WHERE id=ANY(%s)', ([UUID(key) for key in affected['wisdom_ids']],))
+        conn.execute('DELETE FROM memory_long WHERE id=ANY(%s)', ([UUID(key) for key in affected['wisdom_ids']],))
     if affected['raw_turns']:
         if layer == 'raw' and not delete:
-            conn.execute("DELETE FROM raw_memory WHERE turn_id=ANY(%s) AND role='assistant'", (affected['raw_turns'],))
+            conn.execute("DELETE FROM memory_short WHERE turn_id=ANY(%s) AND role='assistant'", (affected['raw_turns'],))
         else:
-            conn.execute('DELETE FROM raw_memory WHERE turn_id=ANY(%s)', (affected['raw_turns'],))
+            conn.execute('DELETE FROM memory_short WHERE turn_id=ANY(%s)', (affected['raw_turns'],))
     if not delete:
         if layer == 'raw':
-            conn.execute("""UPDATE raw_memory SET content=%s,status='failed',processed_at=NULL,
+            conn.execute("""UPDATE memory_short SET content=%s,status='failed',processed_at=NULL,
                 processing_reason=NULL,revision=revision+1 WHERE id=%s""", (value, selected['id']))
         elif layer == 'wisdom':
-            conn.execute('''INSERT INTO wisdom (id,topic_key,summary,kind,support_level,importance,evidence,locked,revision,last_seen_at)
+            conn.execute('''INSERT INTO memory_long (id,topic_key,summary,kind,support_level,importance,evidence,locked,revision,last_seen_at)
                 VALUES (%s,%s,%s,'explicit','stated',%s,'[]',true,%s,now())''',
                          (selected['id'], selected['topic_key'], value, selected['importance'], selected['revision'] + 1))
         else:
-            conn.execute('''UPDATE persona SET value=%s,locked=%s,source_wisdom_ids='[]',
+            conn.execute('''UPDATE persona_character SET value=%s,locked=%s,source_wisdom_ids='[]',
                 previous_value=NULL,previous_source_wisdom_ids='[]',revision=revision+1,updated_at=now() WHERE key=%s''',
                          (Jsonb(value), body.get('locked', True), key))
     return {'ok': True}
@@ -327,10 +324,10 @@ def restore_persona(conn, key, revision):
     if key not in PERSONA_KEYS:
         raise HTTPException(400, '固定性格は変更できません。')
     lock(conn)
-    row = conn.execute('SELECT * FROM persona WHERE key=%s FOR UPDATE', (key,)).fetchone()
+    row = conn.execute('SELECT * FROM persona_character WHERE key=%s FOR UPDATE', (key,)).fetchone()
     if not row or row['revision'] != revision or row['previous_value'] is None:
         raise HTTPException(409, 'memory_changed')
-    conn.execute('''UPDATE persona SET value=previous_value,source_wisdom_ids=previous_source_wisdom_ids,
+    conn.execute('''UPDATE persona_character SET value=previous_value,source_wisdom_ids=previous_source_wisdom_ids,
         previous_value=NULL,previous_source_wisdom_ids='[]',locked=true,revision=revision+1,updated_at=now() WHERE key=%s''', (key,))
     return {'ok': True}
 
@@ -374,20 +371,38 @@ def remember(conn, topic_key, summary):
     自動更新で上書きされないよう locked を立てる（記憶タブから訂正・削除できる）。
     """
     lock(conn)
-    old = conn.execute('SELECT id FROM wisdom WHERE topic_key=%s FOR UPDATE', (topic_key,)).fetchone()
+    old = conn.execute('SELECT id FROM memory_long WHERE topic_key=%s FOR UPDATE', (topic_key,)).fetchone()
     if old:
-        conn.execute('''UPDATE wisdom SET summary=%s,kind='explicit',support_level='stated',locked=true,
+        conn.execute('''UPDATE memory_long SET summary=%s,kind='explicit',support_level='stated',locked=true,
             last_seen_at=now(),revision=revision+1,updated_at=now() WHERE id=%s''', (summary, old['id']))
     else:
-        conn.execute('''INSERT INTO wisdom (id,topic_key,summary,kind,support_level,importance,evidence,locked,last_seen_at)
+        conn.execute('''INSERT INTO memory_long (id,topic_key,summary,kind,support_level,importance,evidence,locked,last_seen_at)
             VALUES (%s,%s,%s,'explicit','stated',4,'[]',true,now())''', (uuid4(), topic_key, summary))
+    return {'ok': True}
+
+
+def set_style(conn, value):
+    """直近の話し方フィードバック。他の接し方と同じ表に置き、毎回プロンプトへ渡す。
+
+    自動更新（週次）の対象にしないよう locked を立てる。本人が言ったことなので、
+    推測から作られる接し方に上書きさせない。
+    """
+    text = str(value or '').strip()[:300]
+    if not text:
+        return {'ok': False}
+    lock(conn)
+    conn.execute('''INSERT INTO persona_character (key,value,locked)
+        VALUES ('style_feedback',%s,true)
+        ON CONFLICT (key) DO UPDATE SET previous_value=persona_character.value,
+            value=excluded.value, locked=true, revision=persona_character.revision+1,
+            updated_at=now()''', (Jsonb(text),))
     return {'ok': True}
 
 
 def cleanup(conn):
     lock(conn)
     # Keep complete pairs and never discard an unprocessed partner.
-    result = conn.execute("""DELETE FROM raw_memory WHERE turn_id IN (
-        SELECT turn_id FROM raw_memory GROUP BY turn_id
+    result = conn.execute("""DELETE FROM memory_short WHERE turn_id IN (
+        SELECT turn_id FROM memory_short GROUP BY turn_id
         HAVING bool_and(processed_at IS NOT NULL AND created_at < now()-interval '7 days'))""")
     return {'removed': result.rowcount}

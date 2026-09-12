@@ -31,22 +31,21 @@ class MindBrowseDatabaseTests(unittest.TestCase):
         self.addCleanup(db.close)
         with db.session() as conn:
             self.assertEqual(memory_store.list_memories(conn, 'mind')['items'], [])
-            conn.execute("INSERT INTO mind_emotions VALUES ('joy',50,now())")
-            conn.execute("INSERT INTO mind_traits VALUES ('coffee',0.8,0.7,3,now())")
-            conn.execute("INSERT INTO mind_phrases VALUES ('ＧｉｔＨｕｂ',2,now())")
-            conn.execute("INSERT INTO mind_graph_edges VALUES ('user','likes','coffee',0.8,now())")
-            conn.execute("INSERT INTO mind_open_loops VALUES ('exam','event','tomorrow',now(),now(),NULL,0,NULL)")
-            conn.execute("INSERT INTO mind_meta VALUES ('interactions','4',now())")
+            conn.execute("INSERT INTO living_emotion VALUES ('joy',50,now())")
+            conn.execute("INSERT INTO persona_favorite VALUES ('ＧｉｔＨｕｂ',0.8,0.7,3,now())")
+            conn.execute("INSERT INTO memory_concern VALUES ('exam','event','tomorrow',now(),now(),NULL,0,NULL)")
+            conn.execute('INSERT INTO living_activity(id) VALUES (true)')
             result = memory_store.list_memories(conn, 'mind')
             self.assertEqual({row['category'] for row in result['items']},
-                             {'emotions', 'traits', 'phrases', 'graph_edges', 'open_loops', 'meta'})
+                             {'emotions', 'traits', 'open_loops', 'activity'})
             self.assertIsNone(result['next_offset'])
             self.assertEqual(len(memory_store.list_memories(conn, 'mind', 'github')['items']), 1)
-            conn.execute("INSERT INTO mind_meta SELECT 'item-' || n, n::text, now() FROM generate_series(1,35) n")
+            conn.execute('''INSERT INTO living_emotion
+                SELECT 'item-' || n, n, now() FROM generate_series(1,38) n''')
             first = memory_store.list_memories(conn, 'mind')
             second = memory_store.list_memories(conn, 'mind', offset=first['next_offset'])
             self.assertEqual(len(first['items']), 30)
-            self.assertEqual(len(second['items']), 11)
+            self.assertEqual(len(second['items']), 12)
             self.assertIsNone(second['next_offset'])
-            self.assertEqual(conn.execute('SELECT asked,last_asked_at FROM mind_open_loops').fetchone(),
+            self.assertEqual(conn.execute('SELECT asked,last_asked_at FROM memory_concern').fetchone(),
                              {'asked': 0, 'last_asked_at': None})

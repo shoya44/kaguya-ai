@@ -210,6 +210,20 @@ C:\kaguya-ai\start.bat
 初期画面は「会話」です。「記憶」「PC」「設定」は補助画面で、「使い方」は設定画面の中にあります。
 設定画面に入力欄は置いていません。置いてあるのは「使い方」「予約した声かけ」「記憶の整理」だけです。
 
+### データベースの表
+
+`docs/memory_design.md` に定義があります。要約すると、かぐやが扱うデータは
+「誰についての情報か」で3系統に分かれます。
+
+| 系統 | 表 | 役割 |
+|---|---|---|
+| Memory | `memory_short` / `memory_long` / `memory_concern` | ユーザーを覚える（短期記憶・長期記憶・気がかり） |
+| Living | `living_emotion` / `living_activity` | かぐやの今の状態（感情・活動・元気さ） |
+| Persona | `persona_character` / `persona_favorite` | かぐやの性格（人格と接し方・好み） |
+
+このほかに `app_settings`（設定と整理の記録）、`calendar_events`、`reminders`、
+`schema_migrations`（当てたマイグレーションの記録）があります。
+
 ### 設定値の変え方
 
 静音・文字サイズ・声・読み上げエンジンなどの値は PostgreSQL の `app_settings` テーブル（`options` 行）にあります。
@@ -337,9 +351,9 @@ C:\kaguya-ai\pc_setup.bat
 - LANのHTTP URLをホーム画面へ追加してもSafariタブとして開きます。マニフェストの `display` は `browser` のままです
 - 音声会話を使う場合は、TailscaleのHTTPS URLから開いてください
 
-Living Kaguyaの表情はPC側のサーバが決めるため、PCとiPhoneで同じになります。
+Living Kaguyaの表情・活動・元気さはPC側のサーバが決めるため、PCとiPhoneで同じになります。
 最後に会った時刻と利用時間の学習も、どの端末で話した分も数えるので揃います。
-生活状態（読書・睡眠など）の見せ方だけが端末ごとです。
+端末ごとに違う判定は残っていません。
 
 ---
 
@@ -425,8 +439,9 @@ C:\kaguya-ai\pc_setup.bat
 PCで褒めればiPhone側のかぐやも同じ表情になります。Kaguya MindがONのときはMindの感情モデルが、
 OFFのときは会話の言葉と時刻だけの簡易判定が使われます。
 
-生活状態（読書・睡眠など）の見せ方は端末ごとです。最後に会った時刻と、よく会話する時間帯の学習は、
-どの端末で話した分も数えます。PCで話した直後にiPhoneを開いても「ちょっと寝てた」とは言いません。
+生活状態（読書・睡眠など）、元気さ、最後に会った時刻、よく会話する時間帯の学習は、
+すべてPC側の `living_activity` が持ちます。PCで話した直後にiPhoneを開いても「ちょっと寝てた」とは言いません。
+同じ状況なら同じ行動になります（乱数は使いません）。
 
 既存PNGにはCanvasの低負荷な上下・呼吸・傾きモーションを付けています。専用の `snack.png` や `sulky.png` 等は将来追加可能ですが、未配置ファイルは参照しません。
 
@@ -435,7 +450,7 @@ OFFのときは会話の言葉と時刻だけの簡易判定が使われます�
 # Kaguya Mind（実験機能）
 
 かぐや自身の感情・好み・気にかけていることを、少しずつローカルに育てる実験レイヤーです。
-**既定はOFF**で、既定値は `app_settings` の `options.mind_enabled` です（下記「設定値の変え方」）。
+**既定はON**です。切るときは `app_settings` の `options.mind_enabled` を false にします（下記「設定値の変え方」）。
 このチェックだけは切り替えた時点で反映されます（「設定を保存」は不要です）。
 
 追加のGemini/外部API呼び出しはありません。OFFのときは会話に伴うMindの読み書きを行わず、プロンプトにも何も足しません。
@@ -450,13 +465,14 @@ Kaguya Mindは既存機能とは別レイヤーですが、同じPostgreSQL内�
 | Memory（3層） | PostgreSQL | ユーザーについて覚えていること |
 | Relationship Memory | PostgreSQL `app_settings` | 慣れ・利用日数・話し方フィードバック |
 | かぐやの表情 | サーバ（メモリ上） | normal / happy / sleepy / sulky / worried / bored。全端末で共通 |
-| Living Kaguya | localStorage | 画面上の生活状態と、よく会話する時間帯（どの端末の会話も数える） |
-| Kaguya Mind | PostgreSQL `mind_*` | かぐや自身の感情・好み・未完の話題 |
+| かぐやの活動 | PostgreSQL `living_activity` | idle / reading / working / playing / snacking / daydreaming / sleeping。全端末で共通 |
+| Living Kaguya | PostgreSQL `living_activity` | 生活状態・元気さ・会った記録（全端末で共通） |
+| Kaguya Mind | PostgreSQL `living_emotion` / `persona_favorite` / `memory_concern` | かぐや自身の感情・好みと、ユーザーの気がかり |
 
 会話本体との接点は `before_reply` / `after_reply` の2箇所だけです。
 Mind内部で例外が起きても会話は止まらず、Mindの寄与だけが無くなります（fail-open）。
 Mindは同じDBでも接続を分けて使うため、Mind側の失敗は設定や会話のトランザクションに波及しません。
-`mind_*` テーブルを空にしても、会話・記憶・Relationship Memoryは影響を受けません。
+育ったものを空にしても、会話・記憶・関係性は影響を受けません。
 
 MindがONのときは、感情と時刻から求めたenergyをもとに、サーバが表情を決めて全端末へ配信します。
 気分の説明と表情は別の表示なので、眠そうな表情と「ご機嫌」の説明が同時に出ることはあります。
@@ -512,7 +528,7 @@ API未設定・失敗・時間切れのときは、これまでの定型文を�
 
 ## リセット
 
-`DELETE /mind` で `mind_*` テーブルを空にし、育ったものを最初からにできます。
+`DELETE /mind` で感情・好み・気がかりを空にし、育ったものを最初からにできます。
 会話・記憶（PostgreSQL）・かぐやの接し方・Relationship Memoryは消えません。
 
 ## 制約
@@ -648,12 +664,12 @@ PC内動画の再生とBAT実行は、Function Callingで任意パスを操作�
 | 会話/知恵/接し方/リマインダー | PostgreSQL |
 | 設定/整理回数 | PostgreSQL `app_settings` |
 | ローカル予定 | PostgreSQL `calendar_events` |
-| Kaguya Mind（実験機能） | PostgreSQL `mind_*` |
+| Kaguya Mind | PostgreSQL `living_emotion` / `persona_favorite` / `memory_concern` |
 | 参照資料 | `%LOCALAPPDATA%\KaguyaAI\references` |
 | PC連携設定（動画フォルダ/BAT/Tailscale） | `backend/pc_access.json`（Git管理外） |
 | 音声会話の字幕 | 通常会話と同じPostgreSQL |
 | 音声データ | 保存しない |
-| Living状態（生活状態・利用時間の学習） | 各ブラウザ/WebViewのlocalStorage |
+| Living状態（生活状態・利用時間の学習） | PostgreSQL `living_activity` |
 | 更新ログ | `%LOCALAPPDATA%\KaguyaAI\update.log` |
 
 会話・設定・予定・MindのデータはPostgreSQLに集約しています。音声会話は字幕だけを通常会話として保存し、マイク音声・返答音声そのものは保存しません。

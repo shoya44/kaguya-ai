@@ -20,7 +20,9 @@ from .memory_api import MemoryClient
 from .mind import KaguyaMind
 from .models import Turn
 from .db import Database
+from .living import LivingStore
 from .runtime import RuntimeStore
+from .jobs import periods
 from .proactive import tokyo_now
 
 settings = Settings()
@@ -66,7 +68,9 @@ async def lifespan(app: FastAPI):
     # while mind_enabled=False.
     mind = KaguyaMind(Database(settings.database_url.get_secret_value()),
                       lambda: runtime.options.mind_enabled)
-    controller = Controller(memory, llm, broadcast, runtime, mind=mind)
+    living = LivingStore(db)
+    app.state.living = living
+    controller = Controller(memory, llm, broadcast, runtime, mind=mind, living=living)
     app.state.controller = controller
     app.state.connections = connections
 
@@ -172,7 +176,10 @@ async def get_settings(request: Request, _client_id: UUID = Depends(require_sess
         reminders = []
     return {'options': controller.runtime.options.model_dump(),
             'jobs': {'running': controller.jobs.running, 'status': controller.jobs.status,
-                     'last_status': ledger.get('last_job_status', ''),
+                     # 前回の結果を出すのは、それがその日のものであるときだけ。
+                     # 上限に達した日の文言が翌日以降も残り続けるのを防ぐ。
+                     'last_status': (ledger.get('last_job_status', '')
+                                     if ledger.get('last_job_day') == periods(tokyo_now())[0] else ''),
                      'calls_today': ledger.get('calls', 0) if ledger.get('call_day') == tokyo_now().date().isoformat() else 0},
             'reminders': reminders,
             'mind': controller.mind.snapshot(tokyo_now()) if controller.mind else {'enabled': False, 'status': 'off'},
