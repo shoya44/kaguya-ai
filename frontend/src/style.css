@@ -543,6 +543,32 @@ input[type="checkbox"] {
   place-items: center;
 }
 
+/* 通話の音量。左に消音、右につまみ。通話中だけ出る（voice.tsが出し入れする）。
+   音量はPCとiPhoneで別々に持つので、この値は端末内だけに保存する。 */
+.voice-volume {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+}
+
+.voice-volume[data-muted="true"] #voice-mute {
+  color: var(--muted);
+}
+
+#voice-gain {
+  width: 92px;
+  height: 38px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+#voice-gain:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .composer-actions svg {
   width: 20px;
   height: 20px;

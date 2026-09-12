@@ -1,17 +1,31 @@
 type Session = { sessionToken: string };
 
+// 音量はこの端末だけのもの。PCのスピーカーとiPhoneでは同時に別の大きさが要る。
+// かぐやの気分や活動をサーバに置いたのは端末間で別人にならないためだが、
+// 音量はその逆で、端末ごとに違って当然のもの。
+const VOLUME_KEY = 'kaguya.voiceVolume';
+const MUTED_KEY = 'kaguya.voiceMuted';
+// 音量を変えた瞬間に値を飛ばすと、再生中の音がプツッと鳴る。短くならす。
+const VOLUME_RAMP = 0.015;
+
 export class VoiceChat {
   private context: AudioContext | null = null;
   private stream: MediaStream | null = null;
   private socket: WebSocket | null = null;
   private capture: AudioWorkletNode | null = null;
+  private gain: GainNode | null = null;
   private sources = new Set<AudioBufferSourceNode>();
   private nextAudio = 0;
   private maxLead = 10;
   private generation = 0;
   private active = false;
   private timer: number | undefined;
+  private volume = 1;
+  private muted = false;
   private button = document.getElementById('voice-toggle') as HTMLButtonElement;
+  private volumeBox = document.getElementById('voice-volume') as HTMLDivElement | null;
+  private slider = document.getElementById('voice-gain') as HTMLInputElement | null;
+  private muteButton = document.getElementById('voice-mute') as HTMLButtonElement | null;
 
   constructor(private base: string, private session: () => Promise<Session>, private onActive: (active: boolean) => void) {
     const blocked = VoiceChat.unavailable();
@@ -27,6 +41,64 @@ export class VoiceChat {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && this.active) this.stop('通話終了');
     });
+    this.setupVolume();
+  }
+
+  /** 端末に覚えた音量を読み、つまみと消音ボタンを繋ぐ。 */
+  private setupVolume(): void {
+    let stored: string | null = null;
+    let mutedStored: string | null = null;
+    try {
+      stored = localStorage.getItem(VOLUME_KEY);
+      mutedStored = localStorage.getItem(MUTED_KEY);
+    } catch { /* 読めなくても既定値で通話はできる */ }
+    const percent = Number(stored);
+    // 覚えた値が無い・壊れているときは、これまでと同じ音量（そのまま）にする。
+    this.volume = Number.isFinite(percent) && stored !== null
+      ? Math.min(1, Math.max(0, percent / 100)) : 1;
+    this.muted = mutedStored === '1';
+    if (this.slider) this.slider.value = String(Math.round(this.volume * 100));
+    this.showMuted();
+
+    this.slider?.addEventListener('input', () => {
+      this.volume = Math.min(1, Math.max(0, Number(this.slider!.value) / 100));
+      // つまみを動かしたなら消音は解除する。動かしても無音のままだと壊れて見える。
+      this.muted = false;
+      this.showMuted();
+      this.applyVolume();
+      this.remember();
+    });
+    this.muteButton?.addEventListener('click', () => {
+      this.muted = !this.muted;
+      this.showMuted();
+      this.applyVolume();
+      this.remember();
+    });
+  }
+
+  private level(): number {
+    return this.muted ? 0 : this.volume;
+  }
+
+  private applyVolume(): void {
+    const context = this.context;
+    if (!this.gain || !context) return;
+    this.gain.gain.setTargetAtTime(this.level(), context.currentTime, VOLUME_RAMP);
+  }
+
+  private showMuted(): void {
+    this.volumeBox?.setAttribute('data-muted', String(this.muted));
+    const text = this.muted ? '消音を解除する' : '消音する';
+    this.muteButton?.setAttribute('aria-label', text);
+    this.muteButton?.setAttribute('title', text);
+    this.muteButton?.setAttribute('aria-pressed', String(this.muted));
+  }
+
+  private remember(): void {
+    try {
+      localStorage.setItem(VOLUME_KEY, String(Math.round(this.volume * 100)));
+      localStorage.setItem(MUTED_KEY, this.muted ? '1' : '0');
+    } catch { /* 覚えられなくても通話は続けられる */ }
   }
 
   private status(text: string): void { document.getElementById('voice-status')!.textContent = text; }
@@ -56,6 +128,11 @@ export class VoiceChat {
       this.context = new AudioContext();
       await this.context.resume();
       if (generation !== this.generation) return;
+      // 届いた音声はすべてここを通してから出力へ送る。音量はここ1箇所で決まる。
+      this.gain = this.context.createGain();
+      this.gain.gain.value = this.level();
+      this.gain.connect(this.context.destination);
+      if (this.volumeBox) this.volumeBox.hidden = false;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: {
         channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true,
       }});
@@ -121,7 +198,7 @@ export class VoiceChat {
     const output = buffer.getChannelData(0);
     for (let i = 0; i < samples.length; i++) output[i] = samples[i] / 32768;
     const source = context.createBufferSource(); source.buffer = buffer;
-    source.connect(context.destination);
+    source.connect(this.gain ?? context.destination);
     this.sources.add(source);
     source.onended = () => this.sources.delete(source);
     this.nextAudio = Math.max(context.currentTime + 0.02, this.nextAudio);
@@ -141,6 +218,8 @@ export class VoiceChat {
     this.maxLead = 10;
     this.stream?.getTracks().forEach(track => track.stop()); this.stream = null;
     this.capture?.disconnect(); this.capture = null;
+    this.gain?.disconnect(); this.gain = null;
+    if (this.volumeBox) this.volumeBox.hidden = true;
     this.clearPlayback();
     if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: 'stop' }));
     this.socket?.close(); this.socket = null;
