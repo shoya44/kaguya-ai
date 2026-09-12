@@ -12,10 +12,11 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from migrate import SCRIPTS as UPGRADES, load_scripts
+
 ROOT = Path(__file__).resolve().parents[2]
 MIGRATIONS = ROOT / 'backend' / 'migrations'
-SCRIPTS = ('001_init.sql', '002_memory_jobs.sql', '003_reminders.sql', '004_local_state.sql',
-           '005_memory_redesign.sql', '006_emotion_counters.sql')
+SCRIPTS = ('001_init.sql', *UPGRADES)
 # 設定・予定・かぐや側の表。各テストの前に空へ戻す。会話側は使うテストが自分で消す。
 LOCAL_TABLES = ('app_settings', 'calendar_events', 'living_emotion', 'living_activity',
                 'persona_favorite', 'memory_concern')
@@ -95,18 +96,20 @@ def _boot() -> None:
     # 出力をパイプで受けてはいけない。起動したサーバーがそのパイプを握ったまま
     # 残るため、subprocess.run がEOFを待ち続けて返らなくなる。理由は -l のログを読む。
     log = temp / 'postgres.log'
-    startup = subprocess.run([pg_ctl, '-D', str(data), '-l', str(log), '-w', '-o', options, 'start'],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             timeout=60, creationflags=flags)
+    control_log = temp / 'pg_ctl.log'
+    with control_log.open('w', encoding='utf-8') as output:
+        startup = subprocess.run([pg_ctl, '-D', str(data), '-l', str(log), '-w', '-o', options, 'start'],
+                                 stdout=output, stderr=output, timeout=60, creationflags=flags)
     if startup.returncode:
         detail = log.read_text(encoding='utf-8', errors='replace') if log.exists() else ''
+        detail += control_log.read_text(encoding='utf-8', errors='replace')
         raise RuntimeError(f'pg_ctl start failed ({startup.returncode}): {detail}')
     atexit.register(subprocess.run, [pg_ctl, '-D', str(data), '-m', 'immediate', '-w', 'stop'],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
     dsn = f'host=127.0.0.1 port={port} user=tester dbname=postgres connect_timeout=5'
     with psycopg.connect(dsn, autocommit=True) as conn:
-        for name in SCRIPTS:
-            conn.execute((MIGRATIONS / name).read_text(encoding='utf-8'))
+        for sql in load_scripts(MIGRATIONS).values():
+            conn.execute(sql)
     _state['dsn'] = dsn
 
 
@@ -160,6 +163,7 @@ def staged(scripts):
         conn.execute(f'CREATE DATABASE {name}')
     target = dsn().replace('dbname=postgres', f'dbname={name}')
     with psycopg.connect(target, autocommit=True) as conn:
+        sections = load_scripts(MIGRATIONS)
         for item in scripts:
-            conn.execute((MIGRATIONS / item).read_text(encoding='utf-8'))
+            conn.execute(sections[item])
     return Database(target)

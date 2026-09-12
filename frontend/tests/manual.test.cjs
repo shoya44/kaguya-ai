@@ -100,6 +100,9 @@ test('Windows updater separates fetch errors from merge errors and protects edit
     fs.writeFileSync(path.join(dir, 'data.txt'), 'local edit');
     update(10);
     assert.equal(fs.readFileSync(path.join(dir, 'data.txt'), 'utf8'), 'local edit');
+    git(dir, 'add', 'data.txt');
+    update(10);
+    assert.equal(fs.readFileSync(path.join(dir, 'data.txt'), 'utf8'), 'local edit');
     git(dir, 'commit', '-am', 'local commit');
     fs.writeFileSync(path.join(upstream, 'data.txt'), 'divergent update');
     git(upstream, 'commit', '-am', 'divergent change');

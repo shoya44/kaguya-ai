@@ -5,6 +5,8 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 from uuid import uuid4
 
 import migrate
@@ -107,7 +109,7 @@ class RedesignMigrationTests(unittest.TestCase):
         self.addCleanup(self.db.close)
 
     def apply(self):
-        sql = (pgtemp.MIGRATIONS / '005_memory_redesign.sql').read_text(encoding='utf-8')
+        sql = migrate.load_scripts(pgtemp.MIGRATIONS)['005_memory_redesign.sql']
         with self.db.session() as conn:
             conn.execute(sql.replace('BEGIN;', '').replace('COMMIT;', ''))
 
@@ -176,18 +178,12 @@ class MigrationRunnerTests(unittest.TestCase):
         return db
 
     def run_twice(self, db):
-        for _ in range(2):
-            with db.session() as conn:
-                conn.execute('''CREATE TABLE IF NOT EXISTS schema_migrations (
-                    name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())''')
-                done = {row['name'] for row in conn.execute('SELECT name FROM schema_migrations').fetchall()}
-                exists = conn.execute("""SELECT coalesce(to_regclass('public.memory_short'),
-                    to_regclass('public.raw_memory')) AS name""").fetchone()['name']
-                root = pgtemp.MIGRATIONS
-                if not exists:
-                    migrate._run(conn, root, '001_init.sql', done)
-                for name in migrate.SCRIPTS:
-                    migrate._run(conn, root, name, done)
+        # 本番の設定・DBには触れず、起動時と同じ関数をそのまま検証する。
+        with tempfile.TemporaryDirectory() as temp:
+            with patch.object(migrate, 'Settings', return_value=SimpleNamespace(data_dir=Path(temp))), \
+                 patch.object(migrate, 'database_connection', side_effect=lambda _: db.session()):
+                for _ in range(2):
+                    migrate.migrate()
 
     def test_an_existing_install_migrates_once_and_stays_put(self):
         db = self.db_for(BEFORE_REDESIGN)
@@ -211,3 +207,40 @@ class MigrationRunnerTests(unittest.TestCase):
                 with self.subTest(name=name):
                     found = conn.execute(f"SELECT to_regclass('public.{name}') AS name").fetchone()['name']
                     self.assertIsNotNone(found)
+
+    def test_every_recorded_version_upgrades_without_replaying_applied_sections(self):
+        for count in range(1, len(pgtemp.SCRIPTS) + 1):
+            with self.subTest(version=count):
+                applied = pgtemp.SCRIPTS[:count]
+                db = self.db_for(applied)
+                old_table = 'raw_memory' if count < 5 else 'memory_short'
+                with db.session() as conn:
+                    conn.execute('''CREATE TABLE IF NOT EXISTS schema_migrations (
+                        name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())''')
+                    for name in applied:
+                        conn.execute('INSERT INTO schema_migrations(name) VALUES (%s) ON CONFLICT DO NOTHING', (name,))
+                    stamps = {row['name']: row['applied_at'] for row in
+                              conn.execute('SELECT * FROM schema_migrations').fetchall()}
+                    conn.execute(f'''INSERT INTO {old_table}
+                        (id,turn_id,role,content,status,origin_client_id,input_mode)
+                        VALUES (%s,%s,'user','残す会話','completed',%s,'text')''',
+                                 (uuid4(), uuid4(), uuid4()))
+                self.run_twice(db)
+                with db.session() as conn:
+                    after = {row['name']: row['applied_at'] for row in
+                             conn.execute('SELECT * FROM schema_migrations').fetchall()}
+                    self.assertEqual(set(after), set(pgtemp.SCRIPTS))
+                    self.assertEqual({name: after[name] for name in stamps}, stamps)
+                    self.assertEqual(conn.execute('SELECT content FROM memory_short').fetchone()['content'],
+                                     '残す会話')
+
+    def test_whole_sql_on_a_fresh_database_can_then_use_the_normal_runner(self):
+        db = self.db_for(())
+        with db.session() as conn:
+            # SQL単体を空DBに適用した場合も、次の起動で改名を再実行しない。
+            sql = (pgtemp.MIGRATIONS / 'schema.sql').read_text(encoding='utf-8')
+            conn.execute(sql.replace('BEGIN;', '').replace('COMMIT;', ''))
+        self.run_twice(db)
+        with db.session() as conn:
+            applied = {row['name'] for row in conn.execute('SELECT name FROM schema_migrations').fetchall()}
+            self.assertEqual(applied, set(pgtemp.SCRIPTS))

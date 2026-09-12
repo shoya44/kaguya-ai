@@ -26,7 +26,8 @@ exit /b 10
 rem 見るのは追跡中のファイルの変更だけ。置いただけの未追跡ファイル（設定や
 rem 作業メモ）で更新が永久に止まるのを避ける。取り込むファイルと衝突する
 rem 場合は下の merge が自分で失敗するので、消えることはない。
-for /f "delims=" %%S in ('git status --porcelain --untracked-files=no 2^>nul') do (
+rem FOR /F 内の未エスケープの = は区切りとして解釈されるため、短縮形を使う。
+for /f "delims=" %%S in ('git status --porcelain -uno 2^>nul') do (
   echo [Update] Tracked files have local changes. Update was skipped to protect them.
   echo [Update] Run "git status" to see them, then keep or undo them and run update again.
   exit /b 10

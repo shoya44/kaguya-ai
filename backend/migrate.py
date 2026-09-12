@@ -5,6 +5,7 @@ into the database, once. After that the check costs three os.stat calls: the
 files are renamed to *.migrated, so they are simply no longer there.
 """
 import json
+import re
 import sqlite3
 import sys
 from datetime import datetime
@@ -18,6 +19,17 @@ from app.memory_api import database_connection
 
 SCRIPTS = ('002_memory_jobs.sql', '003_reminders.sql', '004_local_state.sql',
            '005_memory_redesign.sql', '006_emotion_counters.sql')
+
+
+def load_scripts(root: Path) -> dict[str, str]:
+    """統合DDLを適用履歴の識別子で分ける。見出しの欠落・重複・順序違いは拒否。"""
+    parts = re.split(r'^-- migration: (\d{3}_[a-z_]+\.sql)\s*$',
+                     (root / 'schema.sql').read_text(encoding='utf-8'), flags=re.MULTILINE)
+    if tuple(parts[1::2]) != ('001_init.sql', *SCRIPTS):
+        raise ValueError('schema.sql migration sections are missing, duplicated, or out of order')
+    return dict(zip(parts[1::2], parts[2::2]))
+
+
 # mind.db の表 → PostgreSQL の表と、時刻として読み直す列。
 # phrases / graph_edges / meta は 005 で廃止したので取り込まない。
 MIND_TABLES = (
@@ -118,7 +130,7 @@ def _run(conn, root: Path, name: str, done: set) -> None:
     if name in done:
         return
     # Drop BEGIN/COMMIT wrappers; every script belongs to this one transaction.
-    conn.execute((root / name).read_text(encoding='utf-8').replace('BEGIN;', '').replace('COMMIT;', ''))
+    conn.execute(load_scripts(root)[name].replace('BEGIN;', '').replace('COMMIT;', ''))
     conn.execute('INSERT INTO schema_migrations(name) VALUES (%s) ON CONFLICT DO NOTHING', (name,))
     done.add(name)
 
