@@ -34,6 +34,14 @@ export class VoiceChat {
 
   private status(text: string): void { document.getElementById('voice-status')!.textContent = text; }
 
+  /** アイコンボタンなので中身は入れ替えず、ラベルと状態だけを更新する。
+      data-active が true の間だけマイクに斜線が入る（CSS側）。 */
+  private label(text: string, active: boolean): void {
+    this.button.setAttribute('aria-label', text);
+    this.button.setAttribute('title', text);
+    this.button.dataset.active = String(active);
+  }
+
   /** 使えない場合の理由と、次にすることを返す。使える場合は空文字。 */
   static unavailable(): string {
     // ブラウザはHTTPSでないとマイクを渡さない。家庭内Wi-FiのHTTP接続がこれに当たる。
@@ -54,7 +62,7 @@ export class VoiceChat {
     this.active = true;
     this.onActive(true);
     const generation = ++this.generation;
-    this.button.textContent = '通話を終了';
+    this.label('通話を終了', true);
     this.status('マイクを準備しています…');
     try {
       // Create/resume during the user's tap, before any network request (iOS).
@@ -150,7 +158,7 @@ export class VoiceChat {
     if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: 'stop' }));
     this.socket?.close(); this.socket = null;
     void this.context?.close().catch(() => {}); this.context = null;
-    this.button.textContent = '音声通話を開始'; this.status(message);
+    this.label('音声通話を開始', false); this.status(message);
     this.onActive(false);
   }
 }
