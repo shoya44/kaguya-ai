@@ -11,6 +11,10 @@ from .db import Database
 
 _log = logging.getLogger(__name__)
 
+# 同じ日にこれだけ続けて失敗したら、その日の自動整理は止める。枠を戻す以上、
+# 直らない理由（設定・スキーマ・モデル名）で延々と叩き続けないための歯止め。
+JOB_FAIL_STOP = 2
+
 
 class Options(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
@@ -108,6 +112,36 @@ class RuntimeStore:
             used = ledger.get('calls', 0) if ledger.get('call_day') == day else 0
             if used >= self.options.daily_call_limit:
                 return False
-            # Charge before calling: crashes and API failures still consume budget.
+            # 先に引いておく。落ちた場合も二重に使わないため。呼び出しが
+            # 失敗したと分かった時点で release_call が戻す。
             self.record(call_day=day, calls=used + 1)
             return True
+
+    def release_call(self, day: str):
+        """使えなかった枠を戻す。
+
+        スキーマ不正のように毎回同じ理由で失敗する状態だと、戻さない限り
+        1日の枠が処理ゼロのまま溶ける。実際それで原文が330件溜まっていた。
+        """
+        with self.lock:
+            ledger = self.data['ledger']
+            if ledger.get('call_day') != day:
+                return
+            self.record(calls=max(0, ledger.get('calls', 0) - 1))
+
+    def note_failure(self, day: str):
+        """その日の連続失敗を数える。枠を戻すぶん、止める条件が要る。"""
+        with self.lock:
+            ledger = self.data['ledger']
+            fails = ledger.get('job_fails', 0) if ledger.get('fail_day') == day else 0
+            self.record(fail_day=day, job_fails=fails + 1)
+
+    def clear_failures(self, day: str):
+        with self.lock:
+            self.record(fail_day=day, job_fails=0)
+
+    def failing(self, day: str) -> bool:
+        ledger = self.data['ledger']
+        if ledger.get('fail_day') != day:
+            return False
+        return ledger.get('job_fails', 0) >= JOB_FAIL_STOP

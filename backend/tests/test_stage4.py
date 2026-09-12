@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from app.controller import Controller
 from app.errors import ChatError
 from app.jobs import Jobs, periods
+from app.proactive import tokyo_now
 from app.memory_store import validate_batch
 from app.persona import memory_prompt
 from app.proactive import GREETINGS, JST, Proactive, time_slot
@@ -86,6 +87,35 @@ class LocalCase(unittest.TestCase):
         self.assertIsNotNone(proactive.tick(True, False, self.now + timedelta(hours=1)))
         self.assertIsNone(proactive.tick(True, False, self.now + timedelta(hours=5)))
 
+    def test_failed_call_gives_the_budget_back(self):
+        """使えなかった枠は戻す。
+
+        スキーマ不正のように毎回同じ理由で失敗する状態だと、戻さない限り
+        1日の枠が処理ゼロのまま溶ける。実際それで原文が330件たまっていた。
+        """
+        self.assertTrue(self.store.reserve_call('2026-09-11'))
+        self.assertEqual(self.store.data['ledger']['calls'], 1)
+        self.store.release_call('2026-09-11')
+        self.assertEqual(self.store.data['ledger']['calls'], 0)
+        # 日が変わっていれば、その日の枠には触らない。
+        self.store.release_call('2026-09-12')
+        self.assertEqual(self.store.data['ledger']['calls'], 0)
+        # 戻しすぎてマイナスにしない。
+        self.store.release_call('2026-09-11')
+        self.assertEqual(self.store.data['ledger']['calls'], 0)
+
+    def test_repeated_failure_stops_the_day_but_not_forever(self):
+        """枠を戻す以上、止める条件が要る。直らない理由で叩き続けない。"""
+        self.assertFalse(self.store.failing('2026-09-11'))
+        self.store.note_failure('2026-09-11')
+        self.assertFalse(self.store.failing('2026-09-11'))
+        self.store.note_failure('2026-09-11')
+        self.assertTrue(self.store.failing('2026-09-11'))
+        # 翌日は持ち越さない。成功したらその場で解除する。
+        self.assertFalse(self.store.failing('2026-09-12'))
+        self.store.clear_failures('2026-09-11')
+        self.assertFalse(self.store.failing('2026-09-11'))
+
     def test_budget_persisted_before_call_and_resets_only_on_new_day(self):
         for _ in range(self.store.options.daily_call_limit):
             self.assertTrue(self.store.reserve_call('2026-09-11'))
@@ -130,10 +160,20 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
             jobs = Jobs(memory, llm, store, controller)
             await jobs.run()
             self.assertEqual(llm.organize.await_count, 1)
+            # 保存は呼ばない。失敗した結果を書き込まない。
             self.assertEqual(memory.call.await_count, 1)
+            # 続けて叩かない。同じ理由ならすぐ失敗するだけ。
             self.assertFalse(jobs.due())
-            self.assertEqual(store.data['ledger']['calls'], 1)
+            # 使えなかった枠は戻す。戻さないと、直らない理由で失敗し続けた日は
+            # 1件も処理しないまま枠だけ溶ける。
+            self.assertEqual(store.data['ledger']['calls'], 0)
+            self.assertEqual(store.data['ledger']['job_fails'], 1)
             self.assertIn('原文は保持', jobs.status)
+
+            # 2回目の失敗でその日は打ち切る。枠が残っていても自動では叩かない。
+            await jobs.run()
+            self.assertEqual(store.data['ledger']['calls'], 0)
+            self.assertTrue(store.failing(tokyo_now().date().isoformat()))
 
     async def test_manual_run_also_stops_at_budget(self):
         if not pgtemp.available():

@@ -31,8 +31,13 @@ class Jobs:
     def due(self, now=None):
         now = now or tokyo_now()
         ledger = self.store.data['ledger']
-        used = ledger.get('calls', 0) if ledger.get('call_day') == now.date().isoformat() else 0
+        day = now.date().isoformat()
+        used = ledger.get('calls', 0) if ledger.get('call_day') == day else 0
         last = ledger.get('job_attempt_at')
+        # 同じ理由で失敗し続ける日は自動では叩かない。原因を直してから
+        # 「今すぐ整理」を押せば、手動はいつでも動く。
+        if self.store.failing(day):
+            return False
         return used < self.store.options.daily_call_limit and (not last or
             now - datetime.fromisoformat(last) >= timedelta(minutes=15))
 
@@ -93,10 +98,17 @@ class Jobs:
                 if not snap['raw']:
                     break
                 if any(row['status'] != 'cancelled' for row in snap['raw']):
-                    if not self.store.reserve_call(tokyo_now().date().isoformat()):
+                    day = tokyo_now().date().isoformat()
+                    if not self.store.reserve_call(day):
                         self.status = '本日の整理API上限に達しました。原文は保持しています。'
                         return
-                    result = await self.llm.organize(snap)
+                    try:
+                        result = await self.llm.organize(snap)
+                    except BaseException:
+                        # 使えなかった枠は戻す。戻さないと、直らない理由で
+                        # 失敗し続けたときに1日の枠が処理ゼロのまま溶ける。
+                        self.store.release_call(day)
+                        raise
                 else:
                     result = {'items': []}
                 saved = await self.memory.call('POST', '/organize/commit', json={'snapshot': snap, 'result': result})
@@ -106,25 +118,35 @@ class Jobs:
                 if not can_continue():
                     return
                 if snap['wisdom'] and snap['persona']:
-                    if not self.store.reserve_call(tokyo_now().date().isoformat()):
+                    day = tokyo_now().date().isoformat()
+                    if not self.store.reserve_call(day):
                         self.status = '知恵化は完了。接し方の更新は本日のAPI上限で保留中です。'
                         return
-                    result = await self.llm.update_persona(snap)
+                    try:
+                        result = await self.llm.update_persona(snap)
+                    except BaseException:
+                        self.store.release_call(day)
+                        raise
                     await self.memory.call('POST', '/weekly/commit', json={'snapshot': snap, 'result': result})
                 # よくある状態を性格として残す。LLMを呼ばないので利用枠を使わない。
                 await self.update_disposition()
                 self.store.record(weekly_done=weekly)
             await self.memory.call('POST', '/cleanup')
             self.store.record(daily_done=daily)
+            self.store.clear_failures(now.date().isoformat())
             self.status = f'整理完了：{processed}件のユーザー発言を処理しました。'
         except asyncio.CancelledError:
+            # 会話を優先して止めただけ。失敗ではないので数えない。
             self.status = self.cancel_reason or '整理を中断しました。未処理の原文は保持しています。'
             raise
         except ChatError as exc:
+            self.store.note_failure(now.date().isoformat())
             self.status = f'整理失敗：{exc.message} 未処理の原文は保持しています。'
         except ValueError:
+            self.store.note_failure(now.date().isoformat())
             self.status = '整理失敗：Geminiの整理結果が規定形式ではありませんでした。未処理の原文は保持しています。'
         except Exception:
+            self.store.note_failure(now.date().isoformat())
             self.status = '整理失敗：内部処理または保存に失敗しました。未処理の原文は保持しています。'
         finally:
             self.cancel_reason = None
