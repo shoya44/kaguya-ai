@@ -31,14 +31,6 @@ const LIFE_SPRITES: Record<LifeActivity, string[]> = {
 const IDLE_ROTATE_MS = 45_000;
 const MOTION_MS = 1_900;
 
-// 顔だけを見せるときに切り出す範囲（画像に対する割合）。入力中にキャラクターを
-// 小さくしても表情が読めるようにするためで、通常表示の描画には影響しない。
-// 横になっている寝顔だけ位置が違うので個別に持つ。
-const FACE_BOX = { x: 0.26, y: 0.02, width: 0.48, height: 0.50 };
-const FACE_BOX_BY_SPRITE: Record<string, typeof FACE_BOX> = {
-  '/sprites/sleep.png': { x: 0.20, y: 0.28, width: 0.40, height: 0.42 },
-};
-
 function timeSlot(hour = new Date().getHours()): TimeSlot {
   if (5 <= hour && hour < 11) return 'morning';
   if (11 <= hour && hour < 17) return 'day';
@@ -71,7 +63,6 @@ export class Avatar {
   private lifeEnergy = 60;
   private quiet = false;
   private drawVersion = 0;
-  private faceMode = false;
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
@@ -104,13 +95,6 @@ export class Avatar {
     this.rotate();
     this.draw();
     this.updateMotion();
-  }
-
-  /** 入力中の小さな顔表示に切り替える。表情・状態の選び方は変えない。 */
-  setFaceMode(enabled: boolean): void {
-    if (this.faceMode === enabled) return;
-    this.faceMode = enabled;
-    this.draw();
   }
 
   private livingOverridesSleeping(): boolean {
@@ -186,17 +170,6 @@ export class Avatar {
     const render = () => {
       if (version !== this.drawVersion || !img.naturalWidth || !img.naturalHeight) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (this.faceMode) {
-        const box = FACE_BOX_BY_SPRITE[src] ?? FACE_BOX;
-        const sw = img.naturalWidth * box.width;
-        const sh = img.naturalHeight * box.height;
-        const scale = Math.min(canvas.width / sw, canvas.height / sh);
-        const w = sw * scale;
-        const h = sh * scale;
-        ctx.drawImage(img, img.naturalWidth * box.x, img.naturalHeight * box.y, sw, sh,
-          (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
-        return;
-      }
       const scale = Math.min(canvas.width / img.naturalWidth, canvas.height / img.naturalHeight);
       const w = img.naturalWidth * scale;
       const h = img.naturalHeight * scale;

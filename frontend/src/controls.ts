@@ -162,9 +162,12 @@ export class Controls {
     // 画面に効くもの（文字サイズ・静音・最前面）だけをここで反映する。
     this.onOptions?.(options);
     document.documentElement.style.setProperty('--font-size', `${options.font_size}px`);
-    // 色（aria-pressed）で現在の状態、文言で押したときの動作を示す。
+    // アイコンボタンなので中身（SVG）は入れ替えない。色（aria-pressed）で
+    // 現在の状態を、ラベルで押したときの動作を示す。
     const quietBtn = document.getElementById('quiet-btn')!;
-    quietBtn.textContent = options.quiet ? '静音中（解除）' : '静かにする';
+    const quietLabel = options.quiet ? '声かけを再開する' : '静かにする';
+    quietBtn.setAttribute('aria-label', quietLabel);
+    quietBtn.setAttribute('title', quietLabel);
     quietBtn.setAttribute('aria-pressed', String(!!options.quiet));
     if (options.quiet) document.getElementById('proactive-bubble')!.hidden = true;
     if (isTauri()) await invoke('window_topmost', { enabled: options.always_on_top });

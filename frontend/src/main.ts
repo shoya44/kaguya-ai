@@ -39,7 +39,6 @@ let savedNormalMaximized = false;
 let miniModeTransition: Promise<void> = Promise.resolve();
 
 function applyMiniUi(enabled: boolean): void {
-  if (enabled) setInputFocused(false);
   document.body.classList.toggle('mini-mode', enabled);
   document.getElementById('app')!.classList.toggle('mode-mini', enabled);
   document.getElementById('app')!.classList.toggle('mode-normal', !enabled);
@@ -223,7 +222,7 @@ const TOUCH_INPUT = typeof window.matchMedia === 'function'
 // プレースホルダーが2行になり下半分が見切れる。送信ボタンは隣にあるため省く。
 const INPUT_PLACEHOLDER = TOUCH_INPUT
   ? 'かぐやに話しかける'
-  : 'かぐやに話しかける（Enterで送信・Shift+Enterで改行）';
+  : 'かぐやに話しかける（Enterで送信）';
 
 // 追加で聞きたいときの定型ボタン。候補を作るための追加のLLM呼び出しはしない。
 const FOLLOW_UPS = ['もっと詳しく', '例をあげて', '短くまとめて'];
@@ -258,14 +257,6 @@ function settleDraft(turnId: string): void {
 
 restoreDraft();
 inputEl.addEventListener('input', () => saveDraft());
-// 入力中はキャラクターを小さな顔だけの表示にして、会話履歴へ場所を渡す。
-function setInputFocused(focused: boolean): void {
-  document.body.classList.toggle('input-focused', focused);
-  avatar.setFaceMode(focused && !document.getElementById('app')!.classList.contains('mode-mini'));
-}
-
-inputEl.addEventListener('focus', () => setInputFocused(true));
-inputEl.addEventListener('blur', () => setInputFocused(false));
 
 // 接続状態は常設の小さな表示。実際に起きていることだけを書く
 // （検索していないのに「記憶を探しているよ」のような演出はしない）。
