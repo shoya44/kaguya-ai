@@ -170,5 +170,30 @@ class NarratorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.sent), 1)
 
 
+class FailureMessageTests(unittest.TestCase):
+    """通話が続けられなくなったとき、画面に原因が出る。ただし鍵は出さない。"""
+
+    def test_the_kind_of_failure_is_shown(self):
+        from app.voice import _reason
+        self.assertEqual(_reason(ValueError('返答が長すぎます。')), 'ValueError: 返答が長すぎます。')
+        # 文面が無い例外でも、種類だけで切り分けの役に立つ。
+        self.assertEqual(_reason(httpx.ConnectError('')), 'ConnectError')
+
+    def test_an_api_key_in_the_message_is_hidden(self):
+        from app.voice import _reason
+        # Live APIのURLにはキーが載る。例外文ごと画面へ出すので必ず消す。
+        for text in ('wss://host/ws?key=AIzaSySECRET&alt=1',
+                     'Authorization=Bearer-SECRET failed',
+                     'token=SECRET'):
+            with self.subTest(text=text):
+                shown = _reason(RuntimeError(text))
+                self.assertNotIn('SECRET', shown)
+                self.assertIn('=***', shown)
+
+    def test_the_message_stays_short_enough_to_read(self):
+        from app.voice import _reason
+        self.assertLessEqual(len(_reason(RuntimeError('あ' * 1000))), 320)
+
+
 if __name__ == '__main__':
     unittest.main()
