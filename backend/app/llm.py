@@ -240,6 +240,8 @@ class Gemini:
             '日付や時刻の表現は現在日時を基準に絶対日付へ直してsummaryに書く。'
             'その場限りの依頼や挨拶は省く。推測はinferredにする。根拠は与えたuser_messagesのIDのみ。'
             '「今回だけ詳しく」「今は短く」など今回の返答だけへの指示は長期的な好みとして保存しない。'
+            'toneはその話題を話していたときの気持ち。つらい/困っている=-1、うれしい/楽しい=1、'
+            'どちらでもない=0。迷ったら0にする。事実の良し悪しではなく、本人の気持ちで決める。'
             'summaryは短い日本語。対象がなければitemsは空。最大12項目。',
             thinking_config=self._chat_thinking_config(),
             max_output_tokens=2048, response_mime_type='application/json', response_schema=WisdomBatch))
