@@ -39,6 +39,41 @@ class ProjectInspectorTests(unittest.IsolatedAsyncioTestCase):
         names = {item['name'] for item in tools.DECLARATIONS}
         self.assertTrue({'project_status', 'project_search', 'project_read'} <= names)
 
+    def test_everyday_ways_of_asking_about_herself_reach_the_source(self):
+        """自分のことを尋ねる普通の言い方で、読みに行く道具が渡ること。
+
+        道具が渡らないと、プロンプトの範囲だけで答える＝推測になる。
+        """
+        asked = [
+            'モーション増えた？', 'フォルダの中どうなってる？', '最近できるようになった機能は？',
+            'かぐやの仕様を教えて', 'READMEに何が書いてある？', '自分のことわかる？',
+            'まばたきの実装は？', 'どうやって動いてるの？', 'どう作られてるの？',
+            'ディレクトリ構成は？', '変更履歴を見せて', 'スプライトは何枚ある？',
+        ]
+        for text in asked:
+            with self.subTest(text=text):
+                names = {item['name'] for item in tools.declarations_for(text)}
+                self.assertIn('project_search', names)
+
+    def test_small_talk_still_streams(self):
+        """雑談の回に関数定義を付けない。付くとその回はストリーミングできない。"""
+        small_talk = [
+            '今日はなんとなく眠いな', 'ありがとう、助かった', 'ちょっと疲れた', 'おやすみ',
+            '明日の天気は？', 'おはよう', 'お腹すいた', 'それ面白いね',
+        ]
+        for text in small_talk:
+            with self.subTest(text=text):
+                names = {item['name'] for item in tools.declarations_for(text)}
+                self.assertNotIn('project_search', names)
+
+    def test_readme_lists_every_word_that_reaches_the_source(self):
+        """READMEの一覧とコードの一覧を揃える。片方だけ直すと案内が嘘になる。"""
+        readme = (Path(__file__).resolve().parents[2] / 'README.md').read_text(encoding='utf-8')
+        section = readme.split('## かぐや自身のことを聞く')[1].split('## 音声会話')[0]
+        for word in tools.PROJECT_WORDS + tools.PROJECT_WORDS_ASCII:
+            with self.subTest(word=word):
+                self.assertIn(word, section)
+
     async def test_tools_run_dispatches_project_read(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp).resolve()
