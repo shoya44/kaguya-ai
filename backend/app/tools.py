@@ -37,6 +37,29 @@ _QUICK_NAMES = {item['name'] for item in quick_tools.DECLARATIONS}
 _PROJECT_NAMES = {item['name'] for item in project_inspector.DECLARATIONS}
 
 
+# かぐや自身のREADME・docs・ソースを読みに行く語。ここに載っていない聞き方だと
+# 道具を渡さないので、プロンプトの範囲だけで答える＝推測になる。
+#
+# 一方で、渡す語を広げすぎると雑談の回にも関数定義が付き、その回はストリーミング
+# できなくなる。日常会話では出にくく、自分のことを尋ねるときには自然に出る語を選ぶ。
+# 一覧はREADMEの「かぐや自身のことを聞く」にも書いてある。変えるときは両方直す。
+PROJECT_WORDS = (
+    # 仕様・実装
+    '仕様', '実装', '設計', '構成', 'アーキテクチャ', 'バグ原因',
+    # 置き場所
+    'フォルダ', 'ディレクトリ', 'リポジトリ', 'ソース',
+    # 見た目・動き
+    'モーション', 'アニメーション', 'スプライト', 'まばたき', '立ち絵',
+    # 機能と履歴
+    '機能', 'できること', '変更履歴', '更新履歴', 'コミット',
+    # 素直な聞き方
+    'どう作られ', 'どうやって動い', '自分のこと',
+)
+# 英数字は小文字化してから見る。'git' のような短い語は他の語（digital など）に
+# 紛れ込むので入れない。
+PROJECT_WORDS_ASCII = ('readme', 'docs', 'project_inspector')
+
+
 def declarations_for(text: str) -> list[dict]:
     value = str(text or '')
     lower = value.lower()
@@ -65,7 +88,7 @@ def declarations_for(text: str) -> list[dict]:
         names.add('calendar')
     if any(word in lower for word in ('references', 'reference')) or any(word in value for word in ('参照資料', '参照ファイル', '手順書', '資料から', 'ファイルから', 'メモから')):
         names.add('reference_search')
-    if any(word in lower for word in ('readme', 'ソース', 'コード', 'project_inspector')) or any(word in value for word in ('自分の仕様', 'かぐやの仕様', '実装', 'バグ原因')):
+    if any(word in lower for word in PROJECT_WORDS_ASCII) or any(word in value for word in PROJECT_WORDS):
         names.update(_PROJECT_NAMES)
     return [_DECLARATION_BY_NAME[name] for name in _DECLARATION_BY_NAME if name in names]
 
