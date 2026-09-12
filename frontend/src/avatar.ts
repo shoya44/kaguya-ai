@@ -3,7 +3,9 @@ type TimeSlot = 'morning' | 'day' | 'evening' | 'night';
 type LifeMood = 'normal' | 'happy' | 'sleepy' | 'sulky' | 'worried' | 'bored';
 type LifeActivity = 'idle' | 'reading' | 'working' | 'playing' | 'snacking' | 'daydreaming' | 'sleeping';
 // 一回性の動き。定常のゆれと違い、出来事に対して一度だけ返す。
-export type Nudge = 'nod' | 'hop' | 'droop';
+// nod=受け取った / hop=嬉しい / droop=しゅんとする / perk=顔を上げる
+// settle=座り直す / sink=寝入る / stretch=伸びをする
+export type Nudge = 'nod' | 'hop' | 'droop' | 'perk' | 'settle' | 'sink' | 'stretch';
 
 const SPRITES: Record<AvatarState, string[]> = {
   idle: ['/sprites/wave.png', '/sprites/book.png', '/sprites/laptop.png', '/sprites/cards.png'],
@@ -52,11 +54,27 @@ const MOOD_NUDGE: Partial<Record<LifeMood, Nudge>> = {
   worried: 'droop',
   sulky: 'droop',
 };
-const NUDGES: Record<Nudge, { transform: string; ms: number }> = {
-  nod: { transform: 'translateY(4px) rotate(0.6deg)', ms: 260 },
-  hop: { transform: 'translateY(-10px) scale(1.02)', ms: 340 },
-  droop: { transform: 'translateY(3px) rotate(-1.2deg) scale(0.99)', ms: 420 },
+// 一回性の動き。rank が高いものだけが、実行中の動きに割り込める。
+// 呼吸と同じく、床から浮くのは hop だけ。跳ねる以外は接地したまま伸縮させる。
+const NUDGES: Record<Nudge, { transform: string; ms: number; rank: number }> = {
+  // 座り直し。何より弱い。話しかけられている最中に割り込んではいけない。
+  settle: { transform: 'rotate(-0.6deg) scaleY(0.997)', ms: 620, rank: 1 },
+  sink: { transform: 'scaleY(0.98)', ms: 900, rank: 2 },
+  nod: { transform: 'scaleY(0.985)', ms: 260, rank: 3 },
+  perk: { transform: 'scaleY(1.025)', ms: 380, rank: 3 },
+  stretch: { transform: 'scaleY(1.04)', ms: 760, rank: 3 },
+  // 跳ねるときだけは足が床を離れる。
+  hop: { transform: 'translateY(-9px) scaleY(1.01)', ms: 340, rank: 4 },
+  droop: { transform: 'scaleY(0.975) rotate(-1deg)', ms: 420, rank: 4 },
 };
+// 一回性の動きを続けて出さない下限。これより短い間隔で重ねるとガタガタする。
+const NUDGE_GAP_MS = 320;
+
+// 手持ち無沙汰な間の身じろぎ。呼吸だけだと一定周期のループに見える。
+// 活動の選び方（living.py）は乱数を避けているが、ここは間隔がばらつくことに
+// 意味がある。毎回同じ秒数で身じろぎすると、それ自体が機械の周期になる。
+const IDLE_BREAK_MIN_MS = 30_000;
+const IDLE_BREAK_MAX_MS = 90_000;
 
 // 伏せている絵。接地面が広いので、動かすと本人ではなく絵全体が浮いて見える。
 const LYING = new Set(['/sprites/sleep.png', '/sprites/bored.png', '/sprites/daydream.png']);
@@ -110,6 +128,9 @@ export class Avatar {
   private shownSrc = '';
   private fadeRaf: number | null = null;
   private nudgeTimer: number | null = null;
+  private nudgeRank = 0;
+  private nudgeEndedAt = 0;
+  private breakTimer: number | null = null;
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
@@ -128,40 +149,78 @@ export class Avatar {
         this.rotate();
         this.draw();
       }
+      // しばらく居なかった相手が戻ってきた。living.tsの「おかえり」と動きを揃える。
+      if (detail.reentry) this.react('perk');
       // 気分が「変わった」ことにだけ反応する。同じ気分が届き続けても跳ねない。
       const nudge = this.lifeMood !== before ? MOOD_NUDGE[this.lifeMood] : undefined;
       if (nudge) this.react(nudge);
-      else this.updateMotion();
+      else if (!detail.reentry) this.updateMotion();
     });
     this.rotate();
     this.draw();
     this.updateMotion();
+    this.scheduleIdleBreak();
   }
 
   setState(state: AvatarState, quiet = false): void {
     if (this.state === state && this.quiet === quiet) return;
+    const wasAsleep = this.looksAsleep();
     this.state = state;
     this.quiet = quiet;
     this.frame = 0;
     this.rotate();
     this.draw();
-    this.updateMotion();
+    // 眠りの出入りそのものに動きを与える。絵だけ入れ替わると寝落ちに見えない。
+    const asleep = this.looksAsleep();
+    if (!wasAsleep && asleep) this.react('sink');
+    else if (wasAsleep && !asleep) this.react('stretch');
+    else this.updateMotion();
   }
 
-  /** 出来事に対して一度だけ動く。終わったら普段のゆれへ戻る。 */
+  /**
+   * 出来事に対して一度だけ動く。終わったら普段の呼吸へ戻る。
+   *
+   * 出来事は続けて届く。「返事が来た直後に気分が変わる」のような重なりで
+   * 動きを次々と上書きすると、生きているというより落ち着きがなく見える。
+   * 強い動きだけが割り込めることにして、弱い動きは見送る。
+   */
   react(nudge: Nudge): void {
     const style = this.canvas.style;
     if (!style) return;
     const move = NUDGES[nudge];
+    // 動いている最中。より強い動きでなければ、いまの動きを最後まで見せる。
+    if (this.nudgeTimer !== null && move.rank <= this.nudgeRank) return;
+    // 直前の動きが終わった直後。同じか弱い動きなら間を置く。
+    if (this.nudgeTimer === null && move.rank <= this.nudgeRank
+        && Date.now() - this.nudgeEndedAt < NUDGE_GAP_MS) return;
+
     if (this.nudgeTimer !== null) window.clearTimeout(this.nudgeTimer);
     if (this.motionTimer !== null) window.clearTimeout(this.motionTimer);
     this.motionTimer = null;
+    this.nudgeRank = move.rank;
     style.transition = `transform ${move.ms}ms cubic-bezier(0.34, 1.4, 0.64, 1)`;
     style.transform = move.transform;
     this.nudgeTimer = window.setTimeout(() => {
       this.nudgeTimer = null;
+      this.nudgeEndedAt = Date.now();
       this.updateMotion();
     }, move.ms);
+  }
+
+  /** 眠っているように見えているか。絵で判断するので、生活の演出と食い違わない。 */
+  private looksAsleep(): boolean {
+    return resolve(this.frames()[0]) === '/sprites/sleep.png';
+  }
+
+  /** 手持ち無沙汰な間だけ身じろぎする。話しかけられている最中はしない。 */
+  private scheduleIdleBreak(): void {
+    if (this.breakTimer !== null) window.clearTimeout(this.breakTimer);
+    const wait = IDLE_BREAK_MIN_MS + Math.random() * (IDLE_BREAK_MAX_MS - IDLE_BREAK_MIN_MS);
+    this.breakTimer = window.setTimeout(() => {
+      this.breakTimer = null;
+      if (this.state === 'idle' && !this.quiet && !this.looksAsleep()) this.react('settle');
+      this.scheduleIdleBreak();
+    }, wait);
   }
 
   private livingOverridesSleeping(): boolean {

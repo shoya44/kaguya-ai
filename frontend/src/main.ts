@@ -861,6 +861,8 @@ function handleServerEvent(data: Record<string, unknown>): void {
       }
       setBusy(false);
       chatStatus(null);
+      // 返事に失敗したことが、文章だけでなく様子にも出るようにする。
+      avatar.react('droop');
       if (code === 'save_failed') {
         // Keep the pending bubble; only a save retry is offered, per spec.
         showSaveRetry(turnId!, data.text as string, data.answer as string);
