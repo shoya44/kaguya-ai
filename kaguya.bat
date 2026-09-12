@@ -55,6 +55,8 @@ set "UPDATE_RESULT=%errorlevel%"
 rem スキップされたまま起動すると、更新できたように見えてしまう。ここで止める。
 if "%UPDATE_RESULT%"=="10" goto blocked
 if "%UPDATE_RESULT%"=="20" goto offline
+if "%UPDATE_RESULT%"=="21" goto update_failed
+if not "%UPDATE_RESULT%"=="0" if not "%UPDATE_RESULT%"=="5" goto update_failed
 rem start.bat がマイグレーション・ビルド・起動をまとめて行う。
 call "%~dp0start.bat"
 if errorlevel 1 goto failed
@@ -70,9 +72,16 @@ goto failed
 
 :offline
 echo.
-echo   Could not reach origin/main. Nothing was downloaded.
-echo   Check the network, then run update again.
+echo   Fetch from origin/main failed.
+echo   Check the Git error above for network, access or repository problems.
 echo   Start the current version with start.bat if you want to use it now.
+goto failed
+
+:update_failed
+echo.
+echo   The repository could not be updated. See the Git error above.
+echo   Check local changes with "git status" and "git diff".
+echo   Kaguya AI was NOT started. Fix the cause and run update again.
 goto failed
 
 :build
@@ -100,7 +109,7 @@ cd backend
 ".venv\Scripts\python.exe" -B -m unittest discover -s tests -v
 if errorlevel 1 goto failed
 cd ..\frontend
-node --test tests\main.test.cjs tests\living.test.cjs tests\avatar.test.cjs
+node --test tests\main.test.cjs tests\living.test.cjs tests\avatar.test.cjs tests\manual.test.cjs
 if errorlevel 1 goto failed
 call npm.cmd run build
 if errorlevel 1 goto failed

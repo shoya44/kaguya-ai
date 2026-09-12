@@ -46,7 +46,7 @@ function inline(value) {
 }
 
 function collect(markdown) {
-  const lines = markdown.split('\n');
+  const lines = markdown.replace(/\r\n/g, '\n').split('\n');
   const picked = [];
   let inside = false;
   lines.forEach((line, index) => {
@@ -146,10 +146,8 @@ const html = `${HEAD}\n${render(collect(readFileSync(README, 'utf8')))}\n`;
 let current = '';
 try { current = readFileSync(OUTPUT, 'utf8'); } catch { current = ''; }
 
-// WindowsのGitはこのファイルをCRLFで取り出すことがある。LFで上書きすると
-// ビルドのたびに「変更あり」になり、git pull が止まってしまう。
-// いま置かれている改行に合わせて書き、比較は改行を揃えてから行う。
-const asFile = value => (current.includes('\r\n') ? value.replace(/\n/g, '\r\n') : value);
+// .gitattributes の eol=lf に合わせ、出力は常にLFにする。
+// 入力のCRLFはcollectで正規化し、コードブロックにもCRを残さない。
 const sameText = (left, right) => left.replace(/\r\n/g, '\n') === right.replace(/\r\n/g, '\n');
 
 if (process.argv.includes('--check')) {
@@ -160,6 +158,6 @@ if (process.argv.includes('--check')) {
   }
   console.log('manual.html は README と一致しています。');
 } else {
-  writeFileSync(OUTPUT, asFile(html), 'utf8');
+  writeFileSync(OUTPUT, html, 'utf8');
   console.log(`generated ${OUTPUT}`);
 }
