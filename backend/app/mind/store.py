@@ -55,12 +55,26 @@ class MindStore:
         updated = max((row['updated_at'] for row in rows), default=now)
         return values, updated
 
-    def save_emotions(self, values: dict[str, float], now: datetime) -> None:
+    def save_emotions(self, values: dict[str, float], now: datetime, high=()) -> None:
+        """いまの値を書き、ついでに「何回のうち何回が強かったか」を数える。
+
+        履歴の表は持たない。週次で傾向を見るのに必要なのは回数だけで、
+        毎ターン1行増える記録は掃除の手間に見合わない。
+        """
+        high = set(high or ())
         with self._session() as conn:
             for name, value in values.items():
-                conn.execute('''INSERT INTO living_emotion(name,value,updated_at) VALUES (%s,%s,%s)
-                    ON CONFLICT(name) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at''',
-                             (name, max(0.0, min(100.0, float(value))), now))
+                conn.execute('''INSERT INTO living_emotion(name,value,updated_at,samples,high_count)
+                    VALUES (%s,%s,%s,1,%s)
+                    ON CONFLICT(name) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,
+                        samples=living_emotion.samples+1,
+                        high_count=living_emotion.high_count+excluded.high_count''',
+                             (name, max(0.0, min(100.0, float(value))), now, int(name in high)))
+
+    def counters(self) -> list[dict]:
+        with self._session() as conn:
+            rows = conn.execute('SELECT name,samples,high_count FROM living_emotion').fetchall()
+        return [_row(row) for row in rows]
 
     def upsert_trait(self, name: str, valence: float, now: datetime) -> None:
         name = name.strip()[:40]

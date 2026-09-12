@@ -1,5 +1,6 @@
 """Bounded daily/weekly jobs. Manual and scheduled runs use the same path."""
 import asyncio
+from contextlib import suppress
 from datetime import datetime, timedelta
 
 from .errors import ChatError
@@ -110,6 +111,8 @@ class Jobs:
                         return
                     result = await self.llm.update_persona(snap)
                     await self.memory.call('POST', '/weekly/commit', json={'snapshot': snap, 'result': result})
+                # よくある状態を性格として残す。LLMを呼ばないので利用枠を使わない。
+                await self.update_disposition()
                 self.store.record(weekly_done=weekly)
             await self.memory.call('POST', '/cleanup')
             self.store.record(daily_done=daily)
@@ -128,6 +131,21 @@ class Jobs:
             # 日付も残す。設定画面はその日の結果だけを出し、古い状態を残さない。
             self.store.record(last_job_status=self.status, last_job_day=periods(tokyo_now())[0])
             await self.controller.broadcast({'type': 'jobs.changed', 'status': self.status, 'running': False})
+
+    async def update_disposition(self) -> str:
+        """「同じ状態が繰り返されると性格になる」を週1回だけ反映する。
+
+        まだ傾向が決まらないうちは何も書かない。演出用なので、書けなくても
+        整理そのものは失敗させない。
+        """
+        mind = self.controller.mind
+        line = mind.disposition() if mind else ''
+        if not line:
+            return ''
+        with suppress(Exception):
+            await self.memory.call('POST', '/persona/style',
+                                   json={'key': 'disposition', 'value': line})
+        return line
 
     async def close(self):
         if self.running:

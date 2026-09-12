@@ -274,3 +274,38 @@ class AutoOrganizePaceTests(unittest.IsolatedAsyncioTestCase):
             await jobs.run(manual=False)
             llm.organize.assert_not_called()
             self.assertIn('会話', jobs.status)
+
+
+@unittest.skipUnless(pgtemp.available(), pgtemp.reason())
+class WeeklyDispositionTests(unittest.IsolatedAsyncioTestCase):
+    """週次で「その子らしさ」を接し方と同じ場所へ残す。LLMは呼ばない。"""
+
+    def jobs(self, line):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock
+        from app.runtime import RuntimeStore
+        db = pgtemp.database()
+        self.addCleanup(db.close)
+        mind = SimpleNamespace(disposition=lambda: line)
+        controller = SimpleNamespace(active=None, unsaved=None, editing=False,
+                                     broadcast=AsyncMock(), mind=mind)
+        memory = SimpleNamespace(call=AsyncMock(return_value={}))
+        return Jobs(memory, SimpleNamespace(), RuntimeStore(db), controller), memory
+
+    async def test_a_settled_tendency_is_written_next_to_the_other_manners(self):
+        jobs, memory = self.jobs('退屈しやすく、かまってほしくなる。')
+        self.assertTrue(await jobs.update_disposition())
+        path, body = memory.call.await_args.args[1], memory.call.await_args.kwargs['json']
+        self.assertEqual(path, '/persona/style')
+        self.assertEqual(body['key'], 'disposition')
+        self.assertIn('退屈', body['value'])
+
+    async def test_nothing_is_written_before_a_tendency_settles(self):
+        jobs, memory = self.jobs('')
+        self.assertEqual(await jobs.update_disposition(), '')
+        memory.call.assert_not_awaited()
+
+    async def test_a_failed_write_never_fails_the_organising(self):
+        jobs, memory = self.jobs('心配性なところがある。')
+        memory.call.side_effect = RuntimeError('db down')
+        self.assertTrue(await jobs.update_disposition())

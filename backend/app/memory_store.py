@@ -397,7 +397,7 @@ def remember(conn, topic_key, summary):
     return {'ok': True}
 
 
-def set_style(conn, value):
+def set_style(conn, value, key='style_feedback'):
     """直近の話し方フィードバック。他の接し方と同じ表に置き、毎回プロンプトへ渡す。
 
     自動更新（週次）の対象にしないよう locked を立てる。本人が言ったことなので、
@@ -408,10 +408,10 @@ def set_style(conn, value):
         return {'ok': False}
     lock(conn)
     conn.execute('''INSERT INTO persona_character (key,value,locked)
-        VALUES ('style_feedback',%s,true)
+        VALUES (%s,%s,true)
         ON CONFLICT (key) DO UPDATE SET previous_value=persona_character.value,
             value=excluded.value, locked=true, revision=persona_character.revision+1,
-            updated_at=now()''', (Jsonb(text),))
+            updated_at=now()''', (str(key)[:40], Jsonb(text)))
     return {'ok': True}
 
 

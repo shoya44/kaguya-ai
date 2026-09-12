@@ -17,7 +17,7 @@ from app.config import Settings
 from app.memory_api import database_connection
 
 SCRIPTS = ('002_memory_jobs.sql', '003_reminders.sql', '004_local_state.sql',
-           '005_memory_redesign.sql')
+           '005_memory_redesign.sql', '006_emotion_counters.sql')
 # mind.db の表 → PostgreSQL の表と、時刻として読み直す列。
 # phrases / graph_edges / meta は 005 で廃止したので取り込まない。
 MIND_TABLES = (

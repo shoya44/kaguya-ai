@@ -11,6 +11,9 @@ import migrate
 
 import pgtemp
 
+# 改名（005）を当てる前の形。ここから移せることを確かめる。
+BEFORE_REDESIGN = pgtemp.SCRIPTS[:pgtemp.SCRIPTS.index('005_memory_redesign.sql')]
+
 CALENDAR = [{'id': str(uuid4()), 'title': '歯医者', 'start': '2026-09-12T15:00:00+09:00',
              'end': None, 'note': '予約済み'}]
 SETTINGS = {'options': {'quiet': True, 'reply_tokens': 768}, 'ledger': {'call_day': '2026-09-11', 'calls': 2}}
@@ -100,7 +103,7 @@ class RedesignMigrationTests(unittest.TestCase):
 
     def setUp(self):
         # 004 までを当てた状態から始める。005 はこのテストの中で当てる。
-        self.db = pgtemp.staged(pgtemp.SCRIPTS[:-1])
+        self.db = pgtemp.staged(BEFORE_REDESIGN)
         self.addCleanup(self.db.close)
 
     def apply(self):
@@ -187,7 +190,7 @@ class MigrationRunnerTests(unittest.TestCase):
                     migrate._run(conn, root, name, done)
 
     def test_an_existing_install_migrates_once_and_stays_put(self):
-        db = self.db_for(pgtemp.SCRIPTS[:-1])
+        db = self.db_for(BEFORE_REDESIGN)
         turn = uuid4()
         with db.session() as conn:
             conn.execute("""INSERT INTO raw_memory(id,turn_id,role,content,status,origin_client_id,input_mode)

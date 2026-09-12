@@ -11,7 +11,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Callable
 
-from ..tuning import (CONCERN_REACTION, EMOTION_BASELINE, EMOTION_HALF_LIFE_HOURS, EMOTION_REACTION,
+from ..tuning import (CONCERN_REACTION, DISPOSITION_MAX, DISPOSITION_MIN_SAMPLES, DISPOSITION_RATIO, EMOTION_BASELINE, EMOTION_HALF_LIFE_HOURS, EMOTION_REACTION,
                       EMOTION_THRESHOLD, ENERGY_BY_HOUR, GROWTH_GROWING, GROWTH_GROWN,
                       LOOP_CONCERN_AFTER, LOOP_DUE_HOUR, LOOP_TODAY_AFTER, RECALL_IMPORTANT,
                       RECALL_IMPORTANT_REACTION, RECALL_REACTION, TRAIT_STABILITY, TRAIT_STANCE,
@@ -159,6 +159,45 @@ class KaguyaMind:
                 result[key] = result.get(key, 0.0) + delta
         return {key: max(0.0, min(100.0, number)) for key, number in result.items()}
 
+    # よくある状態を、そのまま「その子らしさ」として言葉にする。
+    DISPOSITIONS = {
+        'happiness': 'ごきげんでいることが多い',
+        'curiosity': '知りたがりで、いろいろ聞きたくなる',
+        'boredom': '退屈しやすく、かまってほしくなる',
+        'affection': '相手にすっかり懐いている',
+        'jealousy': 'やきもちを焼きやすい',
+        'concern': '心配性なところがある',
+    }
+
+    @staticmethod
+    def _high(values: dict[str, float]) -> set:
+        """いま「強い」と言える感情。気分ラベルと同じ境目を使う。"""
+        return {name for name, value in values.items()
+                if name in EMOTION_THRESHOLD and value >= EMOTION_THRESHOLD[name]}
+
+    @classmethod
+    def _disposition(cls, rows) -> list[str]:
+        """回数の多い状態から、いくつかを性格として取り出す。
+
+        まだ会話が少ないうちは何も言わない。少ない回数で性格を決めつけると、
+        たまたまの機嫌がそのまま固定されてしまう。
+        """
+        ranked = []
+        for row in rows or []:
+            samples = int(row.get('samples') or 0)
+            if samples < DISPOSITION_MIN_SAMPLES or row.get('name') not in cls.DISPOSITIONS:
+                continue
+            ratio = int(row.get('high_count') or 0) / samples
+            if ratio >= DISPOSITION_RATIO:
+                ranked.append((ratio, row['name']))
+        ranked.sort(reverse=True)
+        return [cls.DISPOSITIONS[name] for _, name in ranked[:DISPOSITION_MAX]]
+
+    def disposition(self) -> str:
+        """週次でまとめた「その子らしさ」。まだ決まらないうちは空文字。"""
+        parts = self._safe([], lambda: self._disposition(self.store.counters()))
+        return '。'.join(parts) + '。' if parts else ''
+
     @staticmethod
     def _mood(values: dict[str, float], energy: float) -> str:
         if values.get('concern', 0) >= EMOTION_THRESHOLD['concern']:
@@ -268,7 +307,7 @@ class KaguyaMind:
         emotions = self._decay(emotions, updated, now)
         emotions = self._recalled(self._react(emotions, text), memories, due)
         emotions = {key: max(0.0, min(100.0, value)) for key, value in emotions.items()}
-        self.store.save_emotions(emotions, now)
+        self.store.save_emotions(emotions, now, self._high(emotions))
         traits = self.store.traits_for(text, 5)
         stats = self.store.stats()
         context = {

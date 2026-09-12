@@ -113,6 +113,11 @@
 | `name` | text PK | `happiness` / `curiosity` / `boredom` / `affection` / `jealousy` / `concern` |
 | `value` | double precision | 0〜100 |
 | `updated_at` | timestamptz | 減衰計算の起点 |
+| `samples` | integer | これまでに数えた回数 |
+| `high_count` | integer | そのうち「強い」と言えた回数 |
+
+**履歴の表は持たない。** 週次で傾向を見るのに必要なのは「その状態が何回あったか」
+だけで、毎ターン1行増える記録は掃除の手間に見合わない。
 
 **寿命**：保存はするが、読み出し時に半減期で基準値へ減衰させる。
 値そのものを消すことはない。
@@ -145,7 +150,7 @@
 
 | カラム | 型 | 説明 |
 |---|---|---|
-| `key` | text PK | `base_personality` / `reply_style` / `addressing` / `support_style` / `style_feedback` |
+| `key` | text PK | `base_personality` / `reply_style` / `addressing` / `support_style` / `style_feedback` / `disposition` |
 | `value` | jsonb | 内容 |
 | `locked` | boolean | true なら自動更新しない。`base_personality` は常に true |
 | `source_wisdom_ids` | jsonb | 根拠にした `memory_long` の id |
@@ -204,9 +209,9 @@
    人間でいう睡眠中の記憶固定化
 
 【2-c. 育つ】週次バッチ
-   living_emotion の履歴 ──→ persona_favorite
-   ② 同じ状態が繰り返されると性格になる
-   memory_long ──(LLM)──→ persona_character
+   living_emotion の回数 ──→ persona_character（disposition）
+   ② 同じ状態が繰り返されると性格になる。LLMは呼ばない
+   memory_long ──(LLM)──→ persona_character（接し方）
    人間でいう経験による性格形成。遅い・たまにしか変わらない
 
 【3. 話す】毎ターン
@@ -311,7 +316,7 @@
 | 1 | マイグレーションとリネーム（**振る舞いは変えない**）、`living_activity` の新設とフロントからの移行 | 0 | 済 |
 | 2 | ① 記憶 → 感情（想起結果の再利用、処理順の入れ替え） | 1 | 済 |
 | 3 | ③ 想起スコア（`tone` の付与と気分の一致） | 1, 2 | 済 |
-| 4 | ② 状態 → 性格（週次で好みが育つ） | 1, 2 | |
+| 4 | ② 状態 → 性格（週次で傾向が育つ） | 1, 2 | 済 |
 
 `tone` は3から、日次整理で新しく作る記憶にだけ付く。既存の記憶は0（中立）の
 ままなので、気分一致が効いてくるまで数日かかる。遡って付け直すことはしない
