@@ -65,19 +65,26 @@ def _boot() -> None:
     data = temp / 'data'
     flags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
     atexit.register(shutil.rmtree, temp, True)
-    subprocess.run([initdb, '-D', str(data), '-A', 'trust', '-U', 'tester', '--no-locale', '-E', 'UTF8'],
-                   check=True, capture_output=True, creationflags=flags)
+    # 失敗したときに何が起きたか読めるよう、initdbの出力はそのまま例外に載せる。
+    setup = subprocess.run([initdb, '-D', str(data), '-A', 'trust', '-U', 'tester', '--no-locale', '-E', 'UTF8'],
+                           capture_output=True, text=True, errors='replace', creationflags=flags)
+    if setup.returncode:
+        raise RuntimeError(f'initdb failed ({setup.returncode}): {setup.stdout}{setup.stderr}')
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
+    # Unixソケットの既定の置き場（/var/run/postgresql）は書けないことがある。
+    # 使い捨てディレクトリに向ける。Windowsにはこの指定が無いので付けない。
+    options = f'-h 127.0.0.1 -p {port} -F'
+    if os.name != 'nt':
+        options += f' -k "{temp}"'
     startup = subprocess.run([pg_ctl, '-D', str(data), '-l', str(temp / 'postgres.log'), '-w',
-                              '-o', f'-h 127.0.0.1 -p {port} -F', 'start'],
+                              '-o', options, 'start'],
                              capture_output=True, timeout=60, creationflags=flags)
     if startup.returncode:
         log = temp / 'postgres.log'
-        _state['reason'] = (log.read_text(encoding='utf-8', errors='replace') if log.exists()
-                            else 'Test PostgreSQL startup failed')
-        return
+        detail = log.read_text(encoding='utf-8', errors='replace') if log.exists() else ''
+        raise RuntimeError('pg_ctl start failed: ' + (detail or startup.stderr.decode('utf-8', 'replace')))
     atexit.register(subprocess.run, [pg_ctl, '-D', str(data), '-m', 'immediate', '-w', 'stop'],
                     capture_output=True)
     dsn = f'host=127.0.0.1 port={port} user=tester dbname=postgres connect_timeout=5'
