@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     max_output_tokens: int = 1024
 
     def origin_allowed(self, origin: str) -> bool:
-        from .pc import load_config
-        return (origin in self.allowed_origins or bool(PRIVATE_ORIGIN_PATTERN.match(origin))
-                or origin == load_config().tailscale_origin and bool(origin))
+        if origin in self.allowed_origins or PRIVATE_ORIGIN_PATTERN.match(origin):
+            return True
+        # PC連携の設定が壊れていても、ここで例外を投げない。チャットの接続判定を
+        # 巻き添えにしないため、読めないときは「Tailscale未設定」として扱う。
+        from .pc import safe_config
+        return bool(origin) and origin == safe_config().tailscale_origin

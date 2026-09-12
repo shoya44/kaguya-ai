@@ -43,6 +43,15 @@ def load_config() -> AccessConfig:
         raise HTTPException(503, 'PC設定を読み取れません。backend/pc_access.jsonを確認してください。') from None
 
 
+def safe_config() -> AccessConfig:
+    """読めない設定は「未設定」として扱う。PC連携の設定ミスで、チャットや音声など
+    関係のない機能まで止めないため。設定エラーを利用者へ返すのは /pc/ の役目。"""
+    try:
+        return load_config()
+    except HTTPException:
+        return AccessConfig()
+
+
 def trusted(scope, config=None) -> bool:
     """Only a local client or our local Serve proxy. Run uvicorn --no-proxy-headers."""
     config = config or load_config()
@@ -102,6 +111,8 @@ def videos(query='', offset=0):
     scanned = 0
     truncated = False
     query = unicodedata.normalize('NFKC', query).casefold()
+    # 設定の読み込みは1回だけ。ファイルごとに読み直すと、走査した数だけ
+    # ディスク読み込みと検証が走る。
     for label, directory in sorted(load_config().video_folders.items()):
         root = Path(directory).resolve()
         if not root.is_dir():
@@ -120,9 +131,12 @@ def videos(query='', offset=0):
                 if query not in unicodedata.normalize('NFKC', label + '/' + relative).casefold():
                     continue
                 try:
-                    resolved = video_path(label, relative)
+                    # video_path と同じ条件で確かめる（実体がroot配下、通常ファイル）。
+                    resolved = path.resolve()
+                    if not resolved.is_relative_to(root) or not resolved.is_file():
+                        continue
                     items.append({'folder': label, 'path': relative, 'name': name, 'size': resolved.stat().st_size})
-                except (OSError, HTTPException):
+                except OSError:
                     continue
             if truncated:
                 break
@@ -188,16 +202,18 @@ def chat_action(text: str) -> dict | None:
     if not lower:
         return None
 
+    # 1件も登録されていないなら、この機能は使えない。案内を返さず通常の会話へ返す。
+    config = safe_config()
+    if not config.video_folders and not config.commands:
+        return None
+
     execute_hint = any(word in lower for word in ('実行', '起動', '動かして', '走らせ', 'run'))
     request_hint = any(word in lower for word in ('実行して', '起動して', '動かして', '走らせて', 'runして', 'お願い', 'やって'))
-    command_request = execute_hint and request_hint and not _question_only(lower)
+    command_request = (execute_hint and request_hint and not _question_only(lower)
+                       and bool(config.commands))
     bat_hint = 'bat' in lower or 'バッチ' in lower
     matched = []
     if command_request:
-        try:
-            config = load_config()
-        except HTTPException:
-            config = AccessConfig()
         for key, command in config.commands.items():
             name = _normalized(command.name)
             if name and name in lower:
@@ -218,6 +234,8 @@ def chat_action(text: str) -> dict | None:
             'reply': 'PCタブを開いたよ。実行するBATを選んで、内容を確認してね。',
         }
 
+    if not config.video_folders:
+        return None
     query = _video_query(value)
     video_request = (not _question_only(lower)
                      and any(word in lower for word in ('動画', 'ビデオ', 'mp4'))
