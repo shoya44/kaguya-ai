@@ -63,6 +63,10 @@ export class Controls {
           reply_tokens: Number(form.get('reply_tokens')), font_size: Number(form.get('font_size')),
           voice_name: String(form.get('voice_name') || ''),
           voice_style: String(form.get('voice_style') || ''),
+          voice_engine: String(form.get('voice_engine') || 'gemini'),
+          tts_url: String(form.get('tts_url') || ''),
+          tts_speaker: String(form.get('tts_speaker') || ''),
+          tts_style: String(form.get('tts_style') || ''),
         };
         const result = await this.api('/settings', { method: 'PATCH', body: JSON.stringify(options) });
         await this.applyOptions(result.options);

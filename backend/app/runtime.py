@@ -3,6 +3,8 @@ import logging
 from threading import RLock
 
 from psycopg.types.json import Jsonb
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from .db import Database
@@ -35,6 +37,14 @@ class Options(BaseModel):
     voice_style: str = Field(default='少し高めの明るいトーンで、やわらかい語尾でかわいらしく話す。'
                                      '固くならず、友達に話しかけるように、短くテンポよく。',
                              max_length=300)
+    # 読み上げをどこに任せるか。gemini はGemini Liveの声をそのまま流す（PC側に
+    # 追加の用意が要らない）。local はPCのVOICEVOX互換エンジンで読み上げる。
+    # local を選んでもエンジンに繋がらなければ gemini へ自動で戻す。
+    voice_engine: Literal['gemini', 'local'] = 'gemini'
+    # AivisSpeech は 10101、VOICEVOX は 50021。APIは互換なので同じ実装で動く。
+    tts_url: str = Field(default='http://127.0.0.1:10101', min_length=1, max_length=200)
+    tts_speaker: str = Field(default='コハク', min_length=1, max_length=80)
+    tts_style: str = Field(default='ノーマル', min_length=1, max_length=80)
 
 
 class RuntimeStore:
