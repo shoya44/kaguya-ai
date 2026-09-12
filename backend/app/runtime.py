@@ -30,6 +30,11 @@ class Options(BaseModel):
     # 通話の声。名前の一覧はGemini側に従うため、選択式にせず入力できるようにする。
     # 無効な名前だと通話開始時に失敗し、その旨と使った名前が画面に出る。
     voice_name: str = Field(default='Leda', min_length=1, max_length=40, pattern=r'^[A-Za-z][A-Za-z0-9]*$')
+    # 話し方。声の名前だけでは印象が決まらないので、トーン・語尾・テンポを言葉で指示する。
+    # 空にすると指示なし（モデルの素の話し方）になる。
+    voice_style: str = Field(default='少し高めの明るいトーンで、やわらかい語尾でかわいらしく話す。'
+                                     '固くならず、友達に話しかけるように、短くテンポよく。',
+                             max_length=300)
 
 
 class RuntimeStore:

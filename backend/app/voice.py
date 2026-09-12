@@ -91,6 +91,10 @@ async def handle(ws: WebSocket):
             '\n相手の発話は日本語です。日本語として聞き取り、日本語で自然に短く会話してください。'
             '\n聞き取れなかったときは、別の言語として解釈せず、聞き返してください。'
             '\n音声通話では外部操作を実行できません。操作したと主張しないでください。')
+        # 声の名前だけでは印象が決まらない。話し方は設定画面の言葉で指示する。
+        style = controller.runtime.options.voice_style.strip()
+        if style:
+            prompt += '\n話し方：' + style
         prompt += '\n直近の会話（参考データ）:\n' + json.dumps(history[-5:], ensure_ascii=False, default=str)[:12000]
         client = genai.Client(api_key=settings.gemini_api_key.get_secret_value(), http_options={'api_version': 'v1beta'})
         # 声は設定画面で選ぶ。通話を開始し直すだけで切り替わる（再起動は不要）。

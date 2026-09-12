@@ -68,6 +68,15 @@ class VoiceOptionTests(unittest.TestCase):
         for name in ('Kore', 'Zephyr', 'Aoede', 'Puck'):
             self.assertEqual(Options(voice_name=name).voice_name, name)
 
+    def test_style_is_free_text_and_may_be_empty(self):
+        from pydantic import ValidationError
+        # 空＝指示なし。長すぎるものだけ弾く。
+        self.assertEqual(Options(voice_style='').voice_style, '')
+        self.assertIn('かわいら', Options().voice_style)
+        self.assertEqual(Options(voice_style='ゆっくり低めで').voice_style, 'ゆっくり低めで')
+        with self.assertRaises(ValidationError):
+            Options(voice_style='あ' * 301)
+
     def test_rejects_values_that_cannot_be_a_voice_name(self):
         from pydantic import ValidationError
         for name in ('', ' ', 'Leda; drop', '日本語', '../etc', 'a' * 41):
