@@ -70,7 +70,7 @@ function harness(options = {}) {
       visibilityState: 'visible',
     },
     location: { hostname: '127.0.0.1', port: '5173', origin: 'http://127.0.0.1:5173' },
-    Avatar: class { setState() {} }, isTauri: () => !!options.tauri,
+    Avatar: class { setState() {} react() {} }, isTauri: () => !!options.tauri,
     invoke: options.invoke ?? (async () => 'owned'),
     sessionStorage: storage(sessionData), localStorage: storage(localData),
     WebSocket: Socket, URLSearchParams, AbortSignal, Date, Error,
