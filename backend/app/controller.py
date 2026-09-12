@@ -209,7 +209,7 @@ class Controller:
                 raise asyncio.CancelledError
             self.phase = 'generating'
             await self.broadcast(self.state())
-            # PC操作は任意パス/任意コマンドを実行せず、PCタブへ安全に引き渡す。
+            # PC操作は任意パス/任意コマンドを実行せず、ファイルタブへ安全に引き渡す。
             # BATは既存の prepare -> ユーザー確認 -> run を必ず通る。
             pc_action = pc.chat_action(turn['text'])
             if pc_action:

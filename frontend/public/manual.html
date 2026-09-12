@@ -40,7 +40,7 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <h3>家庭内Wi-Fi</h3>
 <p>PCとiPhoneを同じWi-Fiへ接続し、Safariで開きます。</p>
 <pre><code>http://&lt;PCのLAN IP&gt;:8765/</code></pre>
-<p>文字チャット、記憶、天気、カレンダー、リマインダー、参照ファイル、Living Kaguya、PCタブを利用できます。HTTP接続のため、<strong>iPhoneの音声会話は利用できません</strong>（ブラウザがHTTPSでないとマイクを渡さないため）。iPhoneで音声会話を使う場合は、次の「外出先から使う（Tailscale）」の設定を行い、そのURLで開きます。家の中でも同じURLが使えます。</p>
+<p>文字チャット、記憶、天気、カレンダー、リマインダー、参照ファイル、Living Kaguya、ファイルタブを利用できます。HTTP接続のため、<strong>iPhoneの音声会話は利用できません</strong>（ブラウザがHTTPSでないとマイクを渡さないため）。iPhoneで音声会話を使う場合は、次の「外出先から使う（Tailscale）」の設定を行い、そのURLで開きます。家の中でも同じURLが使えます。</p>
 <h3>外出先から使う（Tailscale）</h3>
 <p>Tailscale Serveを使い、インターネットへ公開せずに本人のTailnet内だけでHTTPSアクセスできます。<strong>Tailscale Funnelは使いません。</strong></p>
 <p>PC側でリポジトリ直下の <code>pc_setup.bat</code> を実行します。</p>
@@ -54,7 +54,7 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <ul><li>PCが終了・スリープ中、またはかぐやAIが停止中は使えません</li><li>家庭内LANのiPhone接続はHTTPのままです</li><li>Web Pushは未実装です</li><li>PC更新ボタン・最前面設定はiPhoneには出しません</li><li>LANのHTTP URLをホーム画面へ追加してもSafariタブとして開きます。マニフェストの <code>display</code> は <code>browser</code> のままです</li><li>音声会話を使う場合は、TailscaleのHTTPS URLから開いてください</li></ul>
 <p>Living Kaguyaの表情はPC側のサーバが決めるため、PCとiPhoneで同じになります。最後に会った時刻と利用時間の学習も、どの端末で話した分も数えるので揃います。生活状態（読書・睡眠など）の見せ方だけが端末ごとです。</p>
 <h2>PC連携（動画・BAT）</h2>
-<p>「PC」タブから、PC内の許可した動画フォルダとBATだけを利用できます。任意のパスや任意のコマンドをブラウザから渡して実行する機能ではありません。</p>
+<p>「ファイル」タブから、PC内の許可した動画フォルダとBATだけを利用できます。任意のパスや任意のコマンドをブラウザから渡して実行する機能ではありません。</p>
 <h3>初期設定</h3>
 <p>リポジトリ直下の <code>pc_setup.bat</code> を実行します。</p>
 <pre><code>C:\kaguya-ai\pc_setup.bat</code></pre>
@@ -65,8 +65,8 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <h3>BAT</h3>
 <ul><li><code>pc_setup.bat</code> で事前登録した <code>.bat</code> だけ実行できます</li><li>実行前に表示名・説明・最大実行時間を表示し、ユーザー確認が必要です</li><li>ブラウザから任意の引数を渡すことはできません</li><li>確認後にBATや登録設定が変更されていた場合は実行しません</li><li>同時実行は1件です</li><li>既定の時間上限は300秒で、設定値は5〜3,600秒の範囲です</li><li>標準入力は無効です。<code>pause</code>、対話入力、管理者昇格を必要とするBATは登録しないでください</li><li>BAT終了後に別アプリを起動していた場合、その別アプリの処理完了までは保証しません</li></ul>
 <h3>チャットから使う</h3>
-<p>通常の文字チャットからも、明示的な動画/BAT依頼をPCタブへ引き継げます。</p>
-<ul><li>「旅行の動画を再生して」→ 依頼した端末のPCタブを開き、動画名で検索します。候補が1件なら再生画面まで準備します</li><li>「バックアップを実行して」→ 登録済みBAT名と一致すれば、そのBATの確認画面を開きます</li><li>BATはチャットだけでは実行されません。<strong>表示名・説明・最大実行時間を確認してOKした後にだけ実行</strong>します</li><li>任意パスや任意引数は受け取りません。登録済み許可リストの範囲だけです</li><li>この引き継ぎ判定はローカルで行い、PC操作のためだけに追加のGemini Function Callingを使いません</li></ul>
+<p>通常の文字チャットからも、明示的な動画/BAT依頼をファイルタブへ引き継げます。</p>
+<ul><li>「旅行の動画を再生して」→ 依頼した端末のファイルタブを開き、動画名で検索します。候補が1件なら再生画面まで準備します</li><li>「バックアップを実行して」→ 登録済みBAT名と一致すれば、そのBATの確認画面を開きます</li><li>BATはチャットだけでは実行されません。<strong>表示名・説明・最大実行時間を確認してOKした後にだけ実行</strong>します</li><li>任意パスや任意引数は受け取りません。登録済み許可リストの範囲だけです</li><li>この引き継ぎ判定はローカルで行い、PC操作のためだけに追加のGemini Function Callingを使いません</li></ul>
 <h2>Living Kaguya</h2>
 <p>追加のLLM/API呼び出しを使わず、キャラクターがアプリ内で生活しているように見せる軽量レイヤーです。</p>
 <p>状態例：</p>
@@ -128,7 +128,7 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 READMEを確認してiPhone対応を教えて</code></pre>
 <p><code>.git</code>, <code>.venv</code>, <code>node_modules</code>, <code>target</code>, <code>dist</code> 等は走査しません。ソースコードを書き換えるFunction Callingはありません。</p>
 <h3>PC動画・BAT</h3>
-<p>PC内動画の再生とBAT実行は、Function Callingで任意パスを操作する方式ではなく、<code>backend/pc_access.json</code> の明示的な許可リストを使う別機能です。安全のため、動画は登録フォルダ内のMP4、BATは事前登録済みファイルだけを対象にします。通常チャットからの依頼はサーバー側で保守的にローカル判定し、依頼元端末のPCタブを開くだけです。BATの実行そのものは従来どおり確認トークンを発行し、ブラウザで明示確認してから行います。</p>
+<p>PC内動画の再生とBAT実行は、Function Callingで任意パスを操作する方式ではなく、<code>backend/pc_access.json</code> の明示的な許可リストを使う別機能です。安全のため、動画は登録フォルダ内のMP4、BATは事前登録済みファイルだけを対象にします。通常チャットからの依頼はサーバー側で保守的にローカル判定し、依頼元端末のファイルタブを開くだけです。BATの実行そのものは従来どおり確認トークンを発行し、ブラウザで明示確認してから行います。</p>
 <h2>記憶</h2>
 <h3>3層</h3>
 <table><tr><th>層</th><th>画面上の呼び方</th><th>役割</th><th>できる操作</th></tr><tr><td><code>raw_memory</code></td><td>会話履歴</td><td>過去のやり取りを読み返す</td><td>訂正 / 削除</td></tr><tr><td><code>wisdom</code></td><td>あなたについて覚えていること</td><td>好み・習慣・続いている事情</td><td>訂正 / もう当てはまらない</td></tr><tr><td><code>persona</code></td><td>かぐやの接し方</td><td>呼び方、返答の長さ、相談時の接し方</td><td>変更 / 元に戻す</td></tr></table>
