@@ -13,6 +13,7 @@ from google.genai import types
 from . import relationship
 from .persona import memory_prompt
 from .proactive import tokyo_now
+from .tuning import VOICE_LANGUAGE, VOICE_NAME
 
 
 class Transcript:
@@ -86,12 +87,16 @@ async def handle(ws: WebSocket):
             snapshot = controller.mind.snapshot(tokyo_now())
             if snapshot.get('enabled'):
                 recalled['mind'] = snapshot
-        prompt = memory_prompt(recalled) + '\n日本語で自然に短く会話してください。音声通話では外部操作を実行できません。操作したと主張しないでください。'
+        prompt = memory_prompt(recalled) + (
+            '\n相手の発話は日本語です。日本語として聞き取り、日本語で自然に短く会話してください。'
+            '\n聞き取れなかったときは、別の言語として解釈せず、聞き返してください。'
+            '\n音声通話では外部操作を実行できません。操作したと主張しないでください。')
         prompt += '\n直近の会話（参考データ）:\n' + json.dumps(history[-5:], ensure_ascii=False, default=str)[:12000]
         client = genai.Client(api_key=settings.gemini_api_key.get_secret_value(), http_options={'api_version': 'v1beta'})
         config = {'response_modalities': ['AUDIO'], 'system_instruction': prompt,
                   'input_audio_transcription': {}, 'output_audio_transcription': {},
-                  'speech_config': {'voice_config': {'prebuilt_voice_config': {'voice_name': 'Kore'}}}}
+                  'speech_config': {'language_code': VOICE_LANGUAGE,
+                                    'voice_config': {'prebuilt_voice_config': {'voice_name': VOICE_NAME}}}}
         async with asyncio.timeout(600):
             async with client.aio.live.connect(model=settings.gemini_live_model, config=config) as live:
                 await ws.send_json({'type': 'ready', 'max_seconds': 600})
@@ -155,7 +160,9 @@ async def handle(ws: WebSocket):
             await ws.send_json({'type': 'error', 'message': '通話の時間上限または通信待ち時間を超えました。必要なら再開してください。'})
     except Exception:
         with suppress(Exception):
-            await ws.send_json({'type': 'error', 'message': '音声接続または保存に失敗しました。PCのAPI設定・利用枠・DBを確認して再開してください。'})
+            await ws.send_json({'type': 'error', 'message':
+                '音声接続または保存に失敗しました。PCのAPI設定・利用枠・DBを確認して再開してください。'
+                f'（声: {VOICE_NAME} / 言語: {VOICE_LANGUAGE}。名前が無効だとここで失敗します）'})
     finally:
         for task in tasks:
             task.cancel()

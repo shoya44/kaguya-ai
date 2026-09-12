@@ -13,6 +13,12 @@ export class VoiceChat {
   private button = document.getElementById('voice-toggle') as HTMLButtonElement;
 
   constructor(private base: string, private session: () => Promise<Session>, private onActive: (active: boolean) => void) {
+    // 使えない接続では、押してから断るのではなく、最初から理由と次の一手を出す。
+    const blocked = VoiceChat.unavailable();
+    if (blocked) {
+      this.button.disabled = true;
+      this.status(blocked);
+    }
     this.button.addEventListener('click', () => {
       if (this.active) this.stop('通話を終了しました。');
       else void this.start();
@@ -25,11 +31,23 @@ export class VoiceChat {
 
   private status(text: string): void { document.getElementById('voice-status')!.textContent = text; }
 
+  /** 使えない場合の理由と、次にすることを返す。使える場合は空文字。 */
+  static unavailable(): string {
+    // ブラウザはHTTPSでないとマイクを渡さない。家庭内Wi-FiのHTTP接続がこれに当たる。
+    if (!window.isSecureContext) {
+      return 'この接続ではブラウザがマイクを使えません。PC本体のアプリで開くか、'
+        + 'PCで pc_setup.bat を実行してTailscaleのHTTPS URL（https://….ts.net）を開いてください。';
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      return 'このブラウザはマイクに対応していません。SafariまたはChromeの最新版で開いてください。';
+    }
+    return '';
+  }
+
   async start(): Promise<void> {
     if (this.active) return;
-    if (!navigator.mediaDevices?.getUserMedia || !window.isSecureContext) {
-      this.status('音声はPC本体またはTailscaleのHTTPS接続で利用できます。'); return;
-    }
+    const blocked = VoiceChat.unavailable();
+    if (blocked) { this.status(blocked); return; }
     this.active = true;
     this.onActive(true);
     const generation = ++this.generation;
