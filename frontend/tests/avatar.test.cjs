@@ -42,9 +42,11 @@ function harness() {
   };
   return { avatar: ctx.avatar, images, rendered, paints, canvas,
     life: detail => handlers['kaguya-life']({ detail }),
-    // 呼吸1コマと、一回性の動きの終わりまで進める。身じろぎは含めない。
-    settle: () => fire(10_000),
-    // 手持ち無沙汰な間の身じろぎのタイマーだけを進める。
+    // 呼吸1コマ、一回性の動きの終わり、まばたきの終わりまで進める。
+    settle: () => fire(3_000),
+    // まばたきのタイマーだけを進める（間隔は3.6〜7秒）。
+    blink: () => fire(10_000, 3_000),
+    // 手持ち無沙汰な間の身じろぎのタイマーだけを進める（30〜90秒）。
     idleBreak: () => fire(Infinity, 10_000) };
 }
 
@@ -265,4 +267,54 @@ test('拍は、話しかけへの反応より弱い', () => {
   const inhale = h.canvas.style.transform;
   h.avatar.react('beat');
   assert.equal(h.canvas.style.transform, inhale);
+});
+
+test('ときどき目を閉じて、すぐ開ける', () => {
+  const h = harness();
+  // idleの絵は時刻で変わる（IDLE_BY_TIME）。読書なら常に本の絵に決まる。
+  h.life({ mood: 'normal', activity: 'reading', energy: 60 });
+  assert.equal(h.rendered.at(-1), '/sprites/book.png');
+  h.blink();
+  assert.equal(h.rendered.at(-1), '/sprites/book-blink.png', '目を閉じる');
+  h.settle();
+  assert.equal(h.rendered.at(-1), '/sprites/book.png', 'すぐ開ける');
+});
+
+test('まばたきは重ね合わせずに差し替える', () => {
+  const h = harness();
+  h.life({ mood: 'normal', activity: 'reading', energy: 60 });
+  const before = h.paints.length;
+  h.blink();
+  // 220msかけて閉じると瞬きではなく眠そうに見える。半端な濃さで描かないこと。
+  const during = h.paints.slice(before);
+  assert.deepEqual(during.map(paint => paint.alpha), [1]);
+  assert.equal(during[0].src, '/sprites/book-blink.png');
+});
+
+test('眠っている絵では瞬かない', () => {
+  const h = harness();
+  h.avatar.setState('sleeping', true);
+  assert.equal(h.rendered.at(-1), '/sprites/sleep.png');
+  const before = h.rendered.length;
+  h.blink();
+  assert.equal(h.rendered.length, before, 'もう目を閉じているので描き直さない');
+});
+
+test('差分絵の無い絵では瞬かない', () => {
+  const h = harness();
+  // トランプ遊びの絵にはまばたき差分が無い。
+  h.life({ mood: 'normal', activity: 'playing', energy: 60 });
+  assert.equal(h.rendered.at(-1), '/sprites/cards.png');
+  const before = h.rendered.length;
+  h.blink();
+  assert.equal(h.rendered.length, before);
+});
+
+test('まばたき差分が未配置なら、目を開けたままにする', () => {
+  const h = harness(), closed = h.images.get('/sprites/book-blink.png');
+  closed.complete = false;
+  h.life({ mood: 'normal', activity: 'reading', energy: 60 });
+  h.blink();
+  closed.on.error.forEach(callback => callback());
+  assert.equal(h.rendered.at(-1), '/sprites/book.png');
 });
