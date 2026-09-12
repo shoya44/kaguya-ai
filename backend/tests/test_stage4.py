@@ -87,7 +87,8 @@ class LocalCase(unittest.TestCase):
         self.assertIsNone(proactive.tick(True, False, self.now + timedelta(hours=5)))
 
     def test_budget_persisted_before_call_and_resets_only_on_new_day(self):
-        for _ in range(3): self.assertTrue(self.store.reserve_call('2026-09-11'))
+        for _ in range(self.store.options.daily_call_limit):
+            self.assertTrue(self.store.reserve_call('2026-09-11'))
         restarted = RuntimeStore(self.db)
         self.assertFalse(restarted.reserve_call('2026-09-11'))
         self.assertTrue(restarted.reserve_call('2026-09-12'))
@@ -140,7 +141,9 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
         with contextlib.closing(pgtemp.database()) as db:
             store = RuntimeStore(db)
             from app.proactive import tokyo_now
-            for _ in range(3): store.reserve_call(tokyo_now().date().isoformat())
+            # 上限は設定値。既定を変えてもこのテストが意味を保つよう、値を読んで使い切る。
+            for _ in range(store.options.daily_call_limit):
+                store.reserve_call(tokyo_now().date().isoformat())
             memory = SimpleNamespace(call=AsyncMock(return_value={'raw': [{'status': 'completed'}], 'wisdom': []}))
             llm = SimpleNamespace(organize=AsyncMock())
             controller = SimpleNamespace(active=None, unsaved=None, editing=False, broadcast=AsyncMock())
@@ -148,3 +151,126 @@ class JobTests(unittest.IsolatedAsyncioTestCase):
             await jobs.run(manual=True)
             llm.organize.assert_not_called()
             self.assertIn('上限', jobs.status)
+
+
+@unittest.skipUnless(pgtemp.available(), pgtemp.reason())
+class ProactiveCompositionTests(unittest.IsolatedAsyncioTestCase):
+    """毎朝まったく同じ挨拶が出るのをやめる。失敗しても声かけ自体は止めない。"""
+
+    def setUp(self):
+        self.db = pgtemp.database()
+        self.addCleanup(self.db.close)
+        self.store = RuntimeStore(self.db)
+        self.now = datetime(2026, 9, 11, 12, tzinfo=JST)
+
+    def test_the_tick_carries_what_the_line_is_for(self):
+        event = Proactive(self.store, self.now).tick(True, False, self.now, topic=lambda: '面接')
+        self.assertEqual(event['kind'], 'greeting')
+        self.assertEqual(event['slot'], time_slot(self.now))
+        self.assertEqual(event['topic'], '面接')
+
+    def controller(self, small_talk):
+        llm = SimpleNamespace(small_talk=small_talk)
+        controller = Controller(SimpleNamespace(), llm, AsyncMock(), self.store)
+        controller.proactive = Proactive(self.store, self.now)
+        return controller
+
+    @staticmethod
+    def event(text='おかえり。あたし、ここにいるよ。'):
+        return {'type': 'proactive.message', 'text': text, 'slot': 'day', 'kind': 'nudge', 'topic': ''}
+
+    async def test_the_spoken_line_replaces_the_canned_one(self):
+        controller = self.controller(AsyncMock(return_value='おはよ、今日も来てくれたんだね。'))
+        sent = await controller.compose_proactive(self.event())
+        self.assertEqual(sent, {'type': 'proactive.message', 'text': 'おはよ、今日も来てくれたんだね。'})
+        # 次の会話へ渡す「直前の声かけ」も、実際に画面へ出した文面にする。
+        self.assertEqual(controller.proactive.activity(self.now), 'おはよ、今日も来てくれたんだね。')
+
+    async def test_a_failed_rewrite_still_sends_the_canned_line(self):
+        for broken in (AsyncMock(side_effect=RuntimeError('boom')), AsyncMock(return_value='')):
+            with self.subTest(broken=broken):
+                sent = await self.controller(broken).compose_proactive(self.event())
+                self.assertEqual(sent['text'], self.event()['text'])
+
+    async def test_the_rewrite_never_blocks_the_periodic_loop(self):
+        import asyncio
+
+        async def slow(*args, **kwargs):
+            await asyncio.sleep(30)
+            return 'おそい'
+
+        controller = self.controller(slow)
+        with unittest.mock.patch('app.controller.PROACTIVE_COMPOSE_SECONDS', 0.05):
+            sent = await controller.compose_proactive(self.event())
+        self.assertEqual(sent['text'], self.event()['text'])
+
+
+class SmallTalkLineTests(unittest.IsolatedAsyncioTestCase):
+    """モデルの出力をそのまま吹き出しに出さない。1行・短さだけは必ず守る。"""
+
+    def gemini(self, produced):
+        from app.llm import Gemini
+        client = Gemini.__new__(Gemini)
+        client.client = object()
+        client.settings = SimpleNamespace(gemini_model='gemini-3.5-flash-lite')
+        client._generate = AsyncMock(return_value=produced)
+        return client
+
+    async def test_only_the_first_line_is_used(self):
+        line = await self.gemini('おはよ、よく眠れた？\n（挨拶の案です）').small_talk('おはよ。', 'morning', 'greeting')
+        self.assertEqual(line, 'おはよ、よく眠れた？')
+
+    async def test_quotes_are_removed(self):
+        line = await self.gemini('「おかえり。待ってたよ」').small_talk('おかえり。', 'day', 'nudge')
+        self.assertEqual(line, 'おかえり。待ってたよ')
+
+    async def test_a_long_answer_is_dropped(self):
+        line = await self.gemini('あ' * 80).small_talk('おかえり。', 'day', 'nudge')
+        self.assertEqual(line, '')
+
+    async def test_nothing_is_spoken_without_a_configured_client(self):
+        from app.llm import Gemini
+        client = Gemini.__new__(Gemini)
+        client.client = None
+        self.assertEqual(await client.small_talk('おかえり。', 'day', 'nudge'), '')
+
+
+@unittest.skipUnless(pgtemp.available(), pgtemp.reason())
+class AutoOrganizePaceTests(unittest.IsolatedAsyncioTestCase):
+    """自動整理が1回1バッチだと、よく話した日に反映待ちが追いつかない。"""
+
+    async def test_an_auto_run_keeps_going_for_a_few_batches(self):
+        from app.jobs import AUTO_BATCHES
+        with contextlib.closing(pgtemp.database()) as db:
+            store = RuntimeStore(db)
+            store.record(weekly_done=periods(datetime.now(JST))[1])
+
+            async def call(method, path, **kwargs):
+                if path == '/organize/snapshot':
+                    return {'raw': [{'status': 'pending'}], 'wisdom': []}
+                return {'processed': 1}
+
+            llm = SimpleNamespace(organize=AsyncMock(return_value={'items': []}))
+            controller = SimpleNamespace(active=None, unsaved=None, editing=False, broadcast=AsyncMock())
+            jobs = Jobs(SimpleNamespace(call=call), llm, store, controller)
+            await jobs.run(manual=False)
+            self.assertEqual(llm.organize.await_count, AUTO_BATCHES)
+
+    async def test_an_auto_run_stops_as_soon_as_the_user_talks(self):
+        with contextlib.closing(pgtemp.database()) as db:
+            store = RuntimeStore(db)
+            store.record(weekly_done=periods(datetime.now(JST))[1])
+            controller = SimpleNamespace(active=None, unsaved=None, editing=False, broadcast=AsyncMock())
+
+            async def call(method, path, **kwargs):
+                if path == '/organize/snapshot':
+                    # 1バッチ目の整理中に話しかけられた状況。
+                    controller.active = {'turn_id': '1'}
+                    return {'raw': [{'status': 'pending'}], 'wisdom': []}
+                return {'processed': 1}
+
+            llm = SimpleNamespace(organize=AsyncMock(return_value={'items': []}))
+            jobs = Jobs(SimpleNamespace(call=call), llm, store, controller)
+            await jobs.run(manual=False)
+            llm.organize.assert_not_called()
+            self.assertIn('会話', jobs.status)

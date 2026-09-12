@@ -1,4 +1,4 @@
-type LifeMood = 'normal' | 'happy' | 'sleepy' | 'sulky';
+type LifeMood = 'normal' | 'happy' | 'sleepy' | 'sulky' | 'worried' | 'bored';
 type LifeActivity = 'idle' | 'reading' | 'working' | 'playing' | 'snacking' | 'daydreaming' | 'sleeping';
 
 type LifeState = {
@@ -6,6 +6,9 @@ type LifeState = {
   interactions: number;
   hourCounts: number[];
 };
+
+// backend/app/mood.py の FACES と同じ並び。増やすときは両方を直す。
+const MOODS: readonly LifeMood[] = ['normal', 'happy', 'sleepy', 'sulky', 'worried', 'bored'];
 
 const LIFE_KEY = 'kaguya.life.v1';
 const MINUTE = 60 * 1000;
@@ -126,7 +129,7 @@ function reactToText(text: string): void {
 
 window.addEventListener('kaguya-mood', event => {
   const value = String((event as CustomEvent).detail?.mood ?? '');
-  if (!['normal', 'happy', 'sleepy', 'sulky'].includes(value) || value === serverMood) return;
+  if (!MOODS.includes(value as LifeMood) || value === serverMood) return;
   serverMood = value as LifeMood;
   emit(false);
 });

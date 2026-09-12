@@ -6,6 +6,10 @@ from .errors import ChatError
 from .proactive import tokyo_now
 
 
+# 自動整理1回で続けるバッチ数。会話が始まれば各バッチの先頭で中断する。
+AUTO_BATCHES = 3
+
+
 def periods(now):
     date = (now - timedelta(hours=3)).date()
     sunday = date - timedelta(days=(date.weekday() + 1) % 7)
@@ -75,7 +79,10 @@ class Jobs:
             processed = 0
             max_batches = max(1, self.store.options.daily_call_limit - int(weekly_due))
             if not manual:
-                max_batches = 1
+                # 自動実行でも数回は続ける。1回だけだと、15分間隔・会話の切れ目という
+                # 条件と重なって1日あたり数十件しか進まない。各回の先頭で
+                # can_continue() を見るので、話しかけられた時点で止まる。
+                max_batches = min(max_batches, AUTO_BATCHES)
             for _ in range(max_batches):
                 if not can_continue():
                     return
