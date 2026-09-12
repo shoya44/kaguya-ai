@@ -128,18 +128,30 @@ echo Database integration checks passed.
 goto done
 
 :autostart
-rem Windowsサインイン時に簡易表示で起動するタスク。管理者権限は不要。
-rem 読み上げエンジンも一緒に常駐させる。通話のたびに手で起動しなくて済む。
-set "TASK_NAME=KaguyaAI_AutoStart"
-set "TTS_TASK=KaguyaAI_Voice_AutoStart"
+rem Windowsサインイン時に簡易表示で起動する。読み上げエンジンも一緒に常駐させ、
+rem 通話のたびに手で起動しなくて済むようにする。
+call :autostart_vars
 if /i "%~2"=="on" goto autostart_on
 if /i "%~2"=="off" goto autostart_off
 echo Usage: kaguya.bat autostart on^|off
 goto failed
 
+:autostart_vars
+rem スタートアップフォルダーに起動用のcmdを置くだけにする。管理者権限も
+rem 資格情報も要らない。schtasks /SC ONLOGON は「どのユーザーのサインインでも」
+rem という全ユーザー向けの登録になり、昇格していないと Access is denied で失敗する。
+set "STARTUP=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"
+set "APP_LINK=%STARTUP%\Kaguya AI.cmd"
+set "TTS_LINK=%STARTUP%\Kaguya AI Voice.cmd"
+exit /b 0
+
 :autostart_on
-schtasks /Create /TN "%TASK_NAME%" /TR "\"%~dp0start.bat\" --mini" /SC ONLOGON /RL LIMITED /F
-if errorlevel 1 goto failed
+if not exist "%STARTUP%" goto autostart_nofolder
+rem 起動用のcmdは自分で終わる。start.bat を待たないので窓は残らない。
+(echo @echo off)> "%APP_LINK%"
+if errorlevel 1 goto autostart_nowrite
+(echo start "" "%~dp0start.bat" --mini)>> "%APP_LINK%"
+if not exist "%APP_LINK%" goto autostart_nowrite
 echo Registered: Kaguya AI starts in mini mode at sign-in.
 rem よくある置き場だけを見る。見つからなければ手動の手順を出す。
 set "TTS_EXE=%LOCALAPPDATA%\Programs\AivisSpeech\AivisSpeech.exe"
@@ -155,22 +167,40 @@ echo   Without it, calls fall back to the Gemini voice.
 goto done
 
 :autostart_tts
-schtasks /Create /TN "%TTS_TASK%" /TR "\"%TTS_EXE%\"" /SC ONLOGON /RL LIMITED /F
-if errorlevel 1 goto failed
+(echo @echo off)> "%TTS_LINK%"
+if errorlevel 1 goto autostart_nowrite
+(echo start "" "%TTS_EXE%")>> "%TTS_LINK%"
+if not exist "%TTS_LINK%" goto autostart_nowrite
 echo Registered: AivisSpeech starts at sign-in.
 goto done
 
+:autostart_nofolder
+echo The Startup folder was not found:
+echo   "%STARTUP%"
+goto failed
+
+:autostart_nowrite
+echo Could not write to the Startup folder:
+echo   "%STARTUP%"
+echo Check that the folder is not read-only, then try again.
+goto failed
+
 :autostart_off
-schtasks /Delete /TN "%TASK_NAME%" /F
-if errorlevel 1 (
-  echo No auto-start task found, or it could not be removed.
-) else (
-  echo Removed: Kaguya AI no longer starts at sign-in.
-)
-rem 読み上げエンジンのタスクは無いこともある。無くても失敗として扱わない。
-schtasks /Delete /TN "%TTS_TASK%" /F >nul 2>&1
-if not errorlevel 1 echo Removed: AivisSpeech no longer starts at sign-in.
+del /f /q "%APP_LINK%" >nul 2>&1
+del /f /q "%TTS_LINK%" >nul 2>&1
+rem 旧版はタスクスケジューラに登録していた。残っていれば消すが、無くても失敗にしない。
+schtasks /Delete /TN "KaguyaAI_AutoStart" /F >nul 2>&1
+schtasks /Delete /TN "KaguyaAI_Voice_AutoStart" /F >nul 2>&1
+if exist "%APP_LINK%" goto autostart_stuck
+if exist "%TTS_LINK%" goto autostart_stuck
+echo Removed: Kaguya AI and AivisSpeech no longer start at sign-in.
 goto done
+
+:autostart_stuck
+echo Could not remove the Startup entries in:
+echo   "%STARTUP%"
+echo Press Win+R, run "shell:startup", and delete them by hand.
+goto failed
 
 :menu
 rem このファイルはUTF-8なので、echoする文字はASCIIに限る（cp932のコンソールで化けるため）。
@@ -197,8 +227,7 @@ if errorlevel 1 goto update
 goto quit
 
 :autostart_menu
-set "TASK_NAME=KaguyaAI_AutoStart"
-set "TTS_TASK=KaguyaAI_Voice_AutoStart"
+call :autostart_vars
 choice /c yn /m "Start Kaguya AI and AivisSpeech at Windows sign-in"
 if errorlevel 2 goto autostart_off
 goto autostart_on

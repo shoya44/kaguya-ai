@@ -187,6 +187,7 @@ C:\kaguya-ai\start.bat
 - 見つからなかった場合はその旨を表示します。Win+R で `shell:startup` を開き、AivisSpeech のショートカットを置いてください
 - AivisSpeech が起動していないと、通話は Gemini の声に切り替わります（会話自体は続きます）
 - 解除は同じ `5` から。両方の登録を外します
+- 登録先は Windows の**スタートアップフォルダー**（Win+R → `shell:startup`）です。`Kaguya AI.cmd` と `Kaguya AI Voice.cmd` が置かれます
 
 # 設定
 
