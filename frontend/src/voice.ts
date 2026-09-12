@@ -7,8 +7,6 @@ export class VoiceChat {
   private capture: AudioWorkletNode | null = null;
   private sources = new Set<AudioBufferSourceNode>();
   private nextAudio = 0;
-  // 再生待ちの上限（秒）。Geminiは実時間で届くので短くてよいが、PC側で
-  // 読み上げる場合は1文ぶんがまとめて届くため、同じ値だと誤検知する。
   private maxLead = 10;
   private generation = 0;
   private active = false;
@@ -16,42 +14,32 @@ export class VoiceChat {
   private button = document.getElementById('voice-toggle') as HTMLButtonElement;
 
   constructor(private base: string, private session: () => Promise<Session>, private onActive: (active: boolean) => void) {
-    // 使えない接続では、押してから断るのではなく、最初から理由と次の一手を出す。
     const blocked = VoiceChat.unavailable();
     if (blocked) {
       this.button.disabled = true;
       this.status(blocked);
     }
     this.button.addEventListener('click', () => {
-      if (this.active) this.stop('通話を終了しました。');
+      if (this.active) this.stop('通話終了');
       else void this.start();
     });
-    window.addEventListener('pagehide', () => this.stop('通話を終了しました。'));
+    window.addEventListener('pagehide', () => this.stop('通話終了'));
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && this.active) this.stop('画面が閉じられたため通話を終了しました。');
+      if (document.hidden && this.active) this.stop('通話終了');
     });
   }
 
   private status(text: string): void { document.getElementById('voice-status')!.textContent = text; }
 
-  /** アイコンボタンなので中身は入れ替えず、ラベルと状態だけを更新する。
-      data-active が true の間だけマイクに斜線が入る（CSS側）。 */
   private label(text: string, active: boolean): void {
     this.button.setAttribute('aria-label', text);
     this.button.setAttribute('title', text);
     this.button.dataset.active = String(active);
   }
 
-  /** 使えない場合の理由と、次にすることを返す。使える場合は空文字。 */
   static unavailable(): string {
-    // ブラウザはHTTPSでないとマイクを渡さない。家庭内Wi-FiのHTTP接続がこれに当たる。
-    if (!window.isSecureContext) {
-      return 'この接続ではブラウザがマイクを使えません。PC本体のアプリで開くか、'
-        + 'PCで pc_setup.bat を実行してTailscaleのHTTPS URL（https://….ts.net）を開いてください。';
-    }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      return 'このブラウザはマイクに対応していません。SafariまたはChromeの最新版で開いてください。';
-    }
+    if (!window.isSecureContext) return '音声通話にはPCアプリまたはHTTPS接続が必要です。';
+    if (!navigator.mediaDevices?.getUserMedia) return 'このブラウザではマイクを利用できません。';
     return '';
   }
 
@@ -63,9 +51,8 @@ export class VoiceChat {
     this.onActive(true);
     const generation = ++this.generation;
     this.label('通話を終了', true);
-    this.status('マイクを準備しています…');
+    this.status('接続中…');
     try {
-      // Create/resume during the user's tap, before any network request (iOS).
       this.context = new AudioContext();
       await this.context.resume();
       if (generation !== this.generation) return;
@@ -75,7 +62,7 @@ export class VoiceChat {
       if (generation !== this.generation) { stream.getTracks().forEach(track => track.stop()); return; }
       this.stream = stream;
       stream.getTracks().forEach(track => track.addEventListener('ended', () => {
-        if (generation === this.generation) this.stop('マイクの接続が終了しました。');
+        if (generation === this.generation) this.stop('マイク終了');
       }));
       await this.context!.audioWorklet.addModule('/pcm-worklet.js');
       const current = await this.session();
@@ -84,7 +71,7 @@ export class VoiceChat {
       this.socket = socket;
       socket.binaryType = 'arraybuffer';
       const timeout = window.setTimeout(() => {
-        if (generation === this.generation) this.stop('音声サーバーに接続できませんでした。');
+        if (generation === this.generation) this.stop('接続できませんでした。');
       }, 30000);
       socket.addEventListener('open', () => socket.send(JSON.stringify({ token: current.sessionToken })));
       socket.addEventListener('message', event => {
@@ -98,13 +85,13 @@ export class VoiceChat {
           this.capture = new AudioWorkletNode(context, 'pcm-capture');
           this.capture.port.onmessage = event => {
             if (socket.readyState !== WebSocket.OPEN) return;
-            if (socket.bufferedAmount > 128000) { this.stop('音声通信が遅れています。接続を確認して再開してください。'); return; }
+            if (socket.bufferedAmount > 128000) { this.stop('通信が遅れています。'); return; }
             socket.send(event.data);
           };
           const mute = context.createGain(); mute.gain.value = 0;
           context.createMediaStreamSource(stream).connect(this.capture).connect(mute).connect(context.destination);
-          this.status('通話中：そのまま話してください。返答中も割り込めます。');
-          this.timer = window.setTimeout(() => this.stop('10分の上限に達しました。必要なら再開してください。'), 600000);
+          this.status('通話中');
+          this.timer = window.setTimeout(() => this.stop('10分で通話を終了しました。'), 600000);
         } else if (message.type === 'interrupted') {
           this.clearPlayback();
         } else if (message.type === 'error') {
@@ -115,20 +102,20 @@ export class VoiceChat {
       });
       socket.addEventListener('close', () => {
         window.clearTimeout(timeout);
-        if (generation === this.generation) this.stop('通話接続が終了しました。再開する場合は開始ボタンを押してください。');
+        if (generation === this.generation) this.stop('通話終了');
       });
       socket.addEventListener('error', () => {
-        if (generation === this.generation) this.stop('音声接続に失敗しました。TailscaleとPC側の設定を確認してください。');
+        if (generation === this.generation) this.stop('音声接続に失敗しました。');
       });
     } catch {
-      if (generation === this.generation) this.stop('音声を開始できません。マイクの許可と接続を確認してください。');
+      if (generation === this.generation) this.stop('音声を開始できません。');
     }
   }
 
   private play(bytes: ArrayBuffer): void {
     const context = this.context;
     if (!context || bytes.byteLength % 2) return;
-    if (this.nextAudio - context.currentTime > this.maxLead) { this.stop('音声再生が遅れています。通話を再開してください。'); return; }
+    if (this.nextAudio - context.currentTime > this.maxLead) { this.stop('音声再生が遅れています。'); return; }
     const samples = new Int16Array(bytes);
     const buffer = context.createBuffer(1, samples.length, 24000);
     const output = buffer.getChannelData(0);
