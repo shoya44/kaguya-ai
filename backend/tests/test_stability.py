@@ -1,14 +1,15 @@
 import asyncio
-import tempfile
+import contextlib
 import time
 import unittest
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from app import tools, weather_tool
 from app.jobs import Jobs
 from app.runtime import RuntimeStore
+
+import pgtemp
 
 
 class DirectWeatherTests(unittest.IsolatedAsyncioTestCase):
@@ -49,10 +50,10 @@ class DirectWeatherTests(unittest.IsolatedAsyncioTestCase):
 
 class JobPriorityTests(unittest.IsolatedAsyncioTestCase):
     async def test_chat_can_cancel_running_memory_job(self):
-        root = Path(__file__).resolve().parents[2] / '.test-output'
-        root.mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory(dir=root) as temp:
-            store = RuntimeStore(Path(temp))
+        if not pgtemp.available():
+            self.skipTest(pgtemp.reason())
+        with contextlib.closing(pgtemp.database()) as db:
+            store = RuntimeStore(db)
             started = asyncio.Event()
 
             async def memory_call(method, path, **kwargs):

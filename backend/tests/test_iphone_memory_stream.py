@@ -1,12 +1,11 @@
 """iPhone向けUI/UX改修で加えた振る舞いの回帰テスト。
 
-外部APIもDBも使わない。Geminiはトランスポートを差し替えて、
-ストリーミングの見え方だけを確認する。
+外部APIは使わない。Geminiはトランスポートを差し替えて、ストリーミングの
+見え方だけを確認する。設定は使い捨てのローカルPostgreSQLに置く。
 """
-import tempfile
+import contextlib
 import unittest
 from datetime import timedelta
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -21,12 +20,15 @@ from app.persona import memory_prompt
 from app.proactive import tokyo_now
 from app.runtime import RuntimeStore
 
+import pgtemp
+
 
 def temp_store():
-    root = Path(__file__).resolve().parents[2] / '.test-output'
-    root.mkdir(exist_ok=True)
-    temp = tempfile.TemporaryDirectory(dir=root)
-    return temp, RuntimeStore(Path(temp.name))
+    """`with` で閉じられるよう、接続をcontextlib.closingに包んで返す。"""
+    if not pgtemp.available():
+        raise unittest.SkipTest(pgtemp.reason())
+    db = pgtemp.database()
+    return contextlib.closing(db), RuntimeStore(db)
 
 
 class RecallTests(unittest.TestCase):

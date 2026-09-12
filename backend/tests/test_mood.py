@@ -1,14 +1,14 @@
-import tempfile
 import unittest
 import unittest.mock
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 from app.controller import Controller
 from app.mind import KaguyaMind
 from app.mood import Mood
+
+import pgtemp
 
 
 JST = timezone(timedelta(hours=9))
@@ -39,19 +39,15 @@ class MoodTests(unittest.TestCase):
         self.assertEqual(mood.current(NOON), 'normal')
 
 
+@unittest.skipUnless(pgtemp.available(), pgtemp.reason())
 class MindExpressionTests(unittest.TestCase):
     def setUp(self):
-        directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        self.directory = Path(directory.name)
+        self.db = pgtemp.database()
+        self.addCleanup(self.db.close)
         self.minds = []
 
-    def tearDown(self):
-        for mind in self.minds:
-            mind.close()
-
     def mind(self, enabled=lambda: True) -> KaguyaMind:
-        mind = KaguyaMind(self.directory / f'mind{len(self.minds) + 1}.db', enabled)
+        mind = KaguyaMind(self.db, enabled)
         self.minds.append(mind)
         return mind
 

@@ -312,14 +312,15 @@ Kaguya Mindは既存機能とは別レイヤーで、保存先も分かれてい
 | | 保存先 | 役割 |
 |---|---|---|
 | Memory（3層） | PostgreSQL | ユーザーについて覚えていること |
-| Relationship Memory | `settings.json` | 慣れ・利用日数・話し方フィードバック |
+| Relationship Memory | PostgreSQL `app_settings` | 慣れ・利用日数・話し方フィードバック |
 | かぐやの表情 | サーバ（メモリ上） | normal / happy / sleepy / sulky。全端末で共通 |
 | Living Kaguya | localStorage | 画面上の生活状態と、よく会話する時間帯（どの端末の会話も数える） |
-| Kaguya Mind | `mind.db` | かぐや自身の感情・好み・未完の話題 |
+| Kaguya Mind | PostgreSQL `mind_*` | かぐや自身の感情・好み・未完の話題 |
 
 会話本体との接点は `before_reply` / `after_reply` の2箇所だけです。
 Mind内部で例外が起きても会話は止まらず、Mindの寄与だけが無くなります（fail-open）。
-`mind.db` を削除しても、会話・記憶・Relationship Memoryは影響を受けません。
+Mindは同じDBでも接続を分けて使うため、Mind側の失敗は設定や会話のトランザクションに波及しません。
+`mind_*` テーブルを空にしても、会話・記憶・Relationship Memoryは影響を受けません。
 
 Living Kaguyaの表情とMindの気分は**別々に動きます**。画面のかぐやが `sleepy` でも、Mindの気分は「ご機嫌」のことがあります。
 
@@ -362,12 +363,12 @@ ONのときだけ、現在の気分・育ち具合・上位の好み・気にか
 
 ## リセット
 
-「設定 → Kaguya Mindの蓄積を消す」で `mind.db` を削除し、育ったものを最初からにできます。
+「設定 → Kaguya Mindの蓄積を消す」で `mind_*` テーブルを空にし、育ったものを最初からにできます。
 会話・記憶（PostgreSQL）・かぐやの接し方・Relationship Memoryは消えません。
 
 ## 制約
 
-- `mind.db` にはユーザー発話の短い抜粋が残ります。記憶画面の個別「削除」とは連動しないため、消す場合は上記のリセットを使います
+- `mind_open_loops` にはユーザー発話の短い抜粋が残ります。記憶画面の個別「削除」とは連動しないため、消す場合は上記のリセットを使います
 - 会話・保存の実行中はリセットできません
 
 ---
@@ -392,11 +393,7 @@ ONのときだけ、現在の気分・育ち具合・上位の好み・気にか
 今週の予定を教えて
 ```
 
-保存先：
-
-```text
-%LOCALAPPDATA%\KaguyaAI\calendar.json
-```
+保存先：PostgreSQL の `calendar_events` テーブル
 
 ## 設定変更
 
@@ -491,12 +488,19 @@ READMEを確認してiPhone対応を教えて
 | データ | 保存先 |
 |---|---|
 | 会話/知恵/接し方/リマインダー | PostgreSQL |
-| 設定/整理回数 | `%LOCALAPPDATA%\KaguyaAI\settings.json` |
-| ローカル予定 | `%LOCALAPPDATA%\KaguyaAI\calendar.json` |
+| 設定/整理回数 | PostgreSQL `app_settings` |
+| ローカル予定 | PostgreSQL `calendar_events` |
+| Kaguya Mind（実験機能） | PostgreSQL `mind_*` |
 | 参照資料 | `%LOCALAPPDATA%\KaguyaAI\references` |
 | Living状態（生活状態・利用時間の学習） | 各ブラウザ/WebViewのlocalStorage |
-| Kaguya Mind（実験機能） | `%LOCALAPPDATA%\KaguyaAI\mind.db` |
 | 更新ログ | `%LOCALAPPDATA%\KaguyaAI\update.log` |
+
+データはPostgreSQLに集約しています。フォルダに残るのは、自分でファイルを置く
+`references` と、接続情報を書く `backend\.env` だけです。
+
+以前のバージョンから更新した場合、`settings.json` / `calendar.json` / `mind.db` は
+初回起動時に自動でDBへ取り込まれ、`*.migrated` という名前で元の場所に残ります。
+問題がなければ削除して構いません。
 
 ---
 
@@ -512,10 +516,10 @@ PC / iPhone Web UI
    /      |       \
 Gemini  PostgreSQL  Local tools
                    |- weather (Open-Meteo)
-                   |- calendar.json
+                   |- calendar (PostgreSQL)
                    |- references/
                    |- project inspector
-                   |- mind.db (実験機能。OFF時は開かない)
+                   |- Kaguya Mind (実験機能。OFF時は読み書きしない)
 
 PCのみ: Tauri
  |- tray / mini window

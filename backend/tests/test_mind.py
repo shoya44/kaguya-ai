@@ -1,41 +1,40 @@
-import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from app.mind import KaguyaMind
 from app.persona import memory_prompt
+
+import pgtemp
 
 
 JST = timezone(timedelta(hours=9))
 NOW = datetime(2026, 9, 12, 21, 0, tzinfo=JST)
 
 
+@unittest.skipUnless(pgtemp.available(), pgtemp.reason())
 class MindTests(unittest.TestCase):
     def setUp(self):
-        directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        self.directory = Path(directory.name)
+        self.db = pgtemp.database()
+        self.addCleanup(self.db.close)
         self.minds: list[KaguyaMind] = []
 
-    def tearDown(self):
-        # Mindは接続を開いたまま保持する。Windowsは使用中のファイルを削除できないため、
-        # 一時ディレクトリを片付ける前に必ず閉じる（tearDownはaddCleanupより先に走る）。
-        for mind in self.minds:
-            mind.close()
-
     def mind(self, enabled=lambda: True) -> KaguyaMind:
-        mind = KaguyaMind(self.directory / f'mind{len(self.minds) + 1}.db', enabled)
+        # 1つのDBを共有する。Mindは他のテーブルに触らないので混ざらない。
+        mind = KaguyaMind(self.db, enabled)
         self.minds.append(mind)
         return mind
 
-    def test_off_is_noop_and_does_not_create_database(self):
+    def rows(self, table: str) -> int:
+        with self.db.session() as conn:
+            return conn.execute(f'SELECT count(*) AS n FROM {table}').fetchone()['n']
+
+    def test_off_is_noop_and_writes_nothing(self):
         enabled = {'value': False}
         mind = self.mind(lambda: enabled['value'])
-        path = mind.path
         self.assertEqual(mind.before_reply('こんにちは', NOW), {})
         self.assertEqual(mind.snapshot(NOW), {'enabled': False, 'status': 'off'})
-        self.assertFalse(path.exists())
+        self.assertEqual(self.rows('mind_emotions'), 0)
+        self.assertEqual(self.rows('mind_traits'), 0)
 
     def test_on_reacts_and_can_grow_self_preference_from_own_reply(self):
         mind = self.mind()
@@ -157,13 +156,16 @@ class MindTests(unittest.TestCase):
 
     def test_reset_clears_growth_without_touching_anything_else(self):
         mind = self.mind()
-        path = mind.path
+        # 会話側のデータがresetで消えないことを、同じDBの行で確かめる。
+        with self.db.session() as conn:
+            conn.execute("INSERT INTO app_settings(key,value) VALUES ('options','{}')")
         mind.after_reply('明日面接があるんだ', 'あたしはプリンが好きだよ。', NOW)
-        self.assertTrue(path.exists())
+        self.assertTrue(self.rows('mind_traits'))
         self.assertEqual(mind.snapshot(NOW)['traits'][0]['name'], 'プリン')
 
         mind.reset()
-        self.assertFalse(path.exists())
+        self.assertEqual(self.rows('mind_traits'), 0)
+        self.assertEqual(self.rows('app_settings'), 1)
         fresh = mind.snapshot(NOW)
         self.assertEqual(fresh['status'], 'ok')
         self.assertEqual(fresh['traits'], [])
@@ -175,11 +177,11 @@ class MindTests(unittest.TestCase):
     def test_reset_is_allowed_while_the_feature_is_off(self):
         enabled = {'value': True}
         mind = self.mind(lambda: enabled['value'])
-        path = mind.path
         mind.after_reply('ねえ', 'あたしはプリンが好きだよ。', NOW)
+        self.assertTrue(self.rows('mind_traits'))
         enabled['value'] = False
         mind.reset()
-        self.assertFalse(path.exists())
+        self.assertEqual(self.rows('mind_traits'), 0)
 
     def test_mind_guidance_is_only_added_when_context_exists(self):
         off_prompt = memory_prompt({})

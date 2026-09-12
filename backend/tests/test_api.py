@@ -1,6 +1,4 @@
-import tempfile
 import unittest
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -9,14 +7,15 @@ from fastapi.testclient import TestClient
 from app import main, memory_api
 from app.runtime import RuntimeStore
 
+import pgtemp
 
+
+@unittest.skipUnless(pgtemp.available(), pgtemp.reason())
 class SettingsMemoryApiTests(unittest.TestCase):
     def setUp(self):
-        root = Path(__file__).resolve().parents[2] / '.test-output'
-        root.mkdir(exist_ok=True)
-        temp = tempfile.TemporaryDirectory(dir=root)
-        self.addCleanup(temp.cleanup)
-        runtime = RuntimeStore(Path(temp.name))
+        self.db = pgtemp.database()
+        self.addCleanup(self.db.close)
+        runtime = RuntimeStore(self.db)
         llm = MagicMock(close=AsyncMock())
         client = MagicMock(aclose=AsyncMock())
         patches = [patch.object(main, 'RuntimeStore', return_value=runtime),
@@ -45,7 +44,7 @@ class SettingsMemoryApiTests(unittest.TestCase):
     def test_options_validation_and_persistence(self):
         response = self.client.patch('/settings', headers=self.headers, json={'quiet': True, 'reply_tokens': 768})
         self.assertEqual(response.status_code, 200)
-        reloaded = RuntimeStore(self.controller.runtime.path.parent)
+        reloaded = RuntimeStore(self.db)
         self.assertTrue(reloaded.options.quiet)
         self.assertEqual(reloaded.options.reply_tokens, 768)
         # よく話した日に追いつけるよう上限は10まで許す。

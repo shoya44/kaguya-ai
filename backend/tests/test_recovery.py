@@ -7,8 +7,23 @@ import httpx
 
 from app import main, memory_api
 
+import pgtemp
+
 
 class RecoveryTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        if not pgtemp.available():
+            self.skipTest(pgtemp.reason())
+        # lifespanは設定をDBから読む。テスト用のクラスタへ向け直す。
+        opened = []
+        patched = patch.object(main, 'Database',
+                               side_effect=lambda _dsn: opened.append(pgtemp.new()) or opened[-1])
+        patched.start()
+        self.addCleanup(patched.stop)
+        # lifespanが閉じ損ねた接続を残さない。ResourceWarningで気付けるようにしておく。
+        self.addCleanup(lambda: [db.close() for db in opened])
+        self.addCleanup(pgtemp.database().close)
+
     async def test_stalled_socket_does_not_block_other_clients_and_is_closed(self):
         app = SimpleNamespace(state=SimpleNamespace())
         client = MagicMock(aclose=AsyncMock())

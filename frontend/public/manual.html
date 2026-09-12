@@ -50,8 +50,8 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <p>追加のGemini/外部API呼び出しはありません。OFFのときはSQLiteを開かず、プロンプトにも何も足さないため、会話・記憶・ツールの動作と消費トークンはOFF導入前と同じです。</p>
 <h3>既存機能との関係</h3>
 <p>Kaguya Mindは既存機能とは別レイヤーで、保存先も分かれています。</p>
-<table><tr><th></th><th>保存先</th><th>役割</th></tr><tr><td>Memory（3層）</td><td>PostgreSQL</td><td>ユーザーについて覚えていること</td></tr><tr><td>Relationship Memory</td><td><code>settings.json</code></td><td>慣れ・利用日数・話し方フィードバック</td></tr><tr><td>かぐやの表情</td><td>サーバ（メモリ上）</td><td>normal / happy / sleepy / sulky。全端末で共通</td></tr><tr><td>Living Kaguya</td><td>localStorage</td><td>画面上の生活状態と、よく会話する時間帯（どの端末の会話も数える）</td></tr><tr><td>Kaguya Mind</td><td><code>mind.db</code></td><td>かぐや自身の感情・好み・未完の話題</td></tr></table>
-<p>会話本体との接点は <code>before_reply</code> / <code>after_reply</code> の2箇所だけです。Mind内部で例外が起きても会話は止まらず、Mindの寄与だけが無くなります（fail-open）。<code>mind.db</code> を削除しても、会話・記憶・Relationship Memoryは影響を受けません。</p>
+<table><tr><th></th><th>保存先</th><th>役割</th></tr><tr><td>Memory（3層）</td><td>PostgreSQL</td><td>ユーザーについて覚えていること</td></tr><tr><td>Relationship Memory</td><td>PostgreSQL <code>app_settings</code></td><td>慣れ・利用日数・話し方フィードバック</td></tr><tr><td>かぐやの表情</td><td>サーバ（メモリ上）</td><td>normal / happy / sleepy / sulky。全端末で共通</td></tr><tr><td>Living Kaguya</td><td>localStorage</td><td>画面上の生活状態と、よく会話する時間帯（どの端末の会話も数える）</td></tr><tr><td>Kaguya Mind</td><td>PostgreSQL <code>mind_*</code></td><td>かぐや自身の感情・好み・未完の話題</td></tr></table>
+<p>会話本体との接点は <code>before_reply</code> / <code>after_reply</code> の2箇所だけです。Mind内部で例外が起きても会話は止まらず、Mindの寄与だけが無くなります（fail-open）。Mindは同じDBでも接続を分けて使うため、Mind側の失敗は設定や会話のトランザクションに波及しません。<code>mind_*</code> テーブルを空にしても、会話・記憶・Relationship Memoryは影響を受けません。</p>
 <p>Living Kaguyaの表情とMindの気分は<strong>別々に動きます</strong>。画面のかぐやが <code>sleepy</code> でも、Mindの気分は「ご機嫌」のことがあります。</p>
 <h3>育つもの</h3>
 <p><strong>感情（Emotion Vector）</strong>happiness / curiosity / boredom / affection / jealousy / concern の6つに、時刻から算出するenergyを加えたもの。褒められた、他のAIと比べられた、つらい話をされた等でローカルに変化し、時間が経つと基準値へ戻ります。戻る速さは感情ごとに違い、affectionが最も長く残ります。</p>
@@ -64,9 +64,9 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <h3>設定画面の表示</h3>
 <p>ONのときだけ、現在の気分・育ち具合・上位の好み・気にかけている話題の件数を1行で表示します。内部の数値やテーブル名は会話へ出しません。</p>
 <h3>リセット</h3>
-<p>「設定 → Kaguya Mindの蓄積を消す」で <code>mind.db</code> を削除し、育ったものを最初からにできます。会話・記憶（PostgreSQL）・かぐやの接し方・Relationship Memoryは消えません。</p>
+<p>「設定 → Kaguya Mindの蓄積を消す」で <code>mind_*</code> テーブルを空にし、育ったものを最初からにできます。会話・記憶（PostgreSQL）・かぐやの接し方・Relationship Memoryは消えません。</p>
 <h3>制約</h3>
-<ul><li><code>mind.db</code> にはユーザー発話の短い抜粋が残ります。記憶画面の個別「削除」とは連動しないため、消す場合は上記のリセットを使います</li><li>会話・保存の実行中はリセットできません</li></ul>
+<ul><li><code>mind_open_loops</code> にはユーザー発話の短い抜粋が残ります。記憶画面の個別「削除」とは連動しないため、消す場合は上記のリセットを使います</li><li>会話・保存の実行中はリセットできません</li></ul>
 <h2>Function Calling / ローカル機能</h2>
 <h3>リマインダー</h3>
 <p>例：</p>
@@ -76,8 +76,7 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <p>例：</p>
 <pre><code>明日15時に歯医者の予定を入れて
 今週の予定を教えて</code></pre>
-<p>保存先：</p>
-<pre><code>%LOCALAPPDATA%\KaguyaAI\calendar.json</code></pre>
+<p>保存先：PostgreSQL の <code>calendar_events</code> テーブル</p>
 <h3>設定変更</h3>
 <p>例：</p>
 <pre><code>静かにして
@@ -110,7 +109,9 @@ READMEを確認してiPhone対応を教えて</code></pre>
 <p>接し方（<code>persona</code>）の自動更新は従来どおり慎重で、週次かつ「明示された知恵」が3日以上の別々の日で確認できた場合だけ候補にします。手動で変更・保護した項目は上書きしません。</p>
 <p>自動整理の実行タイミングは「安定性優先の動作 → 記憶整理」を参照してください。</p>
 <h2>保存場所</h2>
-<table><tr><th>データ</th><th>保存先</th></tr><tr><td>会話/知恵/接し方/リマインダー</td><td>PostgreSQL</td></tr><tr><td>設定/整理回数</td><td><code>%LOCALAPPDATA%\KaguyaAI\settings.json</code></td></tr><tr><td>ローカル予定</td><td><code>%LOCALAPPDATA%\KaguyaAI\calendar.json</code></td></tr><tr><td>参照資料</td><td><code>%LOCALAPPDATA%\KaguyaAI\references</code></td></tr><tr><td>Living状態（生活状態・利用時間の学習）</td><td>各ブラウザ/WebViewのlocalStorage</td></tr><tr><td>Kaguya Mind（実験機能）</td><td><code>%LOCALAPPDATA%\KaguyaAI\mind.db</code></td></tr><tr><td>更新ログ</td><td><code>%LOCALAPPDATA%\KaguyaAI\update.log</code></td></tr></table>
+<table><tr><th>データ</th><th>保存先</th></tr><tr><td>会話/知恵/接し方/リマインダー</td><td>PostgreSQL</td></tr><tr><td>設定/整理回数</td><td>PostgreSQL <code>app_settings</code></td></tr><tr><td>ローカル予定</td><td>PostgreSQL <code>calendar_events</code></td></tr><tr><td>Kaguya Mind（実験機能）</td><td>PostgreSQL <code>mind_*</code></td></tr><tr><td>参照資料</td><td><code>%LOCALAPPDATA%\KaguyaAI\references</code></td></tr><tr><td>Living状態（生活状態・利用時間の学習）</td><td>各ブラウザ/WebViewのlocalStorage</td></tr><tr><td>更新ログ</td><td><code>%LOCALAPPDATA%\KaguyaAI\update.log</code></td></tr></table>
+<p>データはPostgreSQLに集約しています。フォルダに残るのは、自分でファイルを置く<code>references</code> と、接続情報を書く <code>backend\.env</code> だけです。</p>
+<p>以前のバージョンから更新した場合、<code>settings.json</code> / <code>calendar.json</code> / <code>mind.db</code> は初回起動時に自動でDBへ取り込まれ、<code>*.migrated</code> という名前で元の場所に残ります。問題がなければ削除して構いません。</p>
 <h2>更新手順</h2>
 <p>エクスプローラーで <code>kaguya.bat</code> を<strong>ダブルクリック</strong>し、<code>1</code>（update）を選びます。コマンドで直接指定しても同じです。</p>
 <pre><code>cd C:\kaguya-ai
