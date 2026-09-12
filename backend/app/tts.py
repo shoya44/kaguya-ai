@@ -24,13 +24,16 @@ MAX_TEXT = 200
 SENTENCE_END = '。！？!?\n'
 # 句点が来ないまま伸びた場合に、読点で妥協して区切る長さ。
 SOFT_BREAK = 40
+# 返答の一言目だけは短く区切る。ここが「話しかけてから返ってくるまで」の体感を決める。
+# 2文目以降まで短くすると細切れに聞こえるので、最初だけ。
+FIRST_BREAK = 10
 
 
 class SpeechError(RuntimeError):
     """エンジンに繋がらない・話者が見つからない。通話は続け、案内だけ出す。"""
 
 
-def sentences(buffer: str) -> tuple[list[str], str]:
+def sentences(buffer: str, soft_break: int = SOFT_BREAK) -> tuple[list[str], str]:
     """読み上げてよい分と、まだ手元に残す分に分ける。"""
     ready, rest = [], ''
     for piece in re.split(f'(?<=[{re.escape(SENTENCE_END)}])', buffer):
@@ -40,8 +43,9 @@ def sentences(buffer: str) -> tuple[list[str], str]:
             ready.append(piece)
         else:
             rest = piece
-    if not ready and len(rest) >= SOFT_BREAK and '、' in rest:
-        head, _, rest = rest.rpartition('、')
+    if not ready and len(rest) >= soft_break and '、' in rest:
+        # 最初の読点で切る。後ろの読点まで待つと、そのぶん喋り出しが遅れる。
+        head, _, rest = rest.partition('、')
         ready.append(head + '、')
     # 句読点がまったく来ない場合でも、say() で切り捨てずに済むよう必ず区切る。
     while len(rest) >= MAX_TEXT:
@@ -120,6 +124,7 @@ class Narrator:
         self.send = send
         self.buffer = ''
         self.queue: asyncio.Queue = asyncio.Queue()
+        self.spoken = 0
         self.generation = 0
         self.task: asyncio.Task | None = None
         self.error = ''
@@ -144,8 +149,10 @@ class Narrator:
 
     def feed(self, text: str) -> None:
         self.buffer += text
-        ready, self.buffer = sentences(self.buffer)
+        # 一言目だけ短く区切り、返事が始まるまでの間を詰める。
+        ready, self.buffer = sentences(self.buffer, FIRST_BREAK if not self.spoken else SOFT_BREAK)
         for item in ready:
+            self.spoken += 1
             self.queue.put_nowait((self.generation, item))
 
     def flush(self) -> None:
@@ -153,11 +160,13 @@ class Narrator:
         text, self.buffer = self.buffer.strip(), ''
         if text:
             self.queue.put_nowait((self.generation, text))
+        self.spoken = 0
 
     def stop(self) -> None:
         """割り込まれた。まだ読んでいない分は捨てる。"""
         self.generation += 1
         self.buffer = ''
+        self.spoken = 0
         while not self.queue.empty():
             self.queue.get_nowait()
             self.queue.task_done()

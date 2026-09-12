@@ -220,31 +220,6 @@ input[type="checkbox"] {
   accent-color: var(--accent);
 }
 
-#options-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background: var(--panel);
-  border-radius: 12px;
-  padding: 14px;
-}
-
-/* 「項目名 …… 入力欄」で左右に振り分ける。チェックボックスの行だけは
-   四角とラベルが離れると押しにくいので左寄せのままにする。 */
-#options-form label {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  line-height: 1.5;
-}
-
-#options-form label:has(input[type="checkbox"]) {
-  justify-content: flex-start;
-}
-
-#options-form button[type="submit"],
-#mind-reset-btn,
 #organize-btn {
   align-self: flex-start;
   margin-top: 4px;
@@ -581,7 +556,6 @@ select:focus-visible, summary:focus-visible {
 #send-btn,
 #organize-btn,
 #dialog-confirm,
-#options-form button[type="submit"],
 #memory-filter button[type="submit"] {
   background: var(--accent);
   color: #1a1428;
@@ -1087,9 +1061,3 @@ body.input-focused #app.mode-normal #proactive-bubble {
   font-size: 13px;
 }
 
-/* 端末側にしかない設定はタッチ端末では出さない。 */
-@media (hover: none) and (pointer: coarse) {
-  .desktop-setting {
-    display: none;
-  }
-}
