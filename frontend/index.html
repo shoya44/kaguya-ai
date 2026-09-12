@@ -70,6 +70,18 @@
           <label>回答の出力上限（トークン）<input type="number" name="reply_tokens" min="256" max="8192" required></label>
           <label class="desktop-setting"><input type="checkbox" name="always_on_top">ウィンドウを最前面にする</label>
           <label>文字サイズ<input type="number" name="font_size" min="12" max="22" required></label>
+          <label>通話の声<input name="voice_name" list="voice-names" maxlength="40" pattern="[A-Za-z][A-Za-z0-9]*" required></label>
+          <datalist id="voice-names">
+            <option value="Leda">若く明るい</option>
+            <option value="Zephyr">明るい</option>
+            <option value="Aoede">軽やか</option>
+            <option value="Puck">元気</option>
+            <option value="Kore">落ち着き</option>
+            <option value="Charon">低め</option>
+            <option value="Fenrir">力強い</option>
+            <option value="Orus">しっかり</option>
+          </datalist>
+          <p class="hint">保存したあと、通話を開始し直すと切り替わります（アプリの再起動は不要）。候補以外の名前も入力できます。名前が無効な場合は通話開始時にエラーが出ます。</p>
           <button type="submit">設定を保存</button>
         </form>
         <h2>予約した声かけ</h2>
