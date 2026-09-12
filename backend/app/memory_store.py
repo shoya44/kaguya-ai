@@ -214,6 +214,18 @@ def list_memories(conn, layer, query='', offset=0):
             ORDER BY updated_at DESC,id DESC LIMIT 31 OFFSET %s''', (pattern, pattern, offset)).fetchall()
     elif layer == 'persona':
         rows = conn.execute('SELECT * FROM persona ORDER BY key LIMIT 31 OFFSET %s', (offset,)).fetchall()
+    elif layer == 'mind':
+        # 固定の6テーブルのみ。初期値の作成・感情の減衰などは行わず保存値を読む。
+        rows = conn.execute('''SELECT * FROM (
+            SELECT 'emotions' AS category, name AS title, to_jsonb(m) AS data FROM mind_emotions m
+            UNION ALL SELECT 'traits', name, to_jsonb(m) FROM mind_traits m
+            UNION ALL SELECT 'phrases', text, to_jsonb(m) FROM mind_phrases m
+            UNION ALL SELECT 'graph_edges', subject || ' / ' || relation || ' / ' || object,
+                to_jsonb(m) FROM mind_graph_edges m
+            UNION ALL SELECT 'open_loops', topic, to_jsonb(m) FROM mind_open_loops m
+            UNION ALL SELECT 'meta', key, to_jsonb(m) FROM mind_meta m
+            ) AS mind WHERE normalize(data::text, NFKC) ILIKE %s
+            ORDER BY category,title,data::text LIMIT 31 OFFSET %s''', (pattern, offset)).fetchall()
     else:
         raise HTTPException(404, 'Unknown layer')
     return {'items': rows[:30], 'next_offset': offset + 30 if len(rows) > 30 else None}

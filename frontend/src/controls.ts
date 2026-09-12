@@ -9,6 +9,7 @@ export class Controls {
   private layer = 'wisdom';
   private offset = 0;
   private nextOffset: number | null = null;
+  private memoryRequest = 0;
   private action: (() => Promise<void>) | null = null;
   private dialog = document.getElementById('memory-dialog') as HTMLDialogElement;
 
@@ -66,6 +67,11 @@ export class Controls {
     }));
     document.getElementById('memory-filter')!.addEventListener('submit', event => {
       event.preventDefault();
+      this.layer = (document.getElementById('memory-layer') as HTMLSelectElement).value;
+      this.offset = 0;
+      this.perform(() => this.refreshMemories());
+    });
+    document.getElementById('memory-layer')!.addEventListener('change', () => {
       this.layer = (document.getElementById('memory-layer') as HTMLSelectElement).value;
       this.offset = 0;
       this.perform(() => this.refreshMemories());
@@ -205,13 +211,28 @@ export class Controls {
   }
 
   async refreshMemories(): Promise<void> {
-    await this.refreshSummary();
+    const request = ++this.memoryRequest;
+    const layer = this.layer;
+    const offset = this.offset;
     const q = (document.getElementById('memory-search') as HTMLInputElement).value;
-    const body = await this.api(`/memories/${this.layer}?${new URLSearchParams({ q, offset: String(this.offset) })}`);
+    await this.refreshSummary();
+    const body = await this.api(`/memories/${layer}?${new URLSearchParams({ q, offset: String(offset) })}`);
+    if (request !== this.memoryRequest) return;
     const list = document.getElementById('memory-list')!;
     list.replaceChildren();
     for (const row of body.items as Row[]) {
       const card = document.createElement('article'); card.className = 'memory-card';
+      if (this.layer === 'mind') {
+        const categories: Row = { emotions: '感情', traits: '好み・傾向', phrases: 'よく使う表現',
+          graph_edges: '関連情報', open_loops: '気にかけている話題', meta: '内部記録' };
+        const title = document.createElement('strong');
+        title.textContent = `${categories[row.category] || row.category} ／ ${row.title}`;
+        const data = document.createElement('pre');
+        data.textContent = JSON.stringify(row.data, null, 2);
+        card.append(title, data);
+        list.append(card);
+        continue;
+      }
       const title = document.createElement('strong');
       const personaLabels: Row = { reply_style: '返答の長さ・話し方', addressing: 'あなたの呼び方', support_style: '相談するときの接し方', base_personality: 'かぐやの基本性格' };
       title.textContent = this.layer === 'raw' ? `${row.role === 'user' ? 'あなた' : 'かぐや'} ／ ${row.status}`

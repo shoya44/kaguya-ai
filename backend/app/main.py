@@ -242,7 +242,7 @@ def memory_key(layer, key):
 
 
 @app.get('/memories/{layer}')
-async def memories(layer: Literal['raw', 'wisdom', 'persona'], request: Request,
+async def memories(layer: Literal['raw', 'wisdom', 'persona', 'mind'], request: Request,
                    q: str = Query('', max_length=200), offset: int = Query(0, ge=0, le=100000),
                    _client_id: UUID = Depends(require_session)):
     return await memory_request(request, 'GET', f'/browse/{layer}', params={'q': q, 'offset': offset})

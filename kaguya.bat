@@ -109,7 +109,7 @@ cd backend
 ".venv\Scripts\python.exe" -B -m unittest discover -s tests -v
 if errorlevel 1 goto failed
 cd ..\frontend
-node --test tests\main.test.cjs tests\living.test.cjs tests\avatar.test.cjs tests\manual.test.cjs
+node --test tests\main.test.cjs tests\living.test.cjs tests\avatar.test.cjs tests\manual.test.cjs tests\controls.test.cjs
 if errorlevel 1 goto failed
 call npm.cmd run build
 if errorlevel 1 goto failed
