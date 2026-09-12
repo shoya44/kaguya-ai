@@ -99,8 +99,6 @@ export class VoiceChat {
           this.timer = window.setTimeout(() => this.stop('10分の上限に達しました。必要なら再開してください。'), 600000);
         } else if (message.type === 'interrupted') {
           this.clearPlayback();
-        } else if (message.type === 'transcript') {
-          document.getElementById(message.role === 'user' ? 'voice-user' : 'voice-answer')!.textContent = message.text;
         } else if (message.type === 'error') {
           this.stop(message.message);
         } else if (message.type === 'notice') {

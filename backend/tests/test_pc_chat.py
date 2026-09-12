@@ -115,6 +115,43 @@ class PCServiceSafetyTests(unittest.TestCase):
             self.assertEqual(caught.exception.status_code, 409)
 
 
+class VideoDurationTests(unittest.TestCase):
+    """一覧に出す「長さ」。mp4から読めなければ表示を省く。"""
+
+    @staticmethod
+    def mp4(timescale=600, length=90000, version=0):
+        import struct
+        if version == 1:
+            body = b'\x01\x00\x00\x00' + b'\x00' * 16 + struct.pack('>IQ', timescale, length) + b'\x00' * 60
+        else:
+            body = b'\x00' * 4 + b'\x00' * 8 + struct.pack('>II', timescale, length) + b'\x00' * 60
+        mvhd = struct.pack('>I', 8 + len(body)) + b'mvhd' + body
+        moov = struct.pack('>I', 8 + len(mvhd)) + b'moov' + mvhd
+        ftyp = struct.pack('>I', 16) + b'ftyp' + b'isom' + b'\x00\x00\x02\x00'
+        return ftyp + moov
+
+    def file(self, data: bytes) -> Path:
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        path = Path(temp.name) / 'movie.mp4'
+        path.write_bytes(data)
+        return path
+
+    def test_duration_is_read_from_the_header(self):
+        self.assertEqual(pc.seconds(self.file(self.mp4())), 150.0)
+        # 長い動画は64bit版のmvhdになる。
+        self.assertEqual(pc.seconds(self.file(self.mp4(version=1, timescale=1000, length=7_200_000))), 7200.0)
+
+    def test_unreadable_files_do_not_break_the_listing(self):
+        for data in (b'not an mp4', b'', b'\x00\x00\x00\x10ftypisom'):
+            with self.subTest(data=data):
+                self.assertIsNone(pc.seconds(self.file(data)))
+        self.assertIsNone(pc.seconds(Path('/does/not/exist.mp4')))
+
+    def test_a_zero_timescale_is_not_divided_by(self):
+        self.assertIsNone(pc.seconds(self.file(self.mp4(timescale=0))))
+
+
 class OriginCheckTests(unittest.TestCase):
     """壊れたpc_access.jsonで、チャットWebSocketの接続判定を巻き添えにしない。"""
 

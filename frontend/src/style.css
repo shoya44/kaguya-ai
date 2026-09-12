@@ -196,8 +196,9 @@ body {
 }
 
 /* フォーム部品はブラウザ標準のままだと明るい配色で浮くため、画面に合わせる。 */
-input[type="number"],
-input[type="text"],
+/* type を書いていない input（検索欄など）も同じ見た目にする。
+   input[type="text"] は type 属性が無いと一致しないため、除外指定で書く。 */
+input:not([type="checkbox"]),
 select,
 textarea {
   font: inherit;
@@ -255,8 +256,9 @@ input[type="checkbox"] {
   font-size: 0.9em;
 }
 
-/* --- 記憶タブ --- */
-#memory-search {
+/* --- 記憶タブ・PCタブ --- */
+#memory-search,
+#pc-search {
   flex: 1;
   min-width: 8em;
 }
@@ -265,6 +267,48 @@ input[type="checkbox"] {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+
+/* 種類の説明。長い文を1段落にせず、名前と説明を対で並べる。 */
+.legend {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.legend dt {
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.legend dd {
+  margin: 0;
+}
+
+@media (max-width: 480px) {
+  .legend {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .legend dd {
+    margin-bottom: 6px;
+  }
+}
+
+/* 動画は「タイトル（長さ）」のボタンを縦に並べるだけ。 */
+#pc-videos {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#pc-videos button {
+  text-align: left;
+  overflow-wrap: anywhere;
 }
 
 .memory-card {
@@ -288,12 +332,22 @@ input[type="checkbox"] {
 #pc-video { width: 100%; max-height: 45vh; background: #000; }
 #pc-videos, #pc-commands { display: grid; gap: 10px; margin: 12px 0; }
 #pc-jobs, #pc-status, #pc-now-playing { overflow-wrap: anywhere; }
-#voice-panel { padding: 8px; border: 1px solid var(--accent); border-radius: 8px; }
-/* Low desktop windows (the default 420x640 size) cannot fit the expanded voice
-   panel plus the fixed input row. Let only the voice panel shrink/scroll so the
-   header, character and composer remain visible. Taller/mobile layouts are unchanged. */
-#voice-panel[open] { min-height: 0; overflow-y: auto; }
-#voice-panel p { margin: 6px 0; overflow-wrap: anywhere; }
+/* 通話は開始・停止と状態だけ。字幕は会話履歴に残るので、ここには出さない。 */
+#voice-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+#voice-status {
+  margin: 0;
+  flex: 1;
+  min-width: 10em;
+  color: var(--muted);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
 
 .mind-fields {
   display: grid;
@@ -441,8 +495,7 @@ input[type="checkbox"] {
    タッチ端末では入力欄だけ16px以上を保証する。 */
 @media (hover: none) and (pointer: coarse) {
   #text-input,
-  input[type="number"],
-  input[type="text"],
+  input:not([type="checkbox"]),
   select,
   textarea {
     font-size: 16px;
@@ -885,8 +938,7 @@ body.mini-mode {
   /* 設定・記憶画面も指で押しやすい最小サイズを確保。 */
   #app.mode-normal .panel button,
   #app.mode-normal .panel select,
-  #app.mode-normal .panel input[type="number"],
-  #app.mode-normal .panel input[type="text"] {
+  #app.mode-normal .panel input:not([type="checkbox"]) {
     min-height: 44px;
   }
 
