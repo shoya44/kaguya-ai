@@ -130,7 +130,7 @@ class Controller:
         self.next_jobs_check = now + 900
         summary = await self.memory.call('GET', '/summary')
         # start() rechecks ownership after the database await.
-        if summary['pending'] or self.jobs.weekly_due():
+        if self.jobs.worth_organizing(summary) or self.jobs.weekly_due():
             self.jobs.start()
 
     async def deliver_reminders(self):

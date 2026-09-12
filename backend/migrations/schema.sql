@@ -242,6 +242,25 @@ ALTER TABLE living_emotion ADD COLUMN IF NOT EXISTS samples integer NOT NULL DEF
 ALTER TABLE living_emotion ADD COLUMN IF NOT EXISTS high_count integer NOT NULL DEFAULT 0
     CHECK (high_count >= 0);
 
+-- migration: 007_organize_budget.sql
+BEGIN;
+-- 整理APIの上限を、自動整理だけのものに改める。手動の「今すぐ整理」は本人が
+-- 押したものなので上限で止めない。名前が daily_call_limit のままだと、手動も
+-- 含むように読めてしまう。
+--
+-- 値は引き継がず、新しい既定（3）にする。旧 daily_call_limit は「自動＋手動＋
+-- 週次の合計」の上限だったので、そのまま自動だけの上限にすると意味が変わる。
+--
+-- 併せて organize_min_rows（自動整理を始める未処理の下限）を入れる。ほかの
+-- 設定は触らない。声や読み上げエンジンの設定を巻き添えで消さないため、
+-- 行ごと入れ替えず、キーだけを差し替える。
+UPDATE app_settings
+   SET value = (value - 'daily_call_limit')
+               || jsonb_build_object('auto_call_limit', 3, 'organize_min_rows', 30),
+       updated_at = now()
+ WHERE key = 'options' AND value ? 'daily_call_limit';
+COMMIT;
+
 -- 空DBにこのSQLを直接全件実行した場合も、次のアプリ起動で再適用しない。
 -- migrate.py経由では既存の履歴・適用日時を維持する。
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -250,6 +269,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 );
 INSERT INTO schema_migrations (name) VALUES
     ('001_init.sql'), ('002_memory_jobs.sql'), ('003_reminders.sql'),
-    ('004_local_state.sql'), ('005_memory_redesign.sql'), ('006_emotion_counters.sql')
+    ('004_local_state.sql'), ('005_memory_redesign.sql'), ('006_emotion_counters.sql'),
+    ('007_organize_budget.sql')
 ON CONFLICT (name) DO NOTHING;
 COMMIT;

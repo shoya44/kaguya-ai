@@ -26,11 +26,11 @@ function harness(api) {
     querySelectorAll: () => [], createElement: tag => new Element(tag),
   };
   const context = vm.createContext({ document, URLSearchParams, isTauri: () => false });
-  vm.runInContext(compiled + '\nglobalThis.Controls = Controls;', context);
+  vm.runInContext(compiled + '\nglobalThis.Controls = Controls;\nglobalThis.jobStatusLine = jobStatusLine;', context);
   const controls = new context.Controls(api);
   controls.refreshSummary = async () => {};
   controls.layer = 'mind';
-  return { controls, elements };
+  return { controls, elements, jobStatusLine: context.jobStatusLine };
 }
 
 test('Mind displays stored fields as text without mutation buttons and supports paging', async () => {
@@ -144,4 +144,46 @@ test('older requests cannot replace the newly selected memory layer', async () =
   await old;
   assert.equal(elements['memory-list'].textContent, '該当する記憶はありません。');
   assert.equal(elements['memory-next'].disabled, true);
+});
+
+test('整理の結果は、いつのものかが分かる形で出す', () => {
+  const { jobStatusLine } = harness();
+  const line = jobStatusLine({
+    options: { auto_call_limit: 3 },
+    jobs: { running: false, calls_today: 2, last_status: '整理完了：189件のユーザー発言を処理しました。',
+            last_at: new Date().toISOString() },
+  });
+  assert.match(line, /今日 \d{1,2}:\d{2}/);
+  assert.match(line, /189件/);
+  assert.match(line, /本日 2 回/);
+  assert.match(line, /自動は 3 回まで/);
+});
+
+test('前の日の結果は、日付を付けて残す', () => {
+  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  const { jobStatusLine } = harness();
+  const line = jobStatusLine({
+    options: { auto_call_limit: 3 },
+    // 消してしまうと「昨日ちゃんと動いたのか」を確かめる手立てが無くなる。
+    jobs: { running: false, calls_today: 0, last_status: '整理完了：60件のユーザー発言を処理しました。',
+            last_at: yesterday.toISOString() },
+  });
+  assert.match(line, new RegExp(`${yesterday.getMonth() + 1}/${yesterday.getDate()} `));
+  assert.match(line, /60件/);
+});
+
+test('整理中と、一度も整理していないときを区別する', () => {
+  const { jobStatusLine } = harness();
+  assert.equal(jobStatusLine({ jobs: { running: true } }), '整理中…');
+  const fresh = jobStatusLine({ options: { auto_call_limit: 3 }, jobs: { calls_today: 0 } });
+  assert.match(fresh, /まだ整理していません/);
+});
+
+test('時刻が壊れていても行は出す', () => {
+  const { jobStatusLine } = harness();
+  const line = jobStatusLine({
+    options: { auto_call_limit: 3 },
+    jobs: { calls_today: 1, last_status: '整理完了：1件のユーザー発言を処理しました。', last_at: 'ほげ' },
+  });
+  assert.match(line, /1件/);
 });

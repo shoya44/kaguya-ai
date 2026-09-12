@@ -126,7 +126,7 @@ export class Controls {
   async refreshSettings(): Promise<void> {
     const body = await this.api('/settings');
     await this.applyOptions(body.options);
-    document.getElementById('job-status')!.textContent = `${body.jobs.running ? '整理中' : body.jobs.last_status || body.jobs.status}（本日 ${body.jobs.calls_today}/${body.options.daily_call_limit} 回）`;
+    document.getElementById('job-status')!.textContent = jobStatusLine(body);
     document.getElementById('model-info')!.textContent = `モデル：${body.model || '未設定'} ／ API設定：${body.configured ? 'あり' : 'なし'}`;
     (document.getElementById('organize-btn') as HTMLButtonElement).disabled = body.jobs.running;
     this.renderReminders(body.reminders ?? []);
@@ -345,4 +345,26 @@ export class Controls {
     document.getElementById('memory-lock-label')!.hidden = deleting || layer !== 'persona';
     (document.getElementById('memory-lock') as HTMLInputElement).checked = true;
   }
+}
+
+/** 設定画面に出す1行。前回いつ・どうなったか・今日どれだけ使ったか。 */
+function jobStatusLine(body: any): string {
+  const jobs = body.jobs ?? {};
+  if (jobs.running) return '整理中…';
+  const used = `本日 ${jobs.calls_today ?? 0} 回（自動は ${body.options?.auto_call_limit ?? '-'} 回まで）`;
+  const result = jobs.last_status || jobs.status;
+  if (!result) return `まだ整理していません。${used}`;
+  // いつのものか分からないと、「上限に達しました」が今のことなのか
+  // 何日も前のことなのか判断できない。
+  return `${whenLabel(jobs.last_at)}${result}／${used}`;
+}
+
+function whenLabel(value: string | undefined): string {
+  if (!value) return '';
+  const at = new Date(value);
+  if (Number.isNaN(at.getTime())) return '';
+  const now = new Date();
+  const sameDay = at.toDateString() === now.toDateString();
+  const time = `${at.getHours()}:${String(at.getMinutes()).padStart(2, '0')}`;
+  return sameDay ? `今日 ${time}　` : `${at.getMonth() + 1}/${at.getDate()} ${time}　`;
 }

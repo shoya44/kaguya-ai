@@ -55,7 +55,7 @@ class LocalStoreTests(unittest.TestCase):
 
     def test_old_settings_gain_weather_default(self):
         options = Options.model_validate({'quiet': False, 'auto_jobs': True, 'proactive_minutes': 60,
-                                          'daily_call_limit': 3, 'reply_tokens': 1024,
+                                          'auto_call_limit': 3, 'reply_tokens': 1024,
                                           'always_on_top': True, 'font_size': 14})
         self.assertEqual(options.weather_location, '東京')
 

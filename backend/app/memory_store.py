@@ -184,11 +184,13 @@ def recall(conn, text, context='', mood=''):
 
 
 def summary(conn):
-    pending = conn.execute("""SELECT count(*) AS n FROM memory_short
-        WHERE role='user' AND processed_at IS NULL AND status <> 'pending'""").fetchone()['n']
+    # oldest_pending は自動整理の判断に使う。件数が少ないまま何日も置き去りに
+    # しないため、古くなったものは件数に関わらず整理する。
+    row = conn.execute("""SELECT count(*) AS n, min(created_at) AS oldest FROM memory_short
+        WHERE role='user' AND processed_at IS NULL AND status <> 'pending'""").fetchone()
     recent = conn.execute('''SELECT id,topic_key,summary,updated_at FROM memory_long
         ORDER BY updated_at DESC,id DESC LIMIT 5''').fetchall()
-    return {'pending': pending, 'recent': recent}
+    return {'pending': row['n'], 'oldest_pending': row['oldest'], 'recent': recent}
 
 
 def weekly_snapshot(conn):
