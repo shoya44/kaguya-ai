@@ -1,0 +1,80 @@
+:root {
+  --border-subtle: rgba(242, 238, 252, 0.12);
+  --border-hover: rgba(242, 238, 252, 0.22);
+  --accent-soft: rgba(139, 111, 209, 0.16);
+  --control-hover: rgba(242, 238, 252, 0.06);
+}
+
+/* 通常の枠線は低彩度にし、紫は主操作・選択状態・フォーカスに限定する。 */
+button,
+input:not([type="checkbox"]),
+select,
+textarea,
+#memory-dialog,
+#input-form,
+#proactive-bubble {
+  border-color: var(--border-subtle);
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--border-hover);
+  background: var(--control-hover);
+}
+
+#input-form:focus-within {
+  border-color: var(--border-hover);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+/* 選択中タブは全面を紫にせず、薄いアクセント面で状態だけ示す。 */
+.toolbar button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--text);
+  border-color: transparent;
+}
+
+/* 送信・確定だけを強い主操作として残し、整理/検索は通常の操作へ戻す。 */
+#organize-btn,
+#memory-filter button[type="submit"] {
+  background: var(--panel);
+  color: var(--text);
+  border-color: var(--border-subtle);
+}
+
+/* 自分の発言もアクセントの塗り面を弱め、送信ボタンと競合させない。 */
+.msg.user {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* 履歴移動は補助操作。枠・塗りを外し、必要な時だけ静かに見せる。 */
+#older-btn,
+#latest-btn {
+  align-self: center;
+  width: 44px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+  border-color: transparent;
+  opacity: 0.72;
+}
+
+#older-btn:hover:not(:disabled),
+#latest-btn:hover:not(:disabled) {
+  background: var(--control-hover);
+  color: var(--text);
+  border-color: transparent;
+  opacity: 1;
+}
+
+#older-btn svg,
+#latest-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+#older-btn:disabled,
+#latest-btn:disabled {
+  opacity: 0.35;
+}
