@@ -46,11 +46,37 @@ test('Mind displays stored fields as text without mutation buttons and supports 
   assert.equal(new URL(requested, 'http://localhost').searchParams.get('q'), '気になる');
   assert.match(requested, /offset=30/);
   const card = elements['memory-list'].children[0];
-  assert.deepEqual(card.children.map(child => child.tag), ['strong', 'pre']);
+  assert.deepEqual(card.children.map(child => child.tag), ['strong', 'dl']);
   assert.equal(card.children[0].textContent, '気にかけている話題 ／ <script>topic</script>');
-  assert.equal(JSON.parse(card.children[1].textContent).asked, 2);
+  assert.deepEqual(card.children[1].children.map(child => child.textContent),
+    ['きっかけの言葉', '<img src=x>', '声をかけた回数', '2回', '解決した日時', '未解決']);
   assert.equal(elements['memory-next'].disabled, false);
   assert.equal(elements['memory-prev'].disabled, false);
+});
+
+test('Mind formats emotion names, scores, zero values and dates with readable labels', async () => {
+  const { controls, elements } = harness(async () => ({ items: [
+    { category: 'emotions', title: 'happiness', data: { name: 'happiness', value: 58.1234 } },
+    { category: 'traits', title: 'coffee', data: { valence: 0.8, confidence: 0, evidence: 3 } },
+    { category: 'open_loops', title: '予定', data: { kind: 'plan', asked: 0,
+      due_at: '2026-09-12T09:30:00+09:00', last_asked_at: null } },
+    { category: 'graph_edges', title: 'user / likes / coffee', data: { subject: 'user', relation: 'likes', object: 'coffee', strength: 0.6 } },
+    { category: 'meta', title: 'interactions', data: { key: 'interactions', value: '4', extra: 'preserved' } },
+    { category: 'phrases', title: 'hello', data: { text: 'hello', count: 2 } },
+  ], next_offset: null }));
+  await controls.refreshMemories();
+  const cards = elements['memory-list'].children;
+  const fields = index => cards[index].children[1].children.map(child => child.textContent);
+  assert.equal(cards[0].children[0].textContent, '感情 ／ うれしさ');
+  assert.ok(fields(0).includes('58.1 / 100'));
+  assert.ok(fields(1).includes('80 / 100'));
+  assert.ok(fields(1).includes('0 / 100'));
+  assert.ok(fields(2).includes('0回'));
+  assert.ok(fields(2).includes('まだ声をかけていません'));
+  assert.ok(fields(2).some(value => value.includes('2026/09/12')));
+  assert.equal(cards[3].children[0].textContent, '関連情報 ／ user → 好き → coffee');
+  assert.ok(fields(4).includes('preserved'));
+  assert.ok(fields(5).includes('2回'));
 });
 
 test('empty Mind displays an empty state', async () => {

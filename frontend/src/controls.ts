@@ -5,6 +5,41 @@ import { isTauri } from './tauri';
 type Api = (path: string, init?: RequestInit) => Promise<any>;
 type Row = Record<string, any>;
 
+const mindNames: Row = { happiness: 'うれしさ', curiosity: '好奇心', boredom: '退屈',
+  affection: '親しみ', jealousy: '嫉妬', concern: '心配', interactions: 'やり取りの回数' };
+const mindFields: Row = { name: '名前', value: '値', valence: '好み（0＝苦手・100＝好き）',
+  confidence: '確信度', evidence: '根拠の数', text: '表現', count: '登場回数',
+  subject: '対象', relation: '関係', object: '相手・内容', strength: '関連の強さ',
+  topic: '話題', kind: '種類', quote: 'きっかけの言葉', asked: '声をかけた回数',
+  opened_at: '記録した日時', due_at: '声かけの目安', last_asked_at: '最後に声をかけた日時',
+  resolved_at: '解決した日時', last_seen_at: '最後に登場した日時', updated_at: '更新日時', key: '項目' };
+
+function mindValue(category: string, key: string, value: any): string {
+  if (value === null || value === undefined || value === '') {
+    return key === 'resolved_at' ? '未解決' : key === 'last_asked_at' ? 'まだ声をかけていません' : '未登録';
+  }
+  if (key.endsWith('_at')) {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('ja-JP', {
+      year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    });
+  }
+  if (key === 'name' && category === 'emotions' || key === 'key' && category === 'meta') {
+    return mindNames[value] || String(value);
+  }
+  if (key === 'kind') return ({ plan: '予定', concern: '気がかり' } as Row)[value] || String(value);
+  if (key === 'relation') return ({ likes: '好き', dislikes: '苦手' } as Row)[value] || String(value);
+  if (typeof value === 'number') {
+    const number = (n: number) => n.toLocaleString('ja-JP', { maximumFractionDigits: 1 });
+    if (['valence', 'confidence', 'strength'].includes(key)) return `${number(value * 100)} / 100`;
+    if (category === 'emotions' && key === 'value') return `${number(value)} / 100`;
+    if (['count', 'asked'].includes(key)) return `${number(value)}回`;
+    if (key === 'evidence') return `${number(value)}件`;
+    return number(value);
+  }
+  return String(value);
+}
+
 export class Controls {
   private layer = 'wisdom';
   private offset = 0;
@@ -226,9 +261,20 @@ export class Controls {
         const categories: Row = { emotions: '感情', traits: '好み・傾向', phrases: 'よく使う表現',
           graph_edges: '関連情報', open_loops: '気にかけている話題', meta: '内部記録' };
         const title = document.createElement('strong');
-        title.textContent = `${categories[row.category] || row.category} ／ ${row.title}`;
-        const data = document.createElement('pre');
-        data.textContent = JSON.stringify(row.data, null, 2);
+        const name = ['emotions', 'meta'].includes(row.category) ? mindNames[row.title] || row.title
+          : row.category === 'graph_edges' ? `${row.data.subject} → ${mindValue(row.category, 'relation', row.data.relation)} → ${row.data.object}` : row.title;
+        title.textContent = `${categories[row.category] || row.category} ／ ${name}`;
+        const data = document.createElement('dl'); data.className = 'mind-fields';
+        // 表示順は内容→数値→日時。未知の項目も末尾に残す。
+        const keys = [...Object.keys(mindFields).filter(key => key in row.data),
+          ...Object.keys(row.data).filter(key => !(key in mindFields))];
+        for (const key of keys) {
+          const label = document.createElement('dt'); label.textContent = mindFields[key] || key;
+          if (row.category === 'emotions' && key === 'value') label.textContent = '強さ';
+          if (row.category === 'meta' && row.data.key === 'interactions' && key === 'value') label.textContent = '回数';
+          const value = document.createElement('dd'); value.textContent = mindValue(row.category, key, row.data[key]);
+          data.append(label, value);
+        }
         card.append(title, data);
         list.append(card);
         continue;
