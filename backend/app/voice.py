@@ -20,28 +20,19 @@ from .proactive import tokyo_now
 from .tuning import VOICE_LANGUAGE
 
 _log = logging.getLogger(__name__)
-
-# 例外文にはURLごと入ることがあり、Live APIのURLにはAPIキーが載る。画面へ出す前に消す。
 _SECRET = re.compile(r'(?i)\b(key|token|authorization)=[^&\s\'"]+')
 
 
 def live_config(prompt: str, voice_name: str) -> dict:
-    """Liveセッションの設定。読み上げをPC側へ回す場合も中身は同じ。
-
-    ネイティブ音声のLiveモデルは音声出力専用で、テキストだけを返す設定は拒否される
-    （1007 The requested combination of response modalities (TEXT) is not supported）。
-    PC側で読み上げるときも音声のまま受け取り、output_audio_transcription の
-    書き起こしを読み上げに回す。Gemini側の音声は再生しない。生成ぶんは無駄になるが、
-    モデルを差し替えずに済む。
-    """
+    """Live session config. Barge-in is disabled unless explicitly reintroduced later."""
     return {'response_modalities': ['AUDIO'], 'system_instruction': prompt,
             'input_audio_transcription': {}, 'output_audio_transcription': {},
+            'realtime_input_config': {'activity_handling': 'NO_INTERRUPTION'},
             'speech_config': {'language_code': VOICE_LANGUAGE,
                               'voice_config': {'prebuilt_voice_config': {'voice_name': voice_name}}}}
 
 
 def _reason(exc: BaseException) -> str:
-    """何が起きたかを画面で分かる形にする。種類だけでも原因の切り分けに足りる。"""
     detail = _SECRET.sub(r'\1=***', str(exc)).replace('\n', ' ').strip()[:300]
     return type(exc).__name__ + (f': {detail}' if detail else '')
 
@@ -91,7 +82,6 @@ async def handle(ws: WebSocket):
     tasks = set()
     speech = speech_client = narrator = None
     try:
-        # Keep session tokens out of WebSocket URLs / access logs.
         hello = await asyncio.wait_for(ws.receive_json(), 10)
         client_id = ws.app.state.sessions.get(hello.get('token', ''))
         origin = ws.headers.get('origin')
@@ -122,14 +112,11 @@ async def handle(ws: WebSocket):
             '\n相手の発話は日本語です。日本語として聞き取り、日本語で自然に短く会話してください。'
             '\n聞き取れなかったときは、別の言語として解釈せず、聞き返してください。'
             '\n音声通話では外部操作を実行できません。操作したと主張しないでください。')
-        # 声の名前だけでは印象が決まらない。話し方は設定画面の言葉で指示する。
         style = controller.runtime.options.voice_style.strip()
         if style:
             prompt += '\n話し方：' + style
         prompt += '\n直近の会話（参考データ）:\n' + json.dumps(history[-5:], ensure_ascii=False, default=str)[:12000]
         options = controller.runtime.options
-        # PC側の読み上げエンジンを使う設定なら、先に話者を引いて使えることを確かめる。
-        # ここで確かめておけば、通話が始まってから無言になる事態を避けられる。
         if options.voice_engine == 'local':
             speech_client = httpx.AsyncClient()
             speech = tts.Speech(speech_client, options.tts_url, options.tts_speaker, options.tts_style)
@@ -146,8 +133,6 @@ async def handle(ws: WebSocket):
                 if speech:
                     narrator = tts.Narrator(speech, ws.send_bytes)
                     narrator.start()
-                # PC側で読み上げると、1文ぶんがまとめて届く。画面側の「再生が遅れている」
-                # 判定はGeminiの実時間配信を前提にしているので、その旨を伝える。
                 await ws.send_json({'type': 'ready', 'max_seconds': 600, 'local_voice': bool(speech)})
 
                 async def upstream():
@@ -190,12 +175,10 @@ async def handle(ws: WebSocket):
                                 if len(transcript.answer) > 29500:
                                     raise ValueError('返答が長すぎます。通話を終了します。')
                                 await ws.send_json({'type': 'transcript', 'role': 'assistant', 'text': transcript.answer})
-                                # PC側で読み上げるときは、この書き起こしが読み上げの元になる。
                                 if narrator:
                                     narrator.feed(chunk)
                             if content.model_turn:
                                 for part in content.model_turn.parts or []:
-                                    # PC側で読み上げる設定のときは、Geminiの音声は流さない。
                                     if not narrator and part.inline_data and part.inline_data.data:
                                         await ws.send_bytes(part.inline_data.data)
                             if narrator and narrator.error:
@@ -220,7 +203,6 @@ async def handle(ws: WebSocket):
         with suppress(Exception):
             await ws.send_json({'type': 'error', 'message': '通話の時間上限または通信待ち時間を超えました。必要なら再開してください。'})
     except Exception as exc:
-        # ここに落ちると原因が追えない。画面にも残し、ログにも出す。
         _log.warning('voice session failed', exc_info=True)
         with suppress(Exception):
             using = '読み上げ: PCのエンジン' if speech else (
