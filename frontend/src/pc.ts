@@ -41,6 +41,20 @@ export class PCPanel {
 
   private status(text: string): void { document.getElementById('pc-status')!.textContent = text; }
 
+  /** iPhoneから開くURL。控え忘れても、ここを見れば分かるようにしておく。 */
+  private showRemote(url: string): void {
+    const line = document.getElementById('pc-remote')!;
+    line.replaceChildren();
+    if (!url) {
+      line.textContent = 'iPhoneから使うURLは未設定です。PCで pc_setup.bat を実行し、1（Tailscaleを導入）→ 2（HTTPS接続を有効化）を選んでください。';
+      return;
+    }
+    line.append('iPhoneから開くURL：');
+    const link = document.createElement('a');
+    link.href = url; link.textContent = url; link.rel = 'noreferrer';
+    line.append(link);
+  }
+
   async refresh(): Promise<void> {
     const request = ++this.request;
     this.status('PCの内容を読み込み中…');
@@ -55,6 +69,7 @@ export class PCPanel {
       const [status, videos] = await Promise.all([this.api('/pc/status'),
         this.api('/pc/videos?' + new URLSearchParams({ q: this.query, offset: String(this.offset) }))]);
       if (request !== this.request) return;
+      this.showRemote(String(status.remote_url || ''));
       for (const item of videos.items) {
         const button = document.createElement('button'); button.type = 'button';
         button.textContent = `${item.name}（${(item.size / 1048576).toFixed(1)} MB）`;
