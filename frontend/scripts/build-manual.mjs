@@ -15,7 +15,7 @@ const OUTPUT = join(here, '..', 'public', 'manual.html');
 const START = '<!-- manual:start -->';
 const END = '<!-- manual:end -->';
 
-const STYLE = String.raw`body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;max-width:850px;padding:24px;margin:auto}h1,h2{color:#ddc3ff;line-height:1.4}h1{font-size:26px}h2{font-size:21px;margin-top:36px}code{background:#342540;padding:2px 5px;border-radius:4px;overflow-wrap:anywhere}table{width:100%;border-collapse:collapse}td,th{border:1px solid #665070;padding:8px;text-align:left}a{color:#d5b5ff}.note{padding:14px;background:#30203b;border-left:4px solid #c69bed}li{margin:8px 0}@media(max-width:450px){body{padding:12px;font-size:14px}td,th{padding:6px}}`;
+const STYLE = String.raw`body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;max-width:850px;padding:24px;margin:auto}h1,h2{color:#ddc3ff;line-height:1.4}h1{font-size:26px}h2{font-size:21px;margin-top:36px}code{background:#342540;padding:2px 5px;border-radius:4px;overflow-wrap:anywhere}.scroll{overflow-x:auto}table{width:100%;border-collapse:collapse}td,th{border:1px solid #665070;padding:8px;text-align:left}td code,th code{white-space:nowrap}a{color:#d5b5ff}.note{padding:14px;background:#30203b;border-left:4px solid #c69bed}li{margin:8px 0}@media(max-width:450px){body{padding:12px;font-size:14px}td,th{padding:6px}table{min-width:480px}}`;
 const HEAD = [
   '<!doctype html>',
   '<html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">',
@@ -75,7 +75,9 @@ function render(picked) {
   let paragraph = null;
 
   const closeList = () => { if (list) { out.push(`<ul>${list.join('')}</ul>`); list = null; } };
-  const closeTable = () => { if (table) { out.push(`<table>${table.join('')}</table>`); table = null; } };
+  // 表は狭い画面だと列が潰れ、キー名が1文字ずつ折り返して読めなくなる。
+  // 潰さずに横へスクロールさせる。
+  const closeTable = () => { if (table) { out.push(`<div class="scroll"><table>${table.join('')}</table></div>`); table = null; } };
   const closeParagraph = () => { if (paragraph) { out.push(`<p>${inline(paragraph)}</p>`); paragraph = null; } };
   const closeAll = () => { closeList(); closeTable(); closeParagraph(); };
 

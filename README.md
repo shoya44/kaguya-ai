@@ -95,6 +95,24 @@ Gemini APIは以下の方針です。
 
 「設定 → 今すぐ整理」は手動でいつでも実行できます。1回押すと最大5バッチ（約300件）まで処理して止まります。足りなければもう一度押してください。1日の上限はありません。整理失敗時は、分かる範囲で利用制限・タイムアウト・結果形式不正・保存失敗を区別して表示します。
 
+設定画面には、前回の整理が**いつ・どうなったか**と、今日の使用回数が1行で出ます。日をまたいでも消しません（時刻が付くので、古い結果が今のことのように見える心配はありません）。
+
+### Geminiへ渡すスキーマの制約
+
+整理の結果は `response_schema` で形を指定して受け取ります。**ここにPydanticの型をそのまま渡すと通りません。**
+
+| 送ると400になるもの | 出どころ |
+|---|---|
+| `additionalProperties` | `model_config = ConfigDict(extra='forbid')` |
+| `max_items`（入れ子の配列に付けた場合） | `Field(max_length=...)` |
+| `minimum` / `maximum` / `minLength` / `maxLength` | `Field(ge=..., min_length=...)` |
+
+そのため `backend/app/llm.py` の `WISDOM_SCHEMA` / `PERSONA_SCHEMA` は、受け付けられる形だけで手書きしています。**値の範囲や件数の上限は、受信時に `WisdomBatch` / `PersonaCandidate` が検証します** — 送る形を緩めても、受け取りのチェックは緩めていません。
+
+送る形と検証用の型がずれていないことは `backend/tests/test_llm_schema.py` で見ています。項目を足すときは両方に足してください。
+
+この制約に気づかず自動生成していたため、整理は長期間ずっと400で失敗し、原文が数百件たまっていました。エラーは画面にも出ますが「Geminiへの接続に失敗しました」としか出ないので、設定ミスと区別がつきません。
+
 <!-- manual:start -->
 ## 天気
 
@@ -479,38 +497,108 @@ C:\kaguya-ai\pc_setup.bat
 
 追加のLLM/API呼び出しを使わず、キャラクターがアプリ内で生活しているように見せる軽量レイヤーです。
 
-状態例：
+## 状態と表情
 
-- idle
-- reading
-- working
-- playing
-- snacking
-- daydreaming
-- sleeping
+| 生活状態 | 絵 | まばたき |
+|---|---|---|
+| idle | `wave.png` | あり |
+| reading | `book.png` | あり |
+| working | `laptop.png` | なし |
+| playing | `cards.png` | なし |
+| snacking | `snack.png` | なし |
+| daydreaming | `daydream.png` | なし |
+| sleeping | `sleep.png` | なし（目を閉じている） |
 
-表情：
+| 表情 | 絵 |
+|---|---|
+| normal | 生活状態の絵をそのまま使う |
+| happy | `laugh.png` |
+| sleepy | `sleep.png` |
+| sulky | `sulk.png` |
+| worried | `worry.png` |
+| bored | `bored.png` |
 
-- normal
-- happy
-- sleepy
-- sulky
-- worried
-- bored
+このほか、会話中の状態として `think.png`（考え中）、`talk.png`（返答中・まばたきあり）、`write.png`（記憶整理中）を使います。
 
-褒められる、他のAIと比べられる、弱音を聞く、深夜になる等で変化します。
-`worried` と `bored` には専用イラストがまだ無いため、既存PNG（考え込む絵・手持ち無沙汰な絵）を
-暫定で当てています。差し替えは `frontend/src/avatar.ts` の `MOOD_SPRITES` 1箇所です。
+褒められる、他のAIと比べられる、弱音を聞く、深夜になる等で表情が変化します。
 
-**表情はPC側のサーバが決めて全端末へ配信します。** かぐやはPC上に1人しかいないため、
-PCで褒めればiPhone側のかぐやも同じ表情になります。Kaguya MindがONのときはMindの感情モデルが、
-OFFのときは会話の言葉と時刻だけの簡易判定が使われます。
+**表情はPC側のサーバが決めて全端末へ配信します。** かぐやはPC上に1人しかいないため、PCで褒めればiPhone側のかぐやも同じ表情になります。Kaguya MindがONのときはMindの感情モデルが、OFFのときは会話の言葉と時刻だけの簡易判定が使われます。
 
-生活状態（読書・睡眠など）、元気さ、最後に会った時刻、よく会話する時間帯の学習は、
-すべてPC側の `living_activity` が持ちます。PCで話した直後にiPhoneを開いても「ちょっと寝てた」とは言いません。
-同じ状況なら同じ行動になります（乱数は使いません）。
+生活状態、元気さ、最後に会った時刻、よく会話する時間帯の学習は、すべてPC側の `living_activity` が持ちます。PCで話した直後にiPhoneを開いても「ちょっと寝てた」とは言いません。同じ状況なら同じ行動になります（乱数は使いません）。
 
-既存PNGにはCanvasの低負荷な上下・呼吸・傾きモーションを付けています。専用の `snack.png` や `sulky.png` 等は将来追加可能ですが、未配置ファイルは参照しません。
+## モーション
+
+すべて `frontend/src/avatar.ts` で、CSSのtransformとCanvasの描き分けだけで動きます。LLMもGPUも使いません。
+
+### 呼吸（常時）
+
+**支点は足元**（`transform-origin: 50% 100%`）で、**縦に伸びるだけ**です。上下に平行移動させると、座った足やクッションまで一緒に浮いて「キャラが動いている」ではなく「画像が動いている」ように見えます。
+
+息は**吸う1,400ms・吐く2,500ms**の非対称です。同じ長さで往復すると振り子に見えます。
+
+伸びる量は姿勢と気分で変わります。伏せている絵（`sleep` / `bored` / `daydream`）は接地面が広いので、座り姿勢の約1/3に抑えています。
+
+### まばたき
+
+目を閉じるのは120msだけで、間隔は3.6〜7秒のあいだでばらつかせます。**重ね合わせは通しません。** 人の瞬きは開閉あわせて100ms台で、220msかけて閉じると瞬きではなく眠そうに見えるためです。
+
+まばたき差分があるのは `wave` / `book` / `talk` の3枚だけです。差分の無い絵と、眠っている絵では瞬きません。
+
+### 一回性の動き
+
+出来事に対して一度だけ返します。**rankが高いものだけが、実行中の動きに割り込めます。** 出来事は続けて届くので、次々と上書きすると生きているというより落ち着きがなく見えます。
+
+| 動き | rank | いつ |
+|---|---|---|
+| `beat` 書きながらの拍 | 1 | 返答が流れている間（0.9秒に1回まで） |
+| `settle` 座り直す | 1 | 手持ち無沙汰なとき、30〜90秒おき |
+| `sink` 寝入る | 2 | 眠った絵になったとき |
+| `nod` 受け取った | 3 | 送信時、通話終了時 |
+| `perk` 顔を上げる | 3 | 相手が戻ってきたとき、入力し始めたとき（20秒に1回まで） |
+| `inhale` ひと呼吸 | 3 | 返答が届いたとき、通話開始時 |
+| `stretch` 伸びをする | 3 | 目を覚ましたとき |
+| `hop` 跳ねる | 4 | 気分が `happy` に変わったとき |
+| `droop` しゅんとする | 4 | 気分が `worried` / `sulky` に変わったとき、返事に失敗したとき |
+| `call` 呼びかける | 5 | リマインダーの時刻になったとき |
+
+**床から足が離れるのは `hop` だけ**です。跳ねる以外は接地したまま伸縮させます。
+
+### 通話中
+
+通話のあいだは絵を `talk.png` で固定し、気分や活動が変わっても切り替えません。話している最中に見た目がころころ変わると落ち着かないためです。**呼吸・まばたき・一回性の動きは止めません。**
+
+### 調整する場所
+
+| 変えたいもの | 場所（`frontend/src/avatar.ts`） |
+|---|---|
+| 各動きの大きさ・長さ・強さ | `NUDGES` |
+| 呼吸の速さ | `BREATH_IN_MS` / `BREATH_OUT_MS` |
+| 呼吸の深さ（姿勢・気分ごと） | `breath()` |
+| まばたきの間隔・長さ | `BLINK_MIN_MS` / `BLINK_MAX_MS` / `BLINK_MS` |
+| 身じろぎの間隔 | `IDLE_BREAK_MIN_MS` / `IDLE_BREAK_MAX_MS` |
+| 絵の差し替え時間 | `FADE_MS` |
+
+## 絵を追加・差し替えるとき
+
+置き場所は `frontend/public/sprites/` です。`frontend/dist/` はGit管理外なので、`public/` にだけ置きます。
+
+| 項目 | 値 |
+|---|---|
+| PNGの寸法 | 約400px四方（現物は398〜418px。正方形でなくてよい） |
+| Canvasの内部解像度 | 256×256 |
+| 画面での表示 | 160×160（`image-rendering: pixelated`） |
+| キャラの占有率 | 90%前後 |
+
+**表示は画像全体をCanvasへ収める形（縦横比は保つ）**なので、寸法が多少違っても崩れません。揃える必要があるのは寸法ではなく**占有率**です。新しく描くなら418px四方に合わせておくと、既存と並べたときに扱いが揃います。
+
+256pxより小さい画像は拡大表示になってぼやけます。**128pxなどの小さい素材は使わないでください。**
+
+- **キャラの占有率を90%前後に揃えてください。** 描画は画像全体をcanvasに合わせるため、余白が多い画像はキャラが小さく表示されます
+- **まばたき差分は、元絵と輪郭を揃えてください。** 大きさや位置がずれていると、瞬いた瞬間にキャラが跳ねます。元絵の不透明部分と同じ大きさ・同じ位置に収めます
+- 対応表は `avatar.ts` の `LIFE_SPRITES` / `MOOD_SPRITES` / `BLINK` です。未配置のファイルは `FALLBACK` 経由で既存の絵に落ちるので、置き忘れても壊れません
+
+揺れ方を見比べるときは `tools/motion-compare.html` をブラウザで開きます。案を並べて同じ床の基準線で比較できます（アプリには含まれません）。
+
 
 ---
 
@@ -850,16 +938,22 @@ kaguya.bat check
 
 実行内容：
 
-1. backendの全 `unittest`（`backend/tests/test_iphone_memory_stream.py` を含む）
-2. `frontend/tests/main.test.cjs`
-3. `frontend/tests/living.test.cjs`
-4. `frontend/tests/avatar.test.cjs`
-5. `frontend/tests/manual.test.cjs`（改行・Git更新処理）
-6. `frontend/tests/controls.test.cjs`（記憶表示・読み込み失敗・重複操作防止）
-7. TypeScript compile / Vite build
-8. Cargo check（オフライン）
+1. backendの全 `unittest`（使い捨てのローカルPostgreSQLを1つ起動して使います）
+2. `frontend/tests/*.test.cjs` の全ファイル
+3. TypeScript compile / Vite build
+4. Cargo check（オフライン）
 
 ライブGemini、ライブ天気API、本番DBへの呼び出しは行いません。
+
+| ファイル | 見ているもの |
+|---|---|
+| `main.test.cjs` | 会話の送受信、再送、トークン更新、出来事と動きの繋がり |
+| `avatar.test.cjs` | 絵の選び方、呼吸、まばたき、一回性の動き、通話中の固定 |
+| `controls.test.cjs` | 記憶表示、読み込み失敗、重複操作防止、整理結果の1行 |
+| `living.test.cjs` | 生活状態の受け取りと「おかえり」 |
+| `voice.test.cjs` | 通話が使えない理由の案内、音量と消音の保存 |
+| `pc.test.cjs` | 動画検索・再生、BAT実行の確認 |
+| `manual.test.cjs` | READMEから「使い方」を作る変換 |
 
 ## GitHub Actions
 
@@ -872,6 +966,26 @@ kaguya.bat check
 
 backendをWindowsでも回すのは、**使用中のファイルを削除できない等のWindows固有の問題がLinuxでは再現しない**ためです。
 Cargo check（Tauri）はRustツールチェーンとWindows SDKが必要なので対象外です。実機確認は引き続き `kaguya.bat check` で行ってください。
+
+3ジョブは並列に走るので、全体の所要はいちばん遅いWindowsで決まります。実測の内訳です。
+
+| ジョブ | 所要 | 内訳 |
+|---|---|---|
+| frontend | 15秒 | install 2秒、typecheck 2秒、テスト 3秒、build 2秒 |
+| backend（Ubuntu） | 21秒 | install 6秒、テスト 6秒 |
+| backend（Windows） | 77秒 | checkout 8秒、install 29秒、テスト 28秒 |
+
+pipとnpmはキャッシュ済みで、同じrefへの押し直しは古い実行を打ち切ります（`concurrency`）。**Windowsが遅いのはテストの数ではなく、ファイル操作とPostgreSQLの起動が重いため**です。テストを減らしても大きくは縮みません。
+
+3ジョブは並列に走るので、全体の所要はいちばん遅いWindowsで決まります。実測の内訳は次のとおりです。
+
+| ジョブ | 所要 | 内訳 |
+|---|---|---|
+| frontend | 15秒 | install 2秒、typecheck 2秒、テスト 3秒、build 2秒 |
+| backend（Ubuntu） | 21秒 | install 6秒、テスト 6秒 |
+| backend（Windows） | 77秒 | checkout 8秒、install 29秒、テスト 28秒 |
+
+pipとnpmはキャッシュ済みで、同じrefへの押し直しは古い実行を打ち切ります（`concurrency`）。Windowsが遅いのはテストの数ではなく、ファイル操作とPostgreSQLの起動が重いためです。テストを減らしても大きくは縮みません。
 
 DBの確認用コードは `backend/tests/run_db_checks.py` にあります。`kaguya.bat check-db` から、使い捨てのローカルPostgreSQLを使って実行します。
 
