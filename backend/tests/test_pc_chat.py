@@ -48,7 +48,7 @@ class PCChatRoutingTests(unittest.TestCase):
 
 
 class PCChatWithoutRegistrationTests(unittest.TestCase):
-    """何も登録していない人に「PCタブを開いたよ」と言わない。"""
+    """何も登録していない人に「ファイルタブを開いたよ」と言わない。"""
 
     def config(self, body):
         temp = tempfile.TemporaryDirectory()
@@ -62,7 +62,7 @@ class PCChatWithoutRegistrationTests(unittest.TestCase):
 
     def test_nothing_registered_stays_normal_chat(self):
         self.config(None)
-        for text in ('猫の動画を見せて', 'batを実行してお願い', 'PCタブを開いて'):
+        for text in ('猫の動画を見せて', 'batを実行してお願い', 'ファイルタブを開いて'):
             with self.subTest(text=text):
                 self.assertIsNone(pc.chat_action(text))
 

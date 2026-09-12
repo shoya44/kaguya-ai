@@ -60,28 +60,14 @@ button:active:not(:disabled) {
 }
 
 /* --- タブバー -----------------------------------------------------------
-   HIGのタブバーに合わせ、アイコンの下にラベルを置く。選択中は塗りつぶさず
-   アクセント色で着色する（塗ると押せる場所と状態の区別が付かなくなる）。 */
-.tabbar {
-  gap: 2px !important;
-}
-
+   アイコンだけの4つ。選択中は塗りつぶさずアクセント色で着色する
+   （塗ると「押せる場所」と「いまの状態」の区別が付かなくなる）。 */
 .toolbar .tabbar button {
-  width: auto;
-  height: auto;
-  flex: 1 1 0;
-  min-width: 0;
-  min-height: 44px;
-  padding: 4px 2px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
+  width: 44px;
+  height: 44px;
   background: transparent;
   border-color: transparent;
   color: var(--label-2);
-  font-weight: 500;
 }
 
 .toolbar .tabbar svg {
@@ -89,18 +75,10 @@ button:active:not(:disabled) {
   height: 22px;
 }
 
-.tab-label {
-  font-size: 11px;
-  line-height: 1.2;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-}
-
 .toolbar .tabbar button[aria-pressed="true"] {
   background: transparent;
   border-color: transparent;
   color: var(--accent);
-  font-weight: 700;
 }
 
 .toolbar .tabbar button:hover:not(:disabled):not([aria-pressed="true"]) {

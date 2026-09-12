@@ -286,9 +286,8 @@ export class Controls {
 
   async refreshSummary(): Promise<void> {
     const body = await this.api('/memory-summary');
-    document.getElementById('memory-summary')!.textContent = body.running ? '会話は保存済み。長期記憶へ整理しています。'
-      : body.pending ? `会話は保存済み。${body.pending}件が長期記憶への反映待ちです。${body.auto ? '会話のない時間に整理します。' : '自動整理は停止中です。'}`
-      : '保存された会話の長期記憶への整理は完了しています。';
+    // 件数だけを出す。整理の進み方や自動整理の可否は設定タブの担当。
+    document.getElementById('memory-summary')!.textContent = `長期記憶反映待ち：${body.pending ?? 0}件`;
     const list = document.getElementById('recent-memory-list')!;
     list.replaceChildren();
     for (const row of body.recent) {

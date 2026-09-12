@@ -282,11 +282,11 @@ def chat_action(text: str) -> dict | None:
             _, key, command = matched[0]
             return {
                 'event': {'command_id': key},
-                'reply': f'「{command.name}」の実行確認をPCタブに開いたよ。内容を確認して、実行してね。',
+                'reply': f'「{command.name}」の実行確認をファイルタブに開いたよ。内容を確認して、実行してね。',
             }
         return {
             'event': {},
-            'reply': 'PCタブを開いたよ。実行するBATを選んで、内容を確認してね。',
+            'reply': 'ファイルタブを開いたよ。実行するBATを選んで、内容を確認してね。',
         }
 
     if not config.video_folders:
@@ -298,12 +298,14 @@ def chat_action(text: str) -> dict | None:
     if query or video_request:
         return {
             'event': {'query': query, 'autoload_video': bool(query)},
-            'reply': (f'PCタブで「{query}」の動画を探したよ。候補が1件なら再生画面まで開くね。'
-                      if query else 'PCタブを開いたよ。再生する動画を選んでね。'),
+            'reply': (f'ファイルタブで「{query}」の動画を探したよ。候補が1件なら再生画面まで開くね。'
+                      if query else 'ファイルタブを開いたよ。再生する動画を選んでね。'),
         }
 
-    if ('pc' in lower and 'タブ' in lower and any(word in lower for word in ('開', '表示', '見せ'))):
-        return {'event': {}, 'reply': 'PCタブを開いたよ。'}
+    # 画面のタブ名は「ファイル」。以前の呼び名「PCタブ」で頼まれても通す。
+    if (('pc' in lower or 'ファイル' in lower) and 'タブ' in lower
+            and any(word in lower for word in ('開', '表示', '見せ'))):
+        return {'event': {}, 'reply': 'ファイルタブを開いたよ。'}
     return None
 
 
