@@ -256,7 +256,11 @@ function settleDraft(turnId: string): void {
 }
 
 restoreDraft();
-inputEl.addEventListener('input', () => saveDraft());
+inputEl.addEventListener('input', () => {
+  saveDraft();
+  // 書き始めたことに気づいて顔を上げる。打つたびには上げ直さない。
+  avatar.react('perk');
+});
 
 // 接続状態は常設の小さな表示。実際に起きていることだけを書く
 // （検索していないのに「記憶を探しているよ」のような演出はしない）。
@@ -764,6 +768,8 @@ function handleServerEvent(data: Record<string, unknown>): void {
       const turn = turns.get(turnId);
       if (turn) turn.partial = data.partial as string;
       applyPartial(turnId, data.partial as string);
+      // 書きながら間を取る拍。届く間隔は細かいのでavatar側で絞っている。
+      avatar.react('beat');
       break;
     }
     case 'proactive.message': {
@@ -802,6 +808,8 @@ function handleServerEvent(data: Record<string, unknown>): void {
       talkingState = 'talking';
       talkingUntil = Date.now() + TALKING_MS;
       refreshAvatar();
+      // 気づいてもらう必要がある知らせ。ほかの動きに飲まれない強さで呼ぶ。
+      avatar.react('call');
       if (isTauri()) invoke('show_window').catch(() => {});
       break;
     }
@@ -845,6 +853,8 @@ function handleServerEvent(data: Record<string, unknown>): void {
       talkingUntil = lastConversation + TALKING_MS;
       setBusy(false);
       hideError();
+      // 話し出す前のひと呼吸。表情が変わるだけだと唐突に見える。
+      avatar.react('inhale');
       break;
     }
     case 'chat.error': {
@@ -1018,6 +1028,8 @@ async function main(): Promise<void> {
   new VoiceChat(API_BASE, ensureSession, active => {
     voiceActive = active;
     setBusy(busy);
+    // 通話の始まりは話し出す構え、終わりは受け取った合図。
+    avatar.react(active ? 'inhale' : 'nod');
   });
   setBusy(false);
 

@@ -48,7 +48,7 @@ class Element {
 }
 
 function harness(options = {}) {
-  const elements = {}, sockets = [], timers = [], calls = [], sent = [];
+  const elements = {}, sockets = [], timers = [], calls = [], sent = [], nudges = [];
   const sessionData = new Map(), localData = new Map();
   const storage = data => ({ getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value),
     removeItem: key => data.delete(key) });
@@ -70,7 +70,10 @@ function harness(options = {}) {
       visibilityState: 'visible',
     },
     location: { hostname: '127.0.0.1', port: '5173', origin: 'http://127.0.0.1:5173' },
-    Avatar: class { setState() {} react() {} }, isTauri: () => !!options.tauri,
+    // かぐやの動きは avatar.test.cjs が見る。ここでは「どの出来事で
+    // どの動きを頼んだか」だけを覚えて、繋ぎ間違いを止める。
+    Avatar: class { setState() {} react(nudge) { nudges.push(nudge); } },
+    isTauri: () => !!options.tauri,
     invoke: options.invoke ?? (async () => 'owned'),
     sessionStorage: storage(sessionData), localStorage: storage(localData),
     WebSocket: Socket, URLSearchParams, AbortSignal, Date, Error,
@@ -94,7 +97,7 @@ function harness(options = {}) {
   const run = code => vm.runInContext(code, ctx);
   run("saveSession({clientId:'client',sessionToken:'old-token'})");
   const flush = () => new Promise(resolve => setImmediate(resolve));
-  return { run, elements, sockets, timers, calls, sent, localData, dispatched, flush };
+  return { run, elements, sockets, timers, calls, sent, localData, dispatched, flush, nudges };
 }
 const response = (body, status = 200) => ({ ok: status === 200, status, json: async () => body });
 const row = (id, status = 'completed') => ({ turn_id: id, text: id, answer: status === 'completed' ? `answer-${id}` : null, status, client_id: 'client' });
@@ -370,4 +373,41 @@ test('the first history page is small and only catching up reads a full page', a
   assert.match(h.calls.at(-1).url, /limit=20/);
   await h.run('loadHistory(true)');
   assert.match(h.calls.at(-1).url, /limit=50&cursor=older/);
+});
+
+test('会話の出来事が、かぐやの動きに繋がっている', async () => {
+  const h = harness(); await connected(h);
+  const socket = h.sockets[0];
+
+  h.run("sendTurn('hello','t1',false)");
+  assert.ok(h.nudges.includes('nod'), '送信を受け取ったら頷く');
+
+  h.nudges.length = 0;
+  socket.emit({ type: 'chat.progress', turn_id: 't1', partial: 'こ' });
+  assert.ok(h.nudges.includes('beat'), '返答が流れる間は拍を打つ');
+
+  h.nudges.length = 0;
+  socket.emit({ type: 'chat.completed', turn_id: 't1', text: 'hello', answer: 'hi' });
+  await h.flush();
+  assert.ok(h.nudges.includes('inhale'), '話し出す前にひと呼吸する');
+
+  h.nudges.length = 0;
+  socket.emit({ type: 'reminder.due', id: 'r1', text: '薬を飲む' });
+  assert.ok(h.nudges.includes('call'), 'リマインダーは呼びかける');
+
+  h.nudges.length = 0;
+  h.run("sendTurn('hello','t2',false)");
+  socket.emit({ type: 'chat.error', turn_id: 't2', code: 'timeout', message: 'だめだった' });
+  assert.ok(h.nudges.includes('droop'), '返事に失敗したらしゅんとする');
+});
+
+test('書き始めに気づくが、打つたびには反応を頼まない', () => {
+  const h = harness();
+  const input = h.elements['text-input'];
+  input.value = 'こ';
+  input.handlers.input();
+  input.value = 'こん';
+  input.handlers.input();
+  // 間隔を絞るのはavatar側。main.tsは入力のたびに頼んでよい。
+  assert.deepEqual(h.nudges, ['perk', 'perk']);
 });
