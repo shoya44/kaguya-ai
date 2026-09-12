@@ -1028,6 +1028,8 @@ async function main(): Promise<void> {
   new VoiceChat(API_BASE, ensureSession, active => {
     voiceActive = active;
     setBusy(busy);
+    // 通話中は絵を止める。話している最中に切り替わると落ち着かない。
+    avatar.hold(active);
     // 通話の始まりは話し出す構え、終わりは受け取った合図。
     avatar.react(active ? 'inhale' : 'nod');
   });
