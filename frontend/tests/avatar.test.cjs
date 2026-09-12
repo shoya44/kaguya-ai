@@ -369,3 +369,35 @@ test('通話中は、伏せ姿勢あつかいの小さな呼吸にしない', ()
   for (let i = 0; i < 4; i++) { h.settle(); seen.add(h.canvas.style.transform); }
   assert.ok([...seen].some(value => value.includes('scaleY(1.0125)')), [...seen].join(' / '));
 });
+
+test('READMEの絵の一覧が、実物と食い違っていない', () => {
+  // READMEは「ここを見ればなんでも分かる」を目指している。絵を足したのに
+  // 書き忘れると、一覧を信じた人が存在しない絵を探すことになる。
+  const readme = fs.readFileSync(path.join(__dirname, '../../README.md'), 'utf8');
+  const section = readme.split('## 状態と表情')[1].split('## モーション')[0];
+  const placed = fs.readdirSync(path.join(__dirname, '../public/sprites'))
+    .filter(name => name.endsWith('.png'));
+  for (const file of placed) {
+    // まばたき差分は本体の行に「あり」として載るので、個別には書かない。
+    if (file.endsWith('-blink.png')) continue;
+    assert.ok(section.includes(file), `${file} がREADMEの一覧に無い`);
+  }
+  // 逆に、置いていない絵を載せない。
+  for (const found of section.matchAll(/`([a-z-]+\.png)`/g)) {
+    assert.ok(placed.includes(found[1]), `${found[1]} はREADMEにあるが置かれていない`);
+  }
+});
+
+test('まばたきできる絵の一覧が、READMEと合っている', () => {
+  const readme = fs.readFileSync(path.join(__dirname, '../../README.md'), 'utf8');
+  const section = readme.split('## 状態と表情')[1].split('## モーション')[0];
+  const placed = fs.readdirSync(path.join(__dirname, '../public/sprites'));
+  for (const row of section.split('\n')) {
+    const cells = row.split('|').map(cell => cell.trim());
+    const file = cells.find(cell => /^`[a-z-]+\.png`$/.test(cell))?.replace(/`/g, '');
+    if (!file || cells.length < 4) continue;
+    const claimsBlink = cells.some(cell => cell === 'あり');
+    const hasBlink = placed.includes(file.replace('.png', '-blink.png'));
+    assert.equal(claimsBlink, hasBlink, `${file} のまばたき有無がREADMEと違う`);
+  }
+});

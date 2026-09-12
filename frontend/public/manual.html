@@ -87,14 +87,34 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <ul><li>「旅行の動画を再生して」→ 依頼した端末のファイルタブを開き、動画名で検索します。候補が1件なら再生画面まで準備します</li><li>「バックアップを実行して」→ 登録済みBAT名と一致すれば、そのBATの確認画面を開きます</li><li>BATはチャットだけでは実行されません。<strong>表示名・説明・最大実行時間を確認してOKした後にだけ実行</strong>します</li><li>任意パスや任意引数は受け取りません。登録済み許可リストの範囲だけです</li><li>この引き継ぎ判定はローカルで行い、PC操作のためだけに追加のGemini Function Callingを使いません</li></ul>
 <h2>Living Kaguya</h2>
 <p>追加のLLM/API呼び出しを使わず、キャラクターがアプリ内で生活しているように見せる軽量レイヤーです。</p>
-<p>状態例：</p>
-<ul><li>idle</li><li>reading</li><li>working</li><li>playing</li><li>snacking</li><li>daydreaming</li><li>sleeping</li></ul>
-<p>表情：</p>
-<ul><li>normal</li><li>happy</li><li>sleepy</li><li>sulky</li><li>worried</li><li>bored</li></ul>
-<p>褒められる、他のAIと比べられる、弱音を聞く、深夜になる等で変化します。<code>worried</code> と <code>bored</code> には専用イラストがまだ無いため、既存PNG（考え込む絵・手持ち無沙汰な絵）を暫定で当てています。差し替えは <code>frontend/src/avatar.ts</code> の <code>MOOD_SPRITES</code> 1箇所です。</p>
+<h3>状態と表情</h3>
+<table><tr><th>生活状態</th><th>絵</th><th>まばたき</th></tr><tr><td>idle</td><td><code>wave.png</code></td><td>あり</td></tr><tr><td>reading</td><td><code>book.png</code></td><td>あり</td></tr><tr><td>working</td><td><code>laptop.png</code></td><td>なし</td></tr><tr><td>playing</td><td><code>cards.png</code></td><td>なし</td></tr><tr><td>snacking</td><td><code>snack.png</code></td><td>なし</td></tr><tr><td>daydreaming</td><td><code>daydream.png</code></td><td>なし</td></tr><tr><td>sleeping</td><td><code>sleep.png</code></td><td>なし（目を閉じている）</td></tr></table>
+<table><tr><th>表情</th><th>絵</th></tr><tr><td>normal</td><td>生活状態の絵をそのまま使う</td></tr><tr><td>happy</td><td><code>laugh.png</code></td></tr><tr><td>sleepy</td><td><code>sleep.png</code></td></tr><tr><td>sulky</td><td><code>sulk.png</code></td></tr><tr><td>worried</td><td><code>worry.png</code></td></tr><tr><td>bored</td><td><code>bored.png</code></td></tr></table>
+<p>このほか、会話中の状態として <code>think.png</code>（考え中）、<code>talk.png</code>（返答中・まばたきあり）、<code>write.png</code>（記憶整理中）を使います。</p>
+<p>褒められる、他のAIと比べられる、弱音を聞く、深夜になる等で表情が変化します。</p>
 <p><strong>表情はPC側のサーバが決めて全端末へ配信します。</strong> かぐやはPC上に1人しかいないため、PCで褒めればiPhone側のかぐやも同じ表情になります。Kaguya MindがONのときはMindの感情モデルが、OFFのときは会話の言葉と時刻だけの簡易判定が使われます。</p>
-<p>生活状態（読書・睡眠など）、元気さ、最後に会った時刻、よく会話する時間帯の学習は、すべてPC側の <code>living_activity</code> が持ちます。PCで話した直後にiPhoneを開いても「ちょっと寝てた」とは言いません。同じ状況なら同じ行動になります（乱数は使いません）。</p>
-<p>既存PNGにはCanvasの低負荷な上下・呼吸・傾きモーションを付けています。専用の <code>snack.png</code> や <code>sulky.png</code> 等は将来追加可能ですが、未配置ファイルは参照しません。</p>
+<p>生活状態、元気さ、最後に会った時刻、よく会話する時間帯の学習は、すべてPC側の <code>living_activity</code> が持ちます。PCで話した直後にiPhoneを開いても「ちょっと寝てた」とは言いません。同じ状況なら同じ行動になります（乱数は使いません）。</p>
+<h3>モーション</h3>
+<p>すべて <code>frontend/src/avatar.ts</code> で、CSSのtransformとCanvasの描き分けだけで動きます。LLMもGPUも使いません。</p>
+<h4>呼吸（常時）</h4>
+<p><strong>支点は足元</strong>（<code>transform-origin: 50% 100%</code>）で、<strong>縦に伸びるだけ</strong>です。上下に平行移動させると、座った足やクッションまで一緒に浮いて「キャラが動いている」ではなく「画像が動いている」ように見えます。</p>
+<p>息は<strong>吸う1,400ms・吐く2,500ms</strong>の非対称です。同じ長さで往復すると振り子に見えます。</p>
+<p>伸びる量は姿勢と気分で変わります。伏せている絵（<code>sleep</code> / <code>bored</code> / <code>daydream</code>）は接地面が広いので、座り姿勢の約1/3に抑えています。</p>
+<h4>まばたき</h4>
+<p>目を閉じるのは120msだけで、間隔は3.6〜7秒のあいだでばらつかせます。<strong>重ね合わせは通しません。</strong> 人の瞬きは開閉あわせて100ms台で、220msかけて閉じると瞬きではなく眠そうに見えるためです。</p>
+<p>まばたき差分があるのは <code>wave</code> / <code>book</code> / <code>talk</code> の3枚だけです。差分の無い絵と、眠っている絵では瞬きません。</p>
+<h4>一回性の動き</h4>
+<p>出来事に対して一度だけ返します。<strong>rankが高いものだけが、実行中の動きに割り込めます。</strong> 出来事は続けて届くので、次々と上書きすると生きているというより落ち着きがなく見えます。</p>
+<table><tr><th>動き</th><th>rank</th><th>いつ</th></tr><tr><td><code>beat</code> 書きながらの拍</td><td>1</td><td>返答が流れている間（0.9秒に1回まで）</td></tr><tr><td><code>settle</code> 座り直す</td><td>1</td><td>手持ち無沙汰なとき、30〜90秒おき</td></tr><tr><td><code>sink</code> 寝入る</td><td>2</td><td>眠った絵になったとき</td></tr><tr><td><code>nod</code> 受け取った</td><td>3</td><td>送信時、通話終了時</td></tr><tr><td><code>perk</code> 顔を上げる</td><td>3</td><td>相手が戻ってきたとき、入力し始めたとき（20秒に1回まで）</td></tr><tr><td><code>inhale</code> ひと呼吸</td><td>3</td><td>返答が届いたとき、通話開始時</td></tr><tr><td><code>stretch</code> 伸びをする</td><td>3</td><td>目を覚ましたとき</td></tr><tr><td><code>hop</code> 跳ねる</td><td>4</td><td>気分が <code>happy</code> に変わったとき</td></tr><tr><td><code>droop</code> しゅんとする</td><td>4</td><td>気分が <code>worried</code> / <code>sulky</code> に変わったとき、返事に失敗したとき</td></tr><tr><td><code>call</code> 呼びかける</td><td>5</td><td>リマインダーの時刻になったとき</td></tr></table>
+<p><strong>床から足が離れるのは <code>hop</code> だけ</strong>です。跳ねる以外は接地したまま伸縮させます。</p>
+<h4>通話中</h4>
+<p>通話のあいだは絵を <code>talk.png</code> で固定し、気分や活動が変わっても切り替えません。話している最中に見た目がころころ変わると落ち着かないためです。<strong>呼吸・まばたき・一回性の動きは止めません。</strong></p>
+<h4>調整する場所</h4>
+<table><tr><th>変えたいもの</th><th>場所（<code>frontend/src/avatar.ts</code>）</th></tr><tr><td>各動きの大きさ・長さ・強さ</td><td><code>NUDGES</code></td></tr><tr><td>呼吸の速さ</td><td><code>BREATH_IN_MS</code> / <code>BREATH_OUT_MS</code></td></tr><tr><td>呼吸の深さ（姿勢・気分ごと）</td><td><code>breath()</code></td></tr><tr><td>まばたきの間隔・長さ</td><td><code>BLINK_MIN_MS</code> / <code>BLINK_MAX_MS</code> / <code>BLINK_MS</code></td></tr><tr><td>身じろぎの間隔</td><td><code>IDLE_BREAK_MIN_MS</code> / <code>IDLE_BREAK_MAX_MS</code></td></tr><tr><td>絵の差し替え時間</td><td><code>FADE_MS</code></td></tr></table>
+<h3>絵を追加・差し替えるとき</h3>
+<p>置き場所は <code>frontend/public/sprites/</code> です。<code>frontend/dist/</code> はGit管理外なので、<code>public/</code> にだけ置きます。</p>
+<ul><li><strong>キャラの占有率を90%前後に揃えてください。</strong> 描画は画像全体をcanvasに合わせるため、余白が多い画像はキャラが小さく表示されます</li><li><strong>まばたき差分は、元絵と輪郭を揃えてください。</strong> 大きさや位置がずれていると、瞬いた瞬間にキャラが跳ねます。元絵の不透明部分と同じ大きさ・同じ位置に収めます</li><li>対応表は <code>avatar.ts</code> の <code>LIFE_SPRITES</code> / <code>MOOD_SPRITES</code> / <code>BLINK</code> です。未配置のファイルは <code>FALLBACK</code> 経由で既存の絵に落ちるので、置き忘れても壊れません</li></ul>
+<p>揺れ方を見比べるときは <code>tools/motion-compare.html</code> をブラウザで開きます。案を並べて同じ床の基準線で比較できます（アプリには含まれません）。</p>
 <h2>Kaguya Mind（実験機能）</h2>
 <p>かぐや自身の感情・好み・気にかけていることを、少しずつローカルに育てる実験レイヤーです。<strong>既定はON</strong>です。切るときは <code>app_settings</code> の <code>options.mind_enabled</code> を false にします（下記「設定値の変え方」）。APIによる変更は即時反映、DBを直接変更した場合は再起動時に読み込みます。</p>
 <p>Mindの感情・好みの規則処理には追加のGemini呼び出しはありません。自発的な声かけの言い換えは別途Geminiを利用します。OFFのときは会話に伴うMindの読み書きを行わず、プロンプトにも何も足しません。「記憶 → かぐやの心」から保存済みの内容を閲覧することは、OFFでもできます。</p>

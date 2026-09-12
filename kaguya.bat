@@ -109,7 +109,9 @@ cd backend
 ".venv\Scripts\python.exe" -B -m unittest discover -s tests -v
 if errorlevel 1 goto failed
 cd ..\frontend
-node --test tests\main.test.cjs tests\living.test.cjs tests\avatar.test.cjs tests\manual.test.cjs tests\controls.test.cjs
+rem CIと同じく全ファイルを回す。個別に並べていたため pc と voice が漏れ、
+rem ローカルの確認がCIより弱くなっていた。
+node --test tests\*.test.cjs
 if errorlevel 1 goto failed
 call npm.cmd run build
 if errorlevel 1 goto failed
