@@ -3,7 +3,8 @@ type Api = (path: string, init?: RequestInit) => Promise<any>;
 export class PCPanel {
   private request = 0;
 
-  constructor(private api: Api, private _base: string) {
+  constructor(private api: Api, _base: string) {
+    void _base;
     window.addEventListener('pc.open', () => { void this.refresh(); });
     document.querySelectorAll('[data-panel]').forEach(button => button.addEventListener('click', () => {
       if ((button as HTMLElement).dataset.panel === 'pc') void this.refresh();
