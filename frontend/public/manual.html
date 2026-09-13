@@ -25,6 +25,30 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <div class="scroll"><table><tr><th>キー</th><th>意味</th><th>範囲・既定</th></tr><tr><td><code>reply_tokens</code></td><td>回答の出力上限</td><td>256〜8,192トークン、既定1,024</td></tr><tr><td><code>font_size</code></td><td>文字サイズ</td><td>12〜22、既定14</td></tr><tr><td><code>always_on_top</code></td><td>最前面表示。PC/Tauri画面に適用（iPhoneでは表示しません）</td><td>true / false、既定 true</td></tr><tr><td><code>weather_location</code></td><td>天気の既定地点。会話からも変えられます</td><td>80文字まで、既定「東京」</td></tr></table></div>
 <h3>声</h3>
 <div class="scroll"><table><tr><th>キー</th><th>意味</th><th>範囲・既定</th></tr><tr><td><code>voice_name</code></td><td>通話の声。名前の一覧はGemini側に従います。無効な名前だと通話開始時に失敗し、その旨と使った名前が画面に出ます</td><td>英数字40文字まで、既定 <code>Leda</code></td></tr><tr><td><code>voice_style</code></td><td>話し方。トーン・語尾・テンポを言葉で指示します。空にするとモデルの素の話し方になります</td><td>300文字まで</td></tr><tr><td><code>voice_engine</code></td><td>読み上げをどこに任せるか。<code>gemini</code> はGemini Liveの声をそのまま流します。<code>local</code> はPCのVOICEVOX互換エンジンで読み上げ、繋がらなければ <code>gemini</code> へ自動で戻ります</td><td><code>gemini</code> / <code>local</code>、既定 <code>gemini</code></td></tr><tr><td><code>tts_url</code></td><td>ローカル読み上げエンジンの場所。AivisSpeech は 10101、VOICEVOX は 50021</td><td>200文字まで、既定 <code>http://127.0.0.1:10101</code></td></tr><tr><td><code>tts_speaker</code></td><td>ローカル読み上げの話者</td><td>80文字まで、既定「コハク」</td></tr><tr><td><code>tts_style</code></td><td>ローカル読み上げのスタイル</td><td>80文字まで、既定「ノーマル」</td></tr></table></div>
+<h2>デザインの決めごと</h2>
+<p>PCとiPhoneで同じ画面を使うので、見た目の方針も1つにします。<strong>Apple HIGに倣う</strong>のが基本方針です。</p>
+<p>数値は <code>frontend/src/style.css</code> の <code>:root</code> にまとめてあり、<strong>個別に書き足しません</strong>。同じ役割のものが場所ごとに違う値になるのを防ぐためです（実際、余白は2〜14px、角丸は8〜18pxが混在していました）。</p>
+<h3>余白</h3>
+<p>4の倍数だけを使います。</p>
+<div class="scroll"><table><tr><th>トークン</th><th>値</th><th>使うところ</th></tr><tr><td><code>--space-1</code></td><td>4px</td><td>文字とアイコンの間など、最小の隙間</td></tr><tr><td><code>--space-2</code></td><td>8px</td><td>同じ塊の中の要素どうし</td></tr><tr><td><code>--space-3</code></td><td>12px</td><td>塊と塊の間、カードの内側</td></tr><tr><td><code>--space-4</code></td><td>16px</td><td>画面の端、大きな区切り</td></tr><tr><td><code>--space-6</code></td><td>24px</td><td>節と節の間</td></tr></table></div>
+<h3>角丸</h3>
+<p>役割で3段だけです。</p>
+<div class="scroll"><table><tr><th>トークン</th><th>値</th><th>使うところ</th></tr><tr><td><code>--radius-s</code></td><td>8px</td><td>ボタン、入力欄</td></tr><tr><td><code>--radius-l</code></td><td>12px</td><td>カード、領域</td></tr><tr><td><code>--radius-pill</code></td><td>999px</td><td>円形・丸型のボタン</td></tr></table></div>
+<h3>押せるものの大きさ</h3>
+<div class="scroll"><table><tr><th>トークン</th><th>値</th></tr><tr><td><code>--tap</code></td><td>44px</td></tr></table></div>
+<p>HIGの最小ヒットターゲット44ptに合わせます。<strong>入力手段で分けません。</strong> 指で押し間違えないための下限ですが、マウスでも小さい的は狙いにくいためです。</p>
+<p>簡易表示（幅160px）だけは、消音・音量・通話を1行に収める必要があるので個別に小さくしています。</p>
+<h3>文字</h3>
+<p>本文（設定の「文字サイズ」。既定14px）を1として、上下に段階を持ちます。</p>
+<div class="scroll"><table><tr><th>トークン</th><th>倍率</th><th>使うところ</th></tr><tr><td><code>--text-title</code></td><td>1.25</td><td>画面の見出し</td></tr><tr><td><code>--text-heading</code></td><td>1.05</td><td>節の見出し</td></tr><tr><td>本文</td><td>1</td><td>会話、説明</td></tr><tr><td><code>--text-small</code></td><td>0.875</td><td>補足、日時、状態</td></tr><tr><td><code>--text-caption</code></td><td>0.75</td><td>ラベル、注記</td></tr></table></div>
+<p><strong>実寸（px）で書いてよい例外</strong>は2つだけです。増やすときは、なぜトークンで足りないのかをCSSのコメントに書いてください。</p>
+<ul><li><strong>入力欄は16px固定。</strong> iOSは入力欄の文字が16px未満だとページを拡大します</li><li><strong>吹き出しは実寸で抑える。</strong> 狭い画面やキーボード表示中に、文字サイズの設定と無関係に収めきる必要があります</li></ul>
+<h3>フォーカスの枠</h3>
+<p>キーボード操作で今どこにいるかが分かるよう、<code>outline</code> を要素の<strong>外側</strong>に出します。</p>
+<p>縦にスクロールする領域は横方向も切り取られるため、<strong>枠が必要とする分の余白を四辺に取ります</strong>。足りないと画面の縁にある操作で枠が欠けます（実際、記憶タブの「会話履歴」で欠けていました）。</p>
+<h3>決めごとを守れているかの確認</h3>
+<p><code>frontend/tests/style.test.cjs</code> で見ています。</p>
+<ul><li>生の値（トークンを使っていない余白・角丸・文字）が残っていないか</li><li>スクロール領域の余白が、フォーカス枠に足りているか</li><li>押せるものの最小サイズが、メディアクエリの外にあるか</li></ul>
 <h2>基本操作</h2>
 <h3>画面</h3>
 <p>初期画面は「会話」です。「記憶」「ファイル」「設定」は補助画面で、「使い方」は設定画面の中にあります。設定画面に入力欄は置いていません。置いてあるのは「使い方」「予約した声かけ」「記憶の整理」だけです。</p>

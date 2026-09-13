@@ -110,14 +110,14 @@ button:active:not(:disabled) {
 .group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
   margin-top: 8px;
 }
 
 .group > h2 {
   margin: 0;
-  padding-inline: 4px;
-  font-size: 0.82em;
+  padding-inline: var(--space-1);
+  font-size: var(--text-caption);
   font-weight: 600;
   color: var(--label-2);
   overflow-wrap: anywhere;
@@ -125,15 +125,15 @@ button:active:not(:disabled) {
 
 .group-card {
   background: var(--surface-card);
-  border-radius: 12px;
+  border-radius: var(--radius-l);
   overflow: hidden;
 }
 
 .group-footer {
   margin: 0;
-  padding-inline: 4px;
+  padding-inline: var(--space-1);
   color: var(--label-3);
-  font-size: 0.8em;
+  font-size: var(--text-caption);
   line-height: 1.5;
 }
 
@@ -145,11 +145,11 @@ button:active:not(:disabled) {
 .row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-3);
   width: 100%;
   min-height: 44px;
   margin: 0;
-  padding: 10px 14px;
+  padding: var(--space-3) var(--space-4);
   background: transparent;
   border: none;
   border-radius: 0;
@@ -165,7 +165,7 @@ button:active:not(:disabled) {
 .row-text {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-1);
   flex: 1;
   min-width: 0;
 }
@@ -183,16 +183,16 @@ button:active:not(:disabled) {
 
 .row-meta {
   color: var(--label-3);
-  font-size: 0.8em;
+  font-size: var(--text-caption);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
 .row-note {
   margin: 0;
-  padding: 10px 14px;
+  padding: var(--space-3) var(--space-4);
   color: var(--label-2);
-  font-size: 0.85em;
+  font-size: var(--text-small);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -228,11 +228,11 @@ button:active:not(:disabled) {
 
 .empty-state {
   margin: 0;
-  padding: 16px 14px;
+  padding: var(--space-4) var(--space-4);
   background: var(--surface-grouped);
-  border-radius: 12px;
+  border-radius: var(--radius-l);
   color: var(--label-2);
-  font-size: 0.88em;
+  font-size: var(--text-small);
   line-height: 1.6;
 }
 
@@ -240,9 +240,9 @@ button:active:not(:disabled) {
   align-self: flex-start;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-1);
   min-height: 44px;
-  padding: 0 8px 0 2px;
+  padding: 0 var(--space-2) 0 var(--space-1);
   background: transparent;
   border-color: transparent;
   color: var(--accent);
@@ -263,7 +263,7 @@ button:active:not(:disabled) {
 #settings-panel h1,
 #pc-panel h1,
 #memories-panel h1 {
-  font-size: 1.45em;
+  font-size: var(--text-title);
   font-weight: 700;
   letter-spacing: 0.01em;
 }
@@ -272,9 +272,9 @@ button:active:not(:disabled) {
   flex: none;
   align-self: center;
   margin: 0;
-  padding: 7px 16px;
-  border-radius: 999px;
-  font-size: 0.9em;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-small);
 }
 
 #job-status,
@@ -293,14 +293,14 @@ button:active:not(:disabled) {
 }
 
 #reminder-list:not(:has(.reminder-row)) {
-  padding: 14px;
-  font-size: 0.88em;
+  padding: var(--space-4);
+  font-size: var(--text-small);
 }
 
 .reminder-row {
   background: transparent;
   border-radius: 0;
-  padding: 10px 14px;
+  padding: var(--space-3) var(--space-4);
   min-height: 44px;
 }
 
@@ -309,29 +309,29 @@ button:active:not(:disabled) {
 }
 
 .reminder-row button {
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-size: 0.85em;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-small);
 }
 
 /* --- ファイルタブ -------------------------------------------------------
    PCの登録フォルダ配下を、フォルダごとにまとめて並べる。 */
 .search-bar {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
 }
 
 #pc-search {
   flex: 1;
   min-width: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-s);
 }
 
 #pc-files {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-4);
 }
 
 #pc-files .group {
@@ -360,14 +360,14 @@ button:active:not(:disabled) {
 #pc-player {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 #pc-video {
   width: 100%;
   max-height: 45vh;
   background: #000;
-  border-radius: 12px;
+  border-radius: var(--radius-l);
 }
 
 #pc-now-playing,
@@ -392,7 +392,7 @@ button:active:not(:disabled) {
 
 #pc-page {
   color: var(--label-3);
-  font-size: 0.85em;
+  font-size: var(--text-small);
   font-variant-numeric: tabular-nums;
 }
 
@@ -443,7 +443,7 @@ button:active:not(:disabled) {
   border-color: var(--border-subtle);
   color: var(--muted);
   font-weight: 500;
-  padding: 5px 9px;
+  padding: var(--space-1) var(--space-2);
 }
 
 .follow-ups button:hover:not(:disabled) {
@@ -454,7 +454,7 @@ button:active:not(:disabled) {
 
 .msg-timing {
   color: var(--metadata);
-  font-size: 0.78em;
+  font-size: var(--text-caption);
   line-height: 1.3;
 }
 
@@ -490,12 +490,13 @@ button:active:not(:disabled) {
     font-size: 12px;
   }
 
-  /* グループ内の行は高さで確保済み。ボタンだけ最小サイズを足す。 */
+  /* 行の高さではなく、押す対象そのものを最小サイズにする。行が広くても、
+     指が当たるのはボタンの範囲だけ。行はボタンに合わせて伸びる。 */
   #app.mode-normal .panel .row {
     min-height: 48px;
   }
 
   #app.mode-normal .panel .row button {
-    min-height: 36px;
+    min-height: var(--tap);
   }
 }
