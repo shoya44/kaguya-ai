@@ -373,6 +373,19 @@ function refreshAvatar(): void {
   avatar.setState(state, quietMode);
 }
 
+// 通話の開始と終了でまとめて切り替えるもの。VoiceChatから呼ばれる。
+function voiceToggle(active: boolean): void {
+  voiceActive = active;
+  setBusy(busy);
+  // 簡易表示では、吹き出しが出ている間は入力欄ごと隠れる。通話中に隠れると
+  // 終わらせるボタンまで消えてしまうので、通話中であることを画面へ伝える。
+  document.getElementById('app')!.classList.toggle('calling', active);
+  // 通話中は絵を止める。話している最中に切り替わると落ち着かない。
+  avatar.hold(active);
+  // 通話の始まりは話し出す構え、終わりは受け取った合図。
+  avatar.react(active ? 'inhale' : 'nod');
+}
+
 async function api(path: string, init: RequestInit = {}): Promise<any> {
   const request = async () => {
     const current = await ensureSession();
@@ -1025,14 +1038,7 @@ async function main(): Promise<void> {
     refreshAvatar();
   });
   new PCPanel(api, API_BASE);
-  new VoiceChat(API_BASE, ensureSession, active => {
-    voiceActive = active;
-    setBusy(busy);
-    // 通話中は絵を止める。話している最中に切り替わると落ち着かない。
-    avatar.hold(active);
-    // 通話の始まりは話し出す構え、終わりは受け取った合図。
-    avatar.react(active ? 'inhale' : 'nod');
-  });
+  new VoiceChat(API_BASE, ensureSession, voiceToggle);
   setBusy(false);
 
   setupAvatarContextMenu();
