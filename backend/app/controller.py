@@ -26,6 +26,8 @@ class Controller:
         self.cancel_requested = False
         self.unsaved = None
         self.recalled_ids = []
+        # そのターンでプロンプトへ渡した気がかりの話題。保存時の更新対象を限定する。
+        self.concern_topics = []
         self.editing = False
         self.voice_active = False
         self.runtime = runtime
@@ -192,6 +194,7 @@ class Controller:
         # Reserve without yielding; job cancellation happens inside the owned task.
         self.active = dict(turn)
         self.recalled_ids = []
+        self.concern_topics = []
         self.last_chat_at = time.monotonic()
         self.turn_started = self.last_chat_at
         self.partial_answer = ''
@@ -268,6 +271,7 @@ class Controller:
                 recalled = await self.memory.call('GET', '/recall', params={
                     'text': turn['text'], 'context': hint, 'mood': self.face(tokyo_now())})
                 self.recalled_ids = [str(row['id']) for row in recalled.get('wisdom', [])[:5]]
+                self.concern_topics = [row['topic'] for row in recalled.get('pending_topic', [])[:3]]
             # 想起が前回のlast_seen_atを取得してから、今回の到着を記録する。
             if self.living:
                 self.living.seen(tokyo_now(), counted=False)
@@ -373,10 +377,12 @@ class Controller:
             await self.broadcast(self.state())
 
     async def _complete(self, turn_id, answer):
+        extra = {}
         if self.recalled_ids:
-            await self.memory.complete(turn_id, answer, recalled_ids=self.recalled_ids)
-        else:
-            await self.memory.complete(turn_id, answer)
+            extra['recalled_ids'] = self.recalled_ids
+        if self.concern_topics:
+            extra['concern_topics'] = self.concern_topics
+        await self.memory.complete(turn_id, answer, **extra)
 
     async def close(self):
         if self.periodic_task:

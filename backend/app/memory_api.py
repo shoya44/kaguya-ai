@@ -95,6 +95,8 @@ def complete(turn_id: UUID, body: Completion, request: Request):
         if not existing and body.recalled_ids:
             conn.execute('UPDATE memory_long SET last_used_at=now() WHERE id=ANY(%s)',
                          (body.recalled_ids,))
+        if not existing and body.concern_topics:
+            _settle_concerns(conn, body.concern_topics, user['content'], body.answer)
     return {'ok': True}
 
 
@@ -103,6 +105,33 @@ def fail(turn_id: UUID, body: Failure, request: Request):
     with connection(request) as conn:
         conn.execute("UPDATE memory_short SET status=%s WHERE turn_id=%s AND role='user' AND status='pending'", (body.status, turn_id))
     return {'ok': True}
+
+
+def _settle_concerns(conn, topics, said: str, answer: str) -> None:
+    """会話のあとで、気がかりの状態を1本のUPDATEで整える。
+
+    判定はユーザー発言とかぐやの返答だけを見る（追加の問い合わせもLLMもなし）。
+      - ユーザーが「終わった／受かった」等と言った → resolved_at=now。もう触れない。
+      - ユーザーが「まだ」「不安」等と言った       → asked=0 に戻す。
+        諦める条件を asked だけで決めると、まだ不安な話題ほど早く打ち切られる。
+      - かぐやが返答で実際に触れた                 → asked+1。次は間隔を空ける。
+    話題に触れただけでは解決にしない。どちらとも取れる言い方は未解決側に倒す。
+    どの場合も last_asked_at を今にして、連続で同じ話題を蒸し返さないようにする。
+    """
+    from .reply_hints import concern_status
+
+    status = {topic: concern_status(topic, said) for topic in topics}
+    resolved = [topic for topic, value in status.items() if value == 'resolved']
+    still = [topic for topic, value in status.items() if value == 'still']
+    asked = [topic for topic, value in status.items() if not value and topic in str(answer or '')]
+    if not (resolved or still or asked):
+        return
+    conn.execute("""UPDATE memory_concern SET
+        resolved_at=CASE WHEN topic=ANY(%s) THEN now() ELSE resolved_at END,
+        asked=CASE WHEN topic=ANY(%s) THEN 0 WHEN topic=ANY(%s) THEN asked+1 ELSE asked END,
+        last_asked_at=now()
+        WHERE resolved_at IS NULL AND topic=ANY(%s)""",
+                 (resolved, still, asked, resolved + still + asked))
 
 
 @router.get('/context')
@@ -167,9 +196,10 @@ class MemoryClient:
     async def context(self):
         return await self.call('GET', '/context')
 
-    async def complete(self, turn_id: str, answer: str, recalled_ids=None):
+    async def complete(self, turn_id: str, answer: str, recalled_ids=None, concern_topics=None):
         return await self.call('POST', f'/turns/{turn_id}/complete',
-                               json={'answer': answer, 'recalled_ids': recalled_ids or []})
+                               json={'answer': answer, 'recalled_ids': recalled_ids or [],
+                                     'concern_topics': concern_topics or []})
 
     async def fail(self, turn_id: str, status: str):
         return await self.call('POST', f'/turns/{turn_id}/fail', json={'status': status})

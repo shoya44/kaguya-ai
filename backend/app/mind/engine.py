@@ -271,9 +271,10 @@ class KaguyaMind:
 
     def _track_loops(self, text: str, answer: str, now: datetime) -> None:
         value = str(text or '')
-        # ユーザー自身が話題に戻ってきたなら、もう「気がかり」ではない。
+        from ..reply_hints import concern_status
+        # 話題に戻ってきただけでは片付いていない。「終わった」と言われたときだけ閉じる。
         for topic in self.store.unresolved_topics():
-            if topic in value:
+            if concern_status(topic, value) == 'resolved':
                 self.store.resolve_loop(topic, now)
         for match in _PLAN_PATTERN.finditer(value):
             topic = match.group(2).strip()
@@ -302,7 +303,8 @@ class KaguyaMind:
     def _before_reply(self, text: str, now: datetime, recalled=None) -> dict:
         emotions, updated = self.store.emotions(now)
         # 気がかりは感情の材料でもあるので、先に引いてから感情を決める。
-        due = self.store.due_loops(now, 2)
+        # 会話では recall がすでに同じ条件で引いているので、それを使い回す（追加クエリなし）。
+        due = self.store.due_loops(now, 2) if recalled is None else (recalled.get('pending_topic') or [])
         memories = (recalled or {}).get('wisdom') or []
         emotions = self._decay(emotions, updated, now)
         emotions = self._recalled(self._react(emotions, text), memories, due)
@@ -315,7 +317,8 @@ class KaguyaMind:
             '自分の好み': [self._trait_label(row) for row in traits],
             '成長': self._growth(stats),
         }
-        loops = [self._loop_label(row, now) for row in due]
+        # 会話ではプロンプトの「Memory：気にかけている話題」と重複するので出さない。
+        loops = [self._loop_label(row, now) for row in due] if recalled is None else []
         if loops:
             context['気にかけていること'] = loops
         return context

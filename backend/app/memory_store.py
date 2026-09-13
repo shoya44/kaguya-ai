@@ -153,6 +153,7 @@ TONE_BY_MOOD = {'worried': -1, 'sulky': -1, 'happy': 1}
 
 def recall(conn, text, context='', mood=''):
     from .living_prompt import derive_mood
+    from .tuning import LOOP_MAX_ASKS, LOOP_QUIET
 
     # 既存のPersona読み取りにLivingを同梱する。Personaが空でも1行返る。
     state = conn.execute('''SELECT
@@ -188,9 +189,12 @@ def recall(conn, text, context='', mood=''):
 
     rows.sort(key=relevance, reverse=True)
     selected = rows[:5]
-    pending = conn.execute('''SELECT topic, kind, quote, due_at FROM memory_concern
-        WHERE resolved_at IS NULL AND due_at <= now()
-        ORDER BY due_at, topic LIMIT 3''').fetchall()
+    # 気にかけ過ぎないための足切り。予定の時刻を過ぎていても、直近に聞いた話題と、
+    # 何度も聞いて返事がなかった話題は出さない（声かけ側の due_loops と同じ条件）。
+    pending = conn.execute('''SELECT topic, kind, quote, opened_at, due_at FROM memory_concern
+        WHERE resolved_at IS NULL AND due_at <= now() AND asked < %s
+          AND (last_asked_at IS NULL OR last_asked_at <= now() - %s)
+        ORDER BY due_at, topic LIMIT 3''', (LOOP_MAX_ASKS, LOOP_QUIET)).fetchall()
     favorites = conn.execute('''SELECT name, valence, confidence FROM persona_favorite
         WHERE confidence >= %s AND name <> '' AND strpos(lower(%s), lower(name)) > 0
         ORDER BY confidence DESC, name LIMIT 2''', (0.6, text)).fetchall()
