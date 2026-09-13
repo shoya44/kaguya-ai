@@ -72,3 +72,50 @@ def allow_activity_intro(text: str, history) -> bool:
 def allow_callback(history) -> bool:
     """「そういえば」「前に話した〜」の振り返りを、このターンで使ってよいか。"""
     return not _CALLBACK_INTRO.search(recent_answers(history))
+
+
+# --- 前の話への短い振り返り（会話の余韻） ----------------------------------
+# 想起できた記憶のうち、しばらく触れていない大事な話題だけを1件。
+# 毎ターン振り返るとくどくなるので、導入句と同じ判定で連続を止める。
+CALLBACK_MIN_IMPORTANCE = 3
+CALLBACK_MIN_DAYS = 7
+
+
+def _timestamp(value):
+    from datetime import datetime
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return value if hasattr(value, 'tzinfo') else None
+
+
+def callback(recalled: dict, text: str, history, now) -> dict:
+    """振り返る話題を最大1件返す。無ければ空の辞書。
+
+    材料は想起済みの memory_long だけで、DBは引き直さない。想起の順位も変えず、
+    上位5件の中から「最後に触れたのが古く、重要度が高いもの」を選ぶ。
+    いま話している話題と、直近の返答で触れた話題は除く（同じ話を蒸し返さない）。
+    """
+    if not allow_callback(history):
+        return {}
+    recent = recent_answers(history)
+    said = str(text or '')
+    best, oldest = {}, None
+    for row in (recalled.get('wisdom') or [])[:5]:
+        topic = str(row.get('topic_key') or '')
+        seen = _timestamp(row.get('last_seen_at'))
+        if not topic or topic in recent or topic in said or not seen:
+            continue
+        if int(row.get('importance') or 0) < CALLBACK_MIN_IMPORTANCE:
+            continue
+        if (now - seen).days < CALLBACK_MIN_DAYS:
+            continue
+        if oldest is None or seen < oldest:
+            best, oldest = row, seen
+    if not best:
+        return {}
+    return {'話題': best['topic_key'], '覚えていること': best['summary'],
+            '触れ方': '「前に話した◯◯だね」のように、短く一度だけ触れる。'
+                    '記録にない日時・発言・出来事は足さない。今の話題を押しのけない。'}

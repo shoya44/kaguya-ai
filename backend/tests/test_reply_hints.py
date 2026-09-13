@@ -124,3 +124,28 @@ class IntroRepeatTests(unittest.TestCase):
             history.append({'text': 'うん', 'answer': '今ちょっと本読んでた。' if used[-1] else 'そうなんだ。'})
         # 直近3ターンに使っていれば省く。5ターン続けても毎回は出ない。
         self.assertEqual(used, [True, False, False, False, True])
+
+
+class CallbackTests(unittest.TestCase):
+    """久しぶりの話題に短く触れる。連続はしない。"""
+
+    def _wisdom(self, topic, days, importance=4):
+        return {'id': topic, 'topic_key': topic, 'summary': f'{topic}の話', 'kind': 'explicit',
+                'importance': importance, 'last_seen_at': (NOW - timedelta(days=days)).isoformat()}
+
+    def test_picks_the_oldest_important_topic_only(self):
+        from app.reply_hints import callback
+        recalled = {'wisdom': [self._wisdom('登山', 10), self._wisdom('猫', 40),
+                               self._wisdom('天気', 40, importance=1), self._wisdom('仕事', 1)]}
+        result = callback(recalled, 'ひさしぶり', [], NOW)
+        self.assertEqual(result['話題'], '猫')
+        self.assertIn('短く一度だけ', result['触れ方'])
+
+    def test_skips_topics_already_in_play_and_does_not_repeat(self):
+        from app.reply_hints import callback
+        recalled = {'wisdom': [self._wisdom('猫', 40)]}
+        # いま話している話題は振り返らない。
+        self.assertEqual(callback(recalled, '猫がね', [], NOW), {})
+        # 直近の返答で振り返ったばかりなら、続けて振り返らない。
+        history = [{'text': 'ねえ', 'answer': 'そういえば猫の話、どうなった？'}]
+        self.assertEqual(callback(recalled, 'ひさしぶり', history, NOW), {})
