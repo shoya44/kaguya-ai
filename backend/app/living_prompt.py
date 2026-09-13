@@ -12,6 +12,19 @@ ACTIVITY_LABELS = {
 }
 
 
+# 画面のかぐやが眠そうに見える元気さ。ここを下回ったら返答の口調も落とす。
+SLEEPY_ENERGY = 30
+
+# 画面の表情（mood.FACES）と対になる口調。顔と返事を食い違わせないための対応表。
+MOOD_TONE = {
+    'sleepy': '眠そうで元気がない。短めに、ゆっくりした口調で返す。',
+    'worried': '相手を気づかっている。茶化さず、急かさない。',
+    'sulky': 'ほんの少し拗ねている。ただし突き放さない。',
+    'happy': 'ご機嫌。いつもより弾んだ調子で返す。',
+    'bored': '少し退屈している。かまってほしそうな一言を自然に混ぜてよい。',
+}
+
+
 def derive_mood(emotions: dict, activity: dict) -> str:
     if not emotions and activity.get('energy') is None:
         return ''
@@ -45,6 +58,15 @@ def living_context(activity=None, mood='', now=None) -> dict:
     label = ACTIVITY_LABELS.get(activity.get('activity'))
     if label:
         result['直前の活動'] = label + '。自然な流れでだけ「今〜してた」と触れてよい。'
+        # 画面のかぐやは同じ活動をしている。別のことをしていたと言うと姿と食い違う。
+        result['画面との一致'] = ('画面のかぐやも同じ姿をしている。ここに無い活動・場所・'
+                             '外出・出来事を自分から作らない。気分もここに書かれたものに合わせる。')
+    # 元気がないときは、他の気分より眠そうな口調を優先する（画面も眠そうな顔になる）。
+    energy = activity.get('energy')
+    tone = MOOD_TONE['sleepy'] if isinstance(energy, int | float) and energy < SLEEPY_ENERGY \
+        else MOOD_TONE.get(mood)
+    if tone:
+        result['今の口調'] = tone
     last = activity.get('last_seen_at')
     if not last:
         return result

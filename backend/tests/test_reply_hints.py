@@ -66,3 +66,22 @@ class ConcernRecallTests(unittest.TestCase):
             self.assertTrue(all(row['last_asked_at'] for row in rows.values()))
             # 直後は同じ話題を蒸し返さない。
             self.assertEqual(memory_store.recall(conn, '面接どうだった')['pending_topic'], [])
+
+
+class ScreenConsistencyTests(unittest.TestCase):
+    """画面の姿（活動・元気さ・表情）と、返答の口調・語りを一致させる。"""
+
+    def test_activity_adds_a_no_contradiction_rule(self):
+        from app.living_prompt import living_context
+        result = living_context({'activity': 'reading', 'energy': 70}, 'happy', now=NOW)
+        self.assertIn('本を読んでいた', result['直前の活動'])
+        self.assertIn('自分から作らない', result['画面との一致'])
+
+    def test_low_energy_overrides_the_mood_tone(self):
+        from app.living_prompt import living_context
+        tired = living_context({'activity': 'idle', 'energy': 20}, 'happy', now=NOW)
+        lively = living_context({'activity': 'idle', 'energy': 70}, 'happy', now=NOW)
+        self.assertIn('眠そう', tired['今の口調'])
+        self.assertIn('弾んだ', lively['今の口調'])
+        # 活動も元気さも分からないときは、従来どおり何も足さない。
+        self.assertEqual(living_context({}, '', now=NOW), {})

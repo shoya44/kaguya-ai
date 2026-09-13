@@ -272,6 +272,10 @@ class Controller:
                     'text': turn['text'], 'context': hint, 'mood': self.face(tokyo_now())})
                 self.recalled_ids = [str(row['id']) for row in recalled.get('wisdom', [])[:5]]
                 self.concern_topics = [row['topic'] for row in recalled.get('pending_topic', [])[:3]]
+                if self.living:
+                    # 画面へ配っているのと同じ活動・元気さを渡す。living_activity の列は
+                    # 表示のたびに書き戻していないので、DBの値をそのまま使うと姿とずれる。
+                    recalled['living'] = self.living.state(tokyo_now())
             # 想起が前回のlast_seen_atを取得してから、今回の到着を記録する。
             if self.living:
                 self.living.seen(tokyo_now(), counted=False)
@@ -279,6 +283,8 @@ class Controller:
             await self.emit_mood(refresh=True)
 
             if answer is None:
+                # 画面に出している表情をそのまま渡す。顔と返事の気分を食い違わせない。
+                recalled['mood'] = self.face(tokyo_now())
                 # 重い相談・眠そうな時間帯だけ一拍置いてから書き始める。
                 # 天気などの即答（direct_reply）と、ファイルタブへの引き継ぎには挟まない。
                 delay = think_delay(turn['text'], str(mind_context.get('現在の気分', '')))
