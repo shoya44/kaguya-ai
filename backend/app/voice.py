@@ -109,7 +109,7 @@ async def handle(ws: WebSocket):
             snapshot = controller.mind.snapshot(tokyo_now())
             if snapshot.get('enabled'):
                 recalled['mind'] = snapshot
-        prompt = memory_prompt(recalled) + (
+        prompt = memory_prompt(recalled, history=history) + (
             '\n相手の発話は日本語です。日本語として聞き取り、日本語で自然に短く会話してください。'
             '\n聞き取れなかったときは、別の言語として解釈せず、聞き返してください。'
             '\n音声通話では外部操作を実行できません。操作したと主張しないでください。')

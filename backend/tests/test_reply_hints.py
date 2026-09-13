@@ -1,6 +1,11 @@
 """会話品質まわり（気がかり・活動の一致・導入句・応答方針・振り返り）の確認。"""
 import unittest
+import json
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+
+from pydantic import SecretStr
 
 from app import memory_api, memory_store
 from app.reply_hints import concern_status
@@ -169,3 +174,79 @@ class IntentTests(unittest.TestCase):
         self.assertIn('具体案', RESPONSE_PLAN['consult'])
         self.assertIn(RESPONSE_PLAN['empathy'], memory_prompt(now=NOW, text='疲れた'))
         self.assertIn(RESPONSE_PLAN['chat'], memory_prompt(now=NOW, text='今日暑いね'))
+
+    def test_indecision_alone_does_not_request_solutions(self):
+        from app.reply_hints import intent
+        for said in ('どうしよう、決められない', '方法が分からなくて不安',
+                     '選べないんだよね', '助けて、しんどい', '手順が多くて疲れた'):
+            with self.subTest(said=said):
+                self.assertNotEqual(intent(said), 'consult')
+        for said in ('どうすればいい？', '対処法を教えて', 'アドバイスがほしい'):
+            self.assertEqual(intent(said), 'consult')
+        self.assertEqual(intent('アドバイスはいらない、どうしようって悩んでるだけ'), 'empathy')
+
+
+class ConversationContinuityTests(unittest.TestCase):
+    def test_character_data_does_not_evict_recent_corrections(self):
+        from app.persona import conversation_context
+        history = [
+            {'text': 'そうじゃなくて、呼び方はテスト名Aです', 'answer': '分かった。'},
+            {'text': '会議が長引いて疲れた', 'answer': 'どの話で長引いたの？'},
+        ]
+        expected = conversation_context(history, '予算の話だよ', '')
+        self.assertEqual(conversation_context(history, '予算の話だよ', '設定' * 4000), expected)
+        self.assertEqual(expected[0]['text'], history[0]['text'])
+        self.assertEqual(expected[-1], {'role': 'user', 'text': '予算の話だよ'})
+
+    def test_history_remains_bounded_and_keeps_newest_complete_pairs(self):
+        from app.persona import conversation_context
+        history = [{'text': f'{index}:' + '話' * 400, 'answer': '返' * 400}
+                   for index in range(20)]
+        result = conversation_context(history, '続き', '設定' * 4000)
+        self.assertLessEqual(sum(len(item['text']) for item in result[:-1]), 6500)
+        self.assertLessEqual(len(result), 21)
+        self.assertEqual(result[-3]['text'], history[-1]['text'])
+        self.assertEqual([item['role'] for item in result[:-1]], ['user', 'model'] * (len(result) // 2))
+
+    def test_fixed_name_overrides_old_addressing_without_changing_stored_data(self):
+        from app.persona import memory_prompt
+        recalled = {'persona': [{'key': 'addressing', 'value': 'テスト名Aと呼ぶ。'},
+                                {'key': 'support_style', 'value': 'ゆっくり話を聞く。'}]}
+        prompt = memory_prompt(recalled, text='今日は何しよう')
+        values = json.loads(prompt.splitlines()[-1])
+        self.assertIn('「しょうや」固定', prompt)
+        self.assertNotIn('テスト名A', prompt)
+        self.assertEqual(recalled['persona'][0]['value'], 'テスト名Aと呼ぶ。')
+        self.assertEqual(values['接し方'], [recalled['persona'][1]])
+
+    def test_missing_addressing_is_not_inferred_from_assistant_or_other_memory(self):
+        from app.persona import memory_prompt
+        history = [{'text': 'こんにちは', 'answer': 'テスト名B、こんにちは！'}]
+        recalled = {'wisdom': [{'summary': '友人はテスト名B', 'kind': 'explicit',
+                                'support_level': 'stated'}]}
+        prompt = memory_prompt(recalled, history=history)
+        self.assertIn('「しょうや」固定', prompt)
+        values = json.loads(prompt.splitlines()[-1])
+        self.assertNotIn('相手の呼び方', values)
+
+
+class ConversationRequestTests(unittest.IsolatedAsyncioTestCase):
+    async def test_stream_request_keeps_addressing_correction_and_repeated_answers(self):
+        from app.llm import Gemini
+        llm = Gemini(SimpleNamespace(gemini_api_key=SecretStr(''), gemini_model='test-model',
+                                     llm_timeout_seconds=5))
+        llm._stream = AsyncMock(return_value='予算の話が長引いたんだね。')
+        history = [
+            {'text': '呼び方はテスト名Aに訂正して', 'answer': 'あたしは味方だよ。'},
+            {'text': '会議が長引いて疲れた', 'answer': '無理せず自分のペースで行こうね。'},
+        ]
+        recalled = {'persona': [{'key': 'addressing', 'value': 'テスト名Bと呼ぶ。'},
+                                {'key': 'base_personality', 'value': '設定' * 3500}]}
+        await llm.reply(history, '予算の話が終わらなくてね', recalled, None, 512,
+                        on_text=AsyncMock())
+        contents, config, _ = llm._stream.call_args.args
+        self.assertEqual([part.text for content in contents for part in content.parts],
+                         [history[0]['text'], history[0]['answer'],
+                          history[1]['text'], history[1]['answer'], '予算の話が終わらなくてね'])
+        self.assertIn('「しょうや」固定', config.system_instruction)
+        self.assertNotIn('テスト名B', config.system_instruction)
