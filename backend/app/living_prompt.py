@@ -2,6 +2,7 @@
 from datetime import datetime, timedelta
 
 from .proactive import tokyo_now
+from .reply_hints import INTRO_GAP_MINUTES
 
 
 ACTIVITY_LABELS = {
@@ -49,30 +50,37 @@ def time_hint(now: datetime) -> str:
     return '昼は自然で明るい口調で。'
 
 
-def living_context(activity=None, mood='', now=None) -> dict:
+def living_context(activity=None, mood='', now=None, intro=True) -> dict:
+    """intro=False は「直近の返答で近況の切り出しを使った」という合図。"""
     now = now or tokyo_now()
     activity = activity or {}
     result = {}
     if mood:
         result['mood'] = mood
+    last = activity.get('last_seen_at')
+    if isinstance(last, str):
+        last = datetime.fromisoformat(last)
+    if last:
+        last = last.astimezone(now.tzinfo)
     label = ACTIVITY_LABELS.get(activity.get('activity'))
-    if label:
+    # 会話が途切れたあとの初回なら、続けて使っていても改めて切り出してよい。
+    resumed = last is None or now - last >= timedelta(minutes=INTRO_GAP_MINUTES)
+    if label and (intro or resumed):
         result['直前の活動'] = label + '。自然な流れでだけ「今〜してた」と触れてよい。'
         # 画面のかぐやは同じ活動をしている。別のことをしていたと言うと姿と食い違う。
         result['画面との一致'] = ('画面のかぐやも同じ姿をしている。ここに無い活動・場所・'
                              '外出・出来事を自分から作らない。気分もここに書かれたものに合わせる。')
+    elif label:
+        result['切り出し'] = ('近況の切り出しは直近の返答で使った。今回は「今〜してた」'
+                          '「そういえば」で始めず、相手の話にそのまま応じる。')
     # 元気がないときは、他の気分より眠そうな口調を優先する（画面も眠そうな顔になる）。
     energy = activity.get('energy')
     tone = MOOD_TONE['sleepy'] if isinstance(energy, int | float) and energy < SLEEPY_ENERGY \
         else MOOD_TONE.get(mood)
     if tone:
         result['今の口調'] = tone
-    last = activity.get('last_seen_at')
     if not last:
         return result
-    if isinstance(last, str):
-        last = datetime.fromisoformat(last)
-    last = last.astimezone(now.tzinfo)
     elapsed = now - last
     if elapsed >= timedelta(days=7):
         result['再会'] = '1週間以上ぶり。会えてうれしい気持ちを短く伝えてよい。留守を責めない。'

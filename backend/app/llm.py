@@ -190,7 +190,7 @@ class Gemini:
 
     async def reply(self, history: list[dict], text: str, recalled=None, proactive=None,
                     max_tokens=None, memory=None, on_text=None) -> str:
-        system = memory_prompt(recalled, proactive)
+        system = memory_prompt(recalled, proactive, text=text, history=history)
         contents = [types.Content(role=item['role'], parts=[types.Part(text=item['text'])])
                     for item in conversation_context(history, text, system)]
         config = types.GenerateContentConfig(

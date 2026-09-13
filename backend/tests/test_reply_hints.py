@@ -85,3 +85,42 @@ class ScreenConsistencyTests(unittest.TestCase):
         self.assertIn('弾んだ', lively['今の口調'])
         # 活動も元気さも分からないときは、従来どおり何も足さない。
         self.assertEqual(living_context({}, '', now=NOW), {})
+
+
+class IntroRepeatTests(unittest.TestCase):
+    """毎ターン「今〜してた」で切り出さない。間が空いた初回では出す。"""
+
+    def _living(self, minutes_ago):
+        return {'activity': 'reading', 'energy': 70,
+                'last_seen_at': NOW - timedelta(minutes=minutes_ago)}
+
+    def test_intro_is_dropped_while_the_conversation_continues(self):
+        from app.living_prompt import living_context
+        from app.reply_hints import allow_activity_intro
+        history = [{'text': 'ただいま', 'answer': '今ちょっと本読んでた。おかえり。'}]
+        self.assertFalse(allow_activity_intro('うん', history))
+        dropped = living_context(self._living(1), '', NOW, intro=False)
+        self.assertNotIn('直前の活動', dropped)
+        self.assertIn('今回は', dropped['切り出し'])
+
+    def test_intro_returns_after_a_break_or_when_asked(self):
+        from app.living_prompt import living_context
+        from app.reply_hints import allow_activity_intro
+        history = [{'text': 'ただいま', 'answer': '今ちょっと本読んでた。'}]
+        # 会話が途切れたあとの初回は、直近で使っていても切り出してよい。
+        self.assertIn('直前の活動', living_context(self._living(31), '', NOW, intro=False))
+        # 「何してた？」と聞かれたら答える。
+        self.assertTrue(allow_activity_intro('何してた？', history))
+        self.assertTrue(allow_activity_intro('うん', [{'text': 'ねえ', 'answer': 'どうしたの？'}]))
+
+    def test_five_turns_do_not_repeat_the_opener(self):
+        from app.persona import memory_prompt
+        history, used = [], []
+        for turn in range(5):
+            recalled = {'living': self._living(1)}
+            prompt = memory_prompt(recalled, now=NOW, text='うん', history=history)
+            used.append('直前の活動' in prompt)
+            # 導入句が許されたターンだけ、かぐやが実際に使ったとみなす。
+            history.append({'text': 'うん', 'answer': '今ちょっと本読んでた。' if used[-1] else 'そうなんだ。'})
+        # 直近3ターンに使っていれば省く。5ターン続けても毎回は出ない。
+        self.assertEqual(used, [True, False, False, False, True])

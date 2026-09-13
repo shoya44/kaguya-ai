@@ -3,6 +3,7 @@ import json
 from .proactive import tokyo_now
 from .living_prompt import living_context, time_hint
 from .tuning import TRAIT_STANCE
+from . import reply_hints
 
 _WEEKDAYS = '月火水木金土日'
 
@@ -66,8 +67,9 @@ def tone_hint(mind=None, relationship=None) -> str:
     return ' '.join(parts)
 
 
-def memory_prompt(recalled=None, proactive=None, now=None):
+def memory_prompt(recalled=None, proactive=None, now=None, text='', history=None):
     recalled = recalled or {}
+    history = history or []
     now = now or tokyo_now()
     values = {
         '現在日時': now_label(now),
@@ -78,7 +80,8 @@ def memory_prompt(recalled=None, proactive=None, now=None):
                        for row in recalled.get('wisdom', [])[:5]],
     }
     values = {key: value for key, value in values.items() if value}
-    living = living_context(recalled.get('living'), recalled.get('mood', ''), now)
+    living = living_context(recalled.get('living'), recalled.get('mood', ''), now,
+                            reply_hints.allow_activity_intro(text, history))
     if living:
         values['Living：かぐやの今'] = living
     if recalled.get('pending_topic'):

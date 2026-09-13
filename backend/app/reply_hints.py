@@ -38,3 +38,37 @@ def _sentence_with(topic: str, text: str) -> str:
     if not topic:
         return ''
     return next((part for part in re.split(r'[。．！？!?\n]', text) if topic in part), '')
+
+
+# --- 会話の導入句（毎回の自己紹介をやめる） --------------------------------
+# 毎ターン「今〜してた」「そういえば」で切り出されると、同じ挨拶を繰り返す
+# 初対面の相手のように見える。直近の自分の返答を見て、続けて使わない。
+RECENT_TURNS = 3
+# これだけ間が空いたら会話が途切れたとみなし、もう一度切り出してよい。
+INTRO_GAP_MINUTES = 30
+
+_ACTIVITY_INTRO = re.compile(r'(今|いま|さっき|ちょうど|寝てた|読んでた)[^。！？\n]{0,10}?(てた|でた)')
+_CALLBACK_INTRO = re.compile(r'(そういえば|そういや|前に(?:言って|話して|聞いて))')
+_ASKED_ACTIVITY = re.compile(r'(何|なに)(を)?して(た|る)|どう過ご|暇|起きてる')
+
+
+def recent_answers(history, turns: int = RECENT_TURNS) -> str:
+    """直近数ターンのかぐや側の返答。memory_short の既存取得結果だけを使う。"""
+    return ' '.join(str(row.get('answer') or '') for row in (history or [])[-turns:])
+
+
+def allow_activity_intro(text: str, history) -> bool:
+    """「今〜してた」の切り出しを、このターンで使ってよいか。
+
+    相手が「何してた？」と聞いたときは答えないと不自然なので常に許す。
+    それ以外は、直近の返答で使っていたら今回は省く（時間が空いた場合の再開は
+    living_context 側が判定する）。
+    """
+    if _ASKED_ACTIVITY.search(str(text or '')):
+        return True
+    return not _ACTIVITY_INTRO.search(recent_answers(history))
+
+
+def allow_callback(history) -> bool:
+    """「そういえば」「前に話した〜」の振り返りを、このターンで使ってよいか。"""
+    return not _CALLBACK_INTRO.search(recent_answers(history))
