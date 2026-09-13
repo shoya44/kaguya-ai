@@ -172,6 +172,9 @@ fn hide_character(app: &AppHandle) {
 
 fn show_character(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
+        // 最小化されたままだと show() では戻らない。タスクバーに出していないので、
+        // ここで戻せないと画面へ戻る手段が無くなる。
+        let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }
@@ -260,9 +263,16 @@ pub fn run() {
                     } = event
                     {
                         let app = tray.app_handle();
-                        show_character(app);
                         // タスクバーに出さないので、トレイが唯一の入口になる。
                         // 出すのは簡易表示。通常表示だったときも切り替える。
+                        //
+                        // ここで show() すると、縮む前の通常表示が先に出てしまう。
+                        // 最小化だけ解いて、出すのは切り替えたあとの画面側に任せる。
+                        // 画面が応答しないときのために、トレイメニューの「表示」は
+                        // これまでどおりその場で出す。
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.unminimize();
+                        }
                         let _ = app.emit("ui.mini", ());
                     }
                 })
