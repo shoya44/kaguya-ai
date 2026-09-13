@@ -1,3 +1,7 @@
+/* 見た目の決めごとは、ここの数値だけを使う。個別に書き足すと、同じ役割の
+   ものが場所ごとに違う値になる（実際、余白は2〜14px、角丸は8〜18pxが混在して
+   いた）。Apple HIGに倣い、余白は4の倍数、押せるものは最小44pxで揃える。
+   方針はREADMEの「デザインの決めごと」にも書いてある。 */
 :root {
   color-scheme: dark;
   --bg: #14101c;
@@ -5,6 +9,27 @@
   --accent: #8b6fd1;
   --text: #f2eefc;
   --muted: #a89bc4;
+
+  /* 余白。4の倍数だけを使う。 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+
+  /* 角丸。役割で3段だけ。小=ボタンや入力欄、大=カードや領域、丸=円形。 */
+  --radius-s: 8px;
+  --radius-l: 12px;
+  --radius-pill: 999px;
+
+  /* 押せるものの最小の大きさ。指で押し間違えない下限。 */
+  --tap: 44px;
+
+  /* 文字の段階。本文を1として、上下に1段ずつ。 */
+  --text-title: 1.25em;
+  --text-heading: 1.05em;
+  --text-small: 0.875em;
+  --text-caption: 0.75em;
 }
 
 * {
@@ -42,7 +67,7 @@ body {
   max-height: var(--app-height, 100dvh);
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   min-height: 0;
   overflow: hidden;
@@ -54,7 +79,7 @@ body {
   align-items: center;
   /* アイコンだけなので折り返さない。狭い画面でも1行に収まる。 */
   flex-wrap: nowrap;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .toolbar nav {
@@ -64,7 +89,7 @@ body {
 
 .toolbar nav, .toolbar .button-row {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .toolbar button {
@@ -72,7 +97,7 @@ body {
   width: 36px;
   height: 36px;
   padding: 0;
-  border-radius: 10px;
+  border-radius: var(--radius-s);
   display: grid;
   place-items: center;
 }
@@ -116,15 +141,15 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 #proactive-bubble {
   max-width: 100%;
-  padding: 6px 10px;
+  padding: var(--space-2) var(--space-3);
   background: var(--panel);
   border: 1px solid rgba(242, 238, 252, 0.3);
-  border-radius: 8px;
+  border-radius: var(--radius-s);
   white-space: pre-wrap;
   word-break: break-word;
   cursor: pointer;
@@ -143,7 +168,7 @@ body {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 #history {
@@ -153,10 +178,10 @@ body {
   overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   background: var(--panel);
-  border-radius: 12px;
-  padding: 12px;
+  border-radius: var(--radius-l);
+  padding: var(--space-3);
   /* スクロールバーが右端に食い込んで右上・右下の角丸が欠けて見えるのを防ぐ。 */
   scrollbar-gutter: stable;
 }
@@ -172,13 +197,13 @@ body {
 
 #history::-webkit-scrollbar-thumb {
   background: rgba(242, 238, 252, 0.25);
-  border-radius: 8px;
+  border-radius: var(--radius-s);
 }
 
 #memory-list pre {
   white-space: pre-wrap;
   word-break: break-all;
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
 }
 
 #older-btn, #error, #input-form {
@@ -187,7 +212,7 @@ body {
 
 #controls-status {
   color: var(--muted);
-  font-size: 0.85em;
+  font-size: var(--text-small);
 }
 
 /* 空のときに余白だけが残らないようにする。 */
@@ -202,22 +227,22 @@ body {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   /* 縦にスクロールする箱は横も切り取る。フォーカスの枠は要素の外側へ出るので、
      余白が無いと縁で切れる（実際、記憶タブの「会話履歴」で切れていた）。
      枠が必要とする分＋わずかな余裕を四辺に取る。スクロールバーと内容が
      触れないようにする右の余白も、ここに含めている。 */
-  padding: 6px;
+  padding: var(--space-2);
 }
 
 .panel h1 {
-  font-size: 1.2em;
+  font-size: var(--text-title);
   margin: 0;
 }
 
 .panel h2 {
-  font-size: 1.05em;
-  margin: 4px 0 0;
+  font-size: var(--text-heading);
+  margin: var(--space-1) 0 0;
 }
 
 .panel p {
@@ -227,7 +252,7 @@ body {
 
 .hint {
   color: var(--muted);
-  font-size: 0.85em;
+  font-size: var(--text-small);
 }
 
 /* 横並びのボタン群（記憶カードの操作・ページ送り・確認ダイアログ）。
@@ -236,7 +261,7 @@ body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* フォーム部品はブラウザ標準のままだと明るい配色で浮くため、画面に合わせる。 */
@@ -249,8 +274,8 @@ textarea {
   color: var(--text);
   background: #0f0c17;
   border: 1px solid #3a3050;
-  border-radius: 8px;
-  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  padding: var(--space-2) var(--space-3);
 }
 
 input[type="number"] {
@@ -272,22 +297,22 @@ input[type="checkbox"] {
 
 #job-status, #model-info {
   color: var(--muted);
-  font-size: 0.9em;
+  font-size: var(--text-small);
 }
 
 #reminder-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .reminder-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-3);
   background: var(--panel);
-  border-radius: 10px;
-  padding: 8px 12px;
+  border-radius: var(--radius-s);
+  padding: var(--space-2) var(--space-3);
 }
 
 .reminder-row span {
@@ -296,8 +321,8 @@ input[type="checkbox"] {
 }
 
 .reminder-row button {
-  padding: 6px 10px;
-  font-size: 0.9em;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-small);
 }
 
 /* --- 記憶タブ・ファイルタブ --- */
@@ -310,17 +335,17 @@ input[type="checkbox"] {
 #memory-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 /* 種類の説明。長い文を1段落にせず、名前と説明を対で並べる。 */
 .legend {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 4px 12px;
+  gap: var(--space-1) var(--space-3);
   margin: 0;
   color: var(--muted);
-  font-size: 0.9em;
+  font-size: var(--text-small);
 }
 
 .legend dt {
@@ -335,7 +360,7 @@ input[type="checkbox"] {
 @media (max-width: 480px) {
   .legend {
     grid-template-columns: 1fr;
-    gap: 2px;
+    gap: var(--space-1);
   }
 
   .legend dd {
@@ -346,10 +371,10 @@ input[type="checkbox"] {
 .memory-card {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
   background: var(--panel);
-  border-radius: 12px;
-  padding: 12px;
+  border-radius: var(--radius-l);
+  padding: var(--space-3);
 }
 
 .memory-card p {
@@ -366,7 +391,7 @@ input[type="checkbox"] {
   flex: none;
   margin: 0;
   color: var(--muted);
-  font-size: 0.9em;
+  font-size: var(--text-small);
   overflow-wrap: anywhere;
 }
 
@@ -378,9 +403,9 @@ input[type="checkbox"] {
 .mind-fields {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-  gap: 8px 16px;
-  margin: 8px 0 0;
-  font-size: 0.9em;
+  gap: var(--space-2) var(--space-4);
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-small);
 }
 
 .mind-fields dt { color: var(--muted); }
@@ -388,24 +413,24 @@ input[type="checkbox"] {
 .mind-fields dt, .mind-fields dd { overflow-wrap: anywhere; }
 
 @media (max-width: 450px) {
-  .mind-fields { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .mind-fields { grid-template-columns: minmax(0, 1fr); gap: var(--space-1); }
   .mind-fields dd { margin-bottom: 8px; }
 }
 
 .memory-card summary {
   color: var(--muted);
-  font-size: 0.85em;
+  font-size: var(--text-small);
   cursor: pointer;
 }
 
 .memory-card button {
-  padding: 6px 10px;
-  font-size: 0.9em;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-small);
 }
 
 #memory-page {
   color: var(--muted);
-  font-size: 0.85em;
+  font-size: var(--text-small);
 }
 
 /* --- 使い方タブ --- */
@@ -419,7 +444,7 @@ input[type="checkbox"] {
   width: 100%;
   min-height: 0;
   border: none;
-  border-radius: 12px;
+  border-radius: var(--radius-l);
 }
 
 /* --- 確認ダイアログ --- */
@@ -428,8 +453,8 @@ input[type="checkbox"] {
   background: var(--panel);
   color: var(--text);
   border: 1px solid #3a3050;
-  border-radius: 12px;
-  padding: 16px;
+  border-radius: var(--radius-l);
+  padding: var(--space-4);
 }
 
 #memory-dialog::backdrop {
@@ -437,13 +462,13 @@ input[type="checkbox"] {
 }
 
 #memory-dialog h2 {
-  margin: 0 0 8px;
-  font-size: 1.05em;
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-heading);
 }
 
 /* 影響範囲の説明は改行込みで組み立てられるため、そのまま折り返す。 */
 #memory-dialog p {
-  margin: 0 0 10px;
+  margin: 0 0 var(--space-3);
   line-height: 1.6;
   white-space: pre-wrap;
 }
@@ -456,13 +481,13 @@ input[type="checkbox"] {
 #memory-lock-label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   margin-bottom: 10px;
 }
 
 #dialog-error {
   color: #ffb3c1;
-  font-size: 0.9em;
+  font-size: var(--text-small);
 }
 
 #dialog-error:empty {
@@ -474,8 +499,8 @@ input[type="checkbox"] {
 }
 
 .msg {
-  padding: 8px 12px;
-  border-radius: 10px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-s);
   max-width: 85%;
   white-space: pre-wrap;
   word-break: break-word;
@@ -501,9 +526,9 @@ input[type="checkbox"] {
 #input-form {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border-radius: 18px;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-radius: var(--radius-l);
   border: 1px solid #3a3050;
   background: #0f0c17;
 }
@@ -517,7 +542,7 @@ input[type="checkbox"] {
   min-width: 0;
   min-height: 40px;
   max-height: 120px;
-  padding: 4px 6px;
+  padding: var(--space-1) var(--space-2);
   border: none;
   background: transparent;
   color: var(--text);
@@ -534,14 +559,14 @@ input[type="checkbox"] {
 .composer-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .composer-actions button {
   width: 38px;
   height: 38px;
   padding: 0;
-  border-radius: 50%;
+  border-radius: var(--radius-pill);
   display: grid;
   place-items: center;
 }
@@ -551,7 +576,7 @@ input[type="checkbox"] {
 .voice-volume {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   margin-right: auto;
 }
 
@@ -610,6 +635,8 @@ body.chat-busy #cancel-btn {
   input:not([type="checkbox"]),
   select,
   textarea {
+    /* iOSは入力欄の文字が16px未満だとページを拡大する。ここだけは
+       文字サイズの設定にもトークンにも追従させない。 */
     font-size: 16px;
   }
 
@@ -626,7 +653,7 @@ body.chat-busy #cancel-btn {
   /* iPhoneでソフトウェアキーボードが出ている間だけ、固定要素をコンパクト化する。
      Header / キャラクター / 入力欄は残し、縮めた分を会話履歴へ渡す。 */
   body.keyboard-open #app.mode-normal {
-    gap: 6px;
+    gap: var(--space-2);
     padding-top: max(6px, env(safe-area-inset-top));
     padding-right: max(10px, env(safe-area-inset-right));
     padding-bottom: max(6px, env(safe-area-inset-bottom));
@@ -642,17 +669,17 @@ body.chat-busy #cancel-btn {
   body.keyboard-open #app.mode-normal #proactive-bubble {
     max-height: 64px;
     overflow-y: auto;
-    padding: 4px 8px;
+    padding: var(--space-1) var(--space-2);
     font-size: 13px;
   }
 
   body.keyboard-open #app.mode-normal #chat {
-    gap: 5px;
+    gap: var(--space-1);
   }
 
   body.keyboard-open #app.mode-normal #history {
-    padding: 8px;
-    gap: 6px;
+    padding: var(--space-2);
+    gap: var(--space-2);
     min-height: 80px;
   }
 
@@ -665,8 +692,8 @@ body.chat-busy #cancel-btn {
 /* 既定は控えめな見た目。アクセント色は各画面の主要動作だけに使い、
    「押せる場所」ではなく「いま何が有効か」を色で示す。 */
 button {
-  padding: 9px 14px;
-  border-radius: 8px;
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-s);
   border: 1px solid #3a3050;
   background: var(--panel);
   color: var(--text);
@@ -682,6 +709,18 @@ button:hover:not(:disabled) {
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* 押せるもの・打てるものの最小の大きさ。入力手段で分けない。指で押し間違え
+   ないための下限だが、マウスでも小さい的は狙いにくい。簡易表示だけは幅160px
+   に収める必要があるので、あとで個別に小さくしている。 */
+.panel button,
+.panel select,
+.panel input:not([type="checkbox"]),
+.panel summary,
+.composer-actions button,
+#text-input {
+  min-height: var(--tap);
 }
 
 button:focus-visible, input:focus-visible, textarea:focus-visible,
@@ -702,9 +741,9 @@ select:focus-visible, summary:focus-visible {
 .error {
   background: #4a1f2b;
   color: #ffd7de;
-  padding: 8px 12px;
-  border-radius: 8px;
-  font-size: 0.9em;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-s);
+  font-size: var(--text-small);
 }
 
 .error button {
@@ -813,8 +852,8 @@ body.mini-mode {
   background: transparent;
   border: none;
   border-radius: 0;
-  padding: 0 4px;
-  margin: 0 0 4px;
+  padding: 0 var(--space-1);
+  margin: 0 0 var(--space-1);
   gap: 0;
 }
 
@@ -834,11 +873,11 @@ body.mini-mode {
   min-height: 0;
   max-height: none;
   height: 2.2em;
-  padding: 6px 10px;
-  font-size: 0.85em;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-small);
   background: rgba(20, 16, 28, 0.55);
   border: 1px solid rgba(242, 238, 252, 0.3);
-  border-radius: 8px;
+  border-radius: var(--radius-s);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
 }
 
@@ -855,7 +894,7 @@ body.mini-mode {
 
 #app.mode-mini .composer-actions {
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--space-2);
   margin-top: 4px;
 }
 
@@ -886,11 +925,11 @@ body.mini-mode {
   max-height: 220px;
   overflow-y: auto;
   margin-bottom: 6px;
-  padding: 6px 10px;
+  padding: var(--space-2) var(--space-3);
   background: rgba(20, 16, 28, 0.55);
   border: 1px solid rgba(242, 238, 252, 0.3);
-  border-radius: 8px;
-  font-size: 0.78em;
+  border-radius: var(--radius-s);
+  font-size: var(--text-caption);
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
@@ -899,16 +938,16 @@ body.mini-mode {
 #app.mode-mini #error {
   order: 1;
   max-width: 156px;
-  margin: 0 4px 4px;
-  font-size: 0.75em;
-  padding: 6px 8px;
+  margin: 0 var(--space-1) var(--space-1);
+  font-size: var(--text-caption);
+  padding: var(--space-2) var(--space-2);
 }
 
 /* --- iPhone / touch UI optimization ---
    PC/Tauri版はそのままに、狭いタッチ画面だけ操作密度を上げる。 */
 @media (max-width: 600px) and (hover: none) and (pointer: coarse) {
   #app.mode-normal {
-    gap: 8px;
+    gap: var(--space-2);
     padding-top: max(8px, env(safe-area-inset-top));
     padding-right: max(10px, env(safe-area-inset-right));
     padding-bottom: max(8px, env(safe-area-inset-bottom));
@@ -926,7 +965,7 @@ body.mini-mode {
   }
 
   #app.mode-normal #character-view {
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   #app.mode-normal #proactive-bubble {
@@ -936,31 +975,24 @@ body.mini-mode {
   }
 
   #app.mode-normal #chat {
-    gap: 6px;
+    gap: var(--space-2);
   }
 
   #app.mode-normal #history {
-    padding: 10px;
-    gap: 7px;
+    padding: var(--space-3);
+    gap: var(--space-2);
     min-height: 96px;
     scrollbar-gutter: auto;
   }
 
   #app.mode-normal .msg {
     max-width: 90%;
-    padding: 8px 10px;
+    padding: var(--space-2) var(--space-3);
   }
 
   #app.mode-normal .composer-actions button {
     width: 44px;
     height: 44px;
-  }
-
-  /* 設定・記憶画面も指で押しやすい最小サイズを確保。 */
-  #app.mode-normal .panel button,
-  #app.mode-normal .panel select,
-  #app.mode-normal .panel input:not([type="checkbox"]) {
-    min-height: 44px;
   }
 
   #app.mode-normal .panel {
@@ -970,7 +1002,7 @@ body.mini-mode {
 
   /* キーボード中は固定UIをさらに縮退し、履歴を最低限確保する。 */
   body.keyboard-open #app.mode-normal {
-    gap: 4px;
+    gap: var(--space-1);
     padding-top: max(4px, env(safe-area-inset-top));
     padding-bottom: max(4px, env(safe-area-inset-bottom));
   }
@@ -983,12 +1015,12 @@ body.mini-mode {
   body.keyboard-open #app.mode-normal #proactive-bubble {
     max-height: 48px;
     font-size: 12px;
-    padding: 3px 7px;
+    padding: var(--space-1) var(--space-2);
   }
 
   body.keyboard-open #app.mode-normal #history {
     min-height: 72px;
-    padding: 7px;
+    padding: var(--space-2);
   }
 
   body.keyboard-open #app.mode-normal .composer-actions button {
@@ -1011,10 +1043,10 @@ body.mini-mode {
 .chat-status-line {
   flex: none;
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: baseline;
   color: var(--muted);
-  font-size: 0.78em;
+  font-size: var(--text-caption);
   line-height: 1.2;
 }
 
@@ -1026,16 +1058,16 @@ body.mini-mode {
 #latest-btn {
   flex: none;
   align-self: center;
-  padding: 5px 12px;
-  font-size: 0.85em;
-  border-radius: 999px;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-small);
+  border-radius: var(--radius-pill);
 }
 
 /* --- 実測した応答時間 ------------------------------------------------------ */
 .msg-timing {
   align-self: flex-start;
   color: var(--muted);
-  font-size: 0.75em;
+  font-size: var(--text-caption);
 }
 
 /* --- 返答が参照した記憶と、定型の追いかけ質問 ----------------------------- */
@@ -1043,7 +1075,7 @@ body.mini-mode {
   align-self: flex-start;
   max-width: 85%;
   color: var(--muted);
-  font-size: 0.8em;
+  font-size: var(--text-caption);
 }
 
 .msg-references summary {
@@ -1059,13 +1091,13 @@ body.mini-mode {
   align-self: flex-start;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .follow-ups button {
-  padding: 5px 10px;
-  font-size: 0.85em;
-  border-radius: 999px;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-small);
+  border-radius: var(--radius-pill);
 }
 
 /* #avatar-frame はレイアウトに参加させない（キャラの配置は
