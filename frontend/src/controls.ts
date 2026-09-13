@@ -255,7 +255,9 @@ export class Controls {
           processed_at: row.processed_at, processing_reason: row.processing_reason }, null, 2);
         details.append(summary, pre); card.append(details);
       }
-      if (row.key !== 'base_personality') {
+      {
+        // 基本性格もここから直せる。推測で書き換えられたくない行は、
+        // 変更ダイアログの「自動更新から保護」で対象外にする。
         const actions = document.createElement('div'); actions.className = 'button-row';
         // 層ごとに役割が違うので操作名も変える。知恵＝訂正／もう当てはまらない、
         // 接し方＝変更／元に戻す、会話履歴＝訂正／削除。

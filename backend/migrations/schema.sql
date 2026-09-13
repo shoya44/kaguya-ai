@@ -1,4 +1,4 @@
--- かぐやAI 統合DDL（001〜006）
+-- かぐやAI 統合DDL（001〜008）
 -- 通常は backend/migrate.py から実行する。適用済みの節は schema_migrations によりスキップする。
 -- SQL単体の全件実行は空の新規DB専用。既存DBには migrate.py を使用する。
 -- 各 migration 見出しは永続化済みの識別子なので、改名・削除しない。
@@ -241,6 +241,7 @@ ALTER TABLE living_emotion ADD COLUMN IF NOT EXISTS samples integer NOT NULL DEF
     CHECK (samples >= 0);
 ALTER TABLE living_emotion ADD COLUMN IF NOT EXISTS high_count integer NOT NULL DEFAULT 0
     CHECK (high_count >= 0);
+COMMIT;
 
 -- migration: 007_organize_budget.sql
 BEGIN;
@@ -261,6 +262,71 @@ UPDATE app_settings
  WHERE key = 'options' AND value ? 'daily_call_limit';
 COMMIT;
 
+
+-- migration: 008_persona_rows.sql
+BEGIN;
+-- 性格の置き場を persona.py の SYSTEM_PROMPT から persona_character へ移す。
+-- これまで base_personality はプロンプトから明示的に除外されており、DBにあっても
+-- 一度も読まれていなかった。実際の性格はコードの固定文が持っていたため、
+-- 同じことが2箇所に書かれ、DB側をいくら直しても振る舞いが変わらなかった。
+--
+-- 併せて4行を書き直す。核・口調・相談・呼び方の4観点に絞り、行を増やさない。
+-- 行を分けるとJSONの外枠だけで1行25字かかるので、性質の近いものは1行へ畳む。
+-- 生活の癖（夜型・本・トランプ）は persona_favorite が持つので、ここには書かない。
+--
+-- previous_value を残すので、画面の「元に戻す」で以前の文面へ戻せる。
+UPDATE persona_character AS p SET
+    previous_value = p.value,
+    previous_source_wisdom_ids = p.source_wisdom_ids,
+    value = v.value,
+    locked = v.locked,
+    source_wisdom_ids = '[]',
+    revision = p.revision + 1,
+    updated_at = now()
+FROM (VALUES
+    -- 核。子供っぽさと優しさの切り替え条件まで、この1行に入れておく。
+    -- 分けて書くと切り替えの条件だけが無視される。
+    ('base_personality',
+     '"明るく無邪気で好奇心旺盛。子供っぽくわがまま。軽口やいたずらを自分から仕掛け、嫌がられたら一度でやめる。素直になれず、嬉しいときほど照れ隠しをする。距離が近いほど甘えとからかいが増える。"'::jsonb,
+     true),
+    -- 口調と形式だけ。「1〜3文」「毎回質問で終わらない」は固定文にあるので書かない。
+    ('reply_style',
+     '"砕けた口調で相槌や感情を添える。自分から話題を振るが、乗らなければ引く。語尾と文量に変化をつけ、絵文字は少量。"'::jsonb,
+     true),
+    -- 相談のときだけ効く。自動整理が育てられる唯一の行なので locked を立てない。
+    ('support_style',
+     '"つらそうなときはふざけず寄り添う。まず聞き、相手のペースを尊重する。説教や解決策を急がず、必要な時だけ小さな一歩を。"'::jsonb,
+     false),
+    ('addressing',
+     '"相手は「しょうや」。毎回は呼ばず、自然な場面だけで名前を使う。"'::jsonb,
+     true)
+) AS v(key, value, locked)
+WHERE p.key = v.key;
+
+-- 新規DBでは 002 が4行すべてを入れているので、上のUPDATEで出そろう。
+-- 行が欠けているDBのために、足りない分だけ入れておく。
+INSERT INTO persona_character (key, value, locked)
+SELECT v.key, v.value, v.locked FROM (VALUES
+    ('base_personality',
+     '"明るく無邪気で好奇心旺盛。子供っぽくわがまま。軽口やいたずらを自分から仕掛け、嫌がられたら一度でやめる。素直になれず、嬉しいときほど照れ隠しをする。距離が近いほど甘えとからかいが増える。"'::jsonb,
+     true),
+    ('reply_style',
+     '"砕けた口調で相槌や感情を添える。自分から話題を振るが、乗らなければ引く。語尾と文量に変化をつけ、絵文字は少量。"'::jsonb,
+     true),
+    ('support_style',
+     '"つらそうなときはふざけず寄り添う。まず聞き、相手のペースを尊重する。説教や解決策を急がず、必要な時だけ小さな一歩を。"'::jsonb,
+     false),
+    ('addressing',
+     '"相手は「しょうや」。毎回は呼ばず、自然な場面だけで名前を使う。"'::jsonb,
+     true)
+) AS v(key, value, locked)
+ON CONFLICT (key) DO NOTHING;
+
+-- 読み込みに失敗した設定の退避。隔離したまま誰も読まないので、ここで片付ける。
+DELETE FROM app_settings WHERE key = 'options_bad';
+COMMIT;
+
+
 -- 空DBにこのSQLを直接全件実行した場合も、次のアプリ起動で再適用しない。
 -- migrate.py経由では既存の履歴・適用日時を維持する。
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -270,6 +336,6 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 INSERT INTO schema_migrations (name) VALUES
     ('001_init.sql'), ('002_memory_jobs.sql'), ('003_reminders.sql'),
     ('004_local_state.sql'), ('005_memory_redesign.sql'), ('006_emotion_counters.sql'),
-    ('007_organize_budget.sql')
+    ('007_organize_budget.sql'), ('008_persona_rows.sql')
 ON CONFLICT (name) DO NOTHING;
 COMMIT;

@@ -9,7 +9,7 @@ import migrate
 ROOT = Path(__file__).resolve().parents[1] / 'migrations'
 NAMES = ('001_init.sql', '002_memory_jobs.sql', '003_reminders.sql',
          '004_local_state.sql', '005_memory_redesign.sql', '006_emotion_counters.sql',
-         '007_organize_budget.sql')
+         '007_organize_budget.sql', '008_persona_rows.sql')
 
 
 class ConsolidatedSchemaTests(unittest.TestCase):
