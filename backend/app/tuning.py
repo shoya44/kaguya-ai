@@ -44,13 +44,13 @@ EMOTION_HALF_LIFE_HOURS = {
     'concern': 1.5,
 }
 # 言われたことによる増減。閾値に一度で届くかどうかがそのまま反応の速さになる。
+# 退屈（boredom）はここに無い。言われた言葉ではなく、話していない時間で動く
+# ものなので、下の BOREDOM_* が持つ。
 EMOTION_REACTION = {
-    'idle': {'boredom': -4},
     'praised': {'happiness': +14, 'affection': +1.5},
     'compared': {'jealousy': +32, 'happiness': -2},
     'asked': {'curiosity': +3},
     'worried': {'concern': +12, 'happiness': -4, 'affection': +.5},
-    'goodnight': {'boredom': -2},
 }
 # 気分ラベルと表情を決める境目。ラベルと表情で同じ値を使い、食い違わせない。
 EMOTION_THRESHOLD = {
@@ -69,10 +69,24 @@ ENERGY_BY_HOUR = ((6, 24.0), (10, 58.0), (18, 78.0), (23, 64.0), (24, 30.0))
 # これまで感情は発言の言葉づかいにしか反応せず、その話題がその人にとって
 # 大事かどうかを見ていなかった。想起できた記憶を材料に足す。
 # 毎ターン効くので、言葉への反応（EMOTION_REACTION）より小さくする。
-RECALL_REACTION = {'curiosity': +4}          # 覚えている話題に触れられた
+RECALL_REACTION = {'curiosity': +2}          # 覚えている話題に触れられた
 RECALL_IMPORTANT = 4                         # この重要度以上を「その人の核心」とみなす
 RECALL_IMPORTANT_REACTION = {'affection': +1.2, 'happiness': +4}
 CONCERN_REACTION = {'concern': +6}           # 気がかりを抱えたまま話している
+# 気がかりは毎ターン引き直されるため、そのたびに足すと減衰が追いつかず、
+# 1件残っているだけで心配顔のまま固定されていた。思い出して心配になるのは
+# 一度きりにして、そのあとは話しながら落ち着いていく。
+CONCERN_REACTION_QUIET = timedelta(minutes=45)
+
+
+# --- 退屈（話していない時間 → 感情） ---------------------------------------
+# 退屈は言われた言葉では動かない。放っておかれると溜まり、話していると紛れる。
+# 以前は EMOTION_REACTION に毎ターンの -4 しか無く、上げる側が存在しなかった
+# ため、boredom は常に 0 に張り付き、退屈の表情は一度も出なかった。
+BOREDOM_IDLE_FULL = timedelta(hours=3)      # これだけ空けば退屈は満額になる
+BOREDOM_IDLE_MAX = 45                       # 満額での上げ幅（基準値25 + 45 で閾値超え）
+BOREDOM_TALKING_WITHIN = timedelta(minutes=10)  # これ以内に続けば「話している」
+BOREDOM_TALKING = -6                        # 話しているあいだの下げ幅（1ターンぶん）
 
 
 # --- 好み ------------------------------------------------------------------

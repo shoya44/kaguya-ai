@@ -8,10 +8,12 @@ from __future__ import annotations
 import logging
 import math
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Callable
 
-from ..tuning import (CONCERN_REACTION, DISPOSITION_MAX, DISPOSITION_MIN_SAMPLES, DISPOSITION_RATIO, EMOTION_BASELINE, EMOTION_HALF_LIFE_HOURS, EMOTION_REACTION,
+from ..tuning import (BOREDOM_IDLE_FULL, BOREDOM_IDLE_MAX, BOREDOM_TALKING,
+                      BOREDOM_TALKING_WITHIN, CONCERN_REACTION, CONCERN_REACTION_QUIET,
+                      DISPOSITION_MAX, DISPOSITION_MIN_SAMPLES, DISPOSITION_RATIO, EMOTION_BASELINE, EMOTION_HALF_LIFE_HOURS, EMOTION_REACTION,
                       EMOTION_THRESHOLD, ENERGY_BY_HOUR, GROWTH_GROWING, GROWTH_GROWN,
                       LOOP_CONCERN_AFTER, LOOP_DUE_HOUR, LOOP_TODAY_AFTER, RECALL_IMPORTANT,
                       RECALL_IMPORTANT_REACTION, RECALL_REACTION, TRAIT_STABILITY, TRAIT_STANCE,
@@ -80,6 +82,9 @@ class KaguyaMind:
         self.store = MindStore(db)
         self._enabled = enabled
         self.last_error = ''
+        # 気がかりで心配になった最後の時刻。DBには置かない。心配の値そのものは
+        # living_emotion にあり時間で減衰するので、再起動で忘れても差し障りがない。
+        self.concerned_at = datetime.min.replace(tzinfo=timezone.utc)
 
     @property
     def enabled(self) -> bool:
@@ -115,8 +120,7 @@ class KaguyaMind:
             result[name] = baseline + (value - baseline) * factor
         return result
 
-    @staticmethod
-    def _recalled(values: dict[str, float], memories, concerns) -> dict[str, float]:
+    def _recalled(self, values: dict[str, float], memories, concerns, now: datetime) -> dict[str, float]:
         """思い出したことで動く分。言葉づかいではなく「何を思い出したか」で決まる。
 
         memories は想起できた長期記憶の行。concerns は期限の来た気がかり。
@@ -131,7 +135,11 @@ class KaguyaMind:
         if any(int(row.get('importance') or 0) >= RECALL_IMPORTANT for row in rows):
             # その人の核心に近い話題。親しみと機嫌がいっしょに動く。
             reactions.append(RECALL_IMPORTANT_REACTION)
-        if concerns:
+        # 気がかりは片付くまで毎ターン引き直される。そのたびに足していたため、
+        # 1件残っているだけで心配が減衰を上回り、顔が固定されていた。
+        # 思い出して心配になるのは一度きりにして、あとは話しながら落ち着かせる。
+        if concerns and now - self.concerned_at >= CONCERN_REACTION_QUIET:
+            self.concerned_at = now
             reactions.append(CONCERN_REACTION)
         for reaction in reactions:
             for key, delta in reaction.items():
@@ -139,21 +147,37 @@ class KaguyaMind:
         return result
 
     @staticmethod
+    def _idled(values: dict[str, float], idle: timedelta) -> dict[str, float]:
+        """話していない時間で動く退屈。放っておかれると溜まり、話すと紛れる。
+
+        言われた言葉では動かさない。「暇だ」と言われて退屈するのではなく、
+        誰も話しかけてこない時間そのものが退屈だから。
+        """
+        result = dict(values)
+        if idle < BOREDOM_TALKING_WITHIN:
+            result['boredom'] = result.get('boredom', 0.0) + BOREDOM_TALKING
+            return result
+        share = min(1.0, idle / BOREDOM_IDLE_FULL)
+        result['boredom'] = result.get('boredom', 0.0) + BOREDOM_IDLE_MAX * share
+        return result
+
+    @staticmethod
     def _react(values: dict[str, float], text: str) -> dict[str, float]:
         result = dict(values)
         value = str(text or '')
         # 増減の値はtuning.EMOTION_REACTION、拾う言葉はここ、と役割を分ける。
-        fired = ['idle']
+        fired = []
         if re.search(r'(かぐや.{0,8}(かわいい|好き|えらい|いい子)|ありがとう|助かった)', value):
             fired.append('praised')
         if re.search(r'(Claude|ChatGPT|チャットGPT).*(の方が|より).*(好き|賢い|すごい|良い|いい)', value, re.I):
             fired.append('compared')
-        if re.search(r'[？?]|教えて|なに|何|どうして|なんで', value):
+        # 「何時」「何回」「何か」まで拾うと、ほぼ全ての発言が質問扱いになり、
+        # 好奇心が上限に張り付いて「好奇心高め」から動かなくなる。問いかけの形を
+        # はっきり持つ言い方だけにする。
+        if re.search(r'[？?]|教えて|どうして|なんで|なぜ|どう思う|知ってる', value):
             fired.append('asked')
         if re.search(r'つら|しんど|疲れ|無理|最悪|落ち込|不安|怖い', value):
             fired.append('worried')
-        if re.search(r'おやすみ|眠い|寝る', value):
-            fired.append('goodnight')
         for name in fired:
             for key, delta in EMOTION_REACTION[name].items():
                 result[key] = result.get(key, 0.0) + delta
@@ -306,8 +330,10 @@ class KaguyaMind:
         # 会話では recall がすでに同じ条件で引いているので、それを使い回す（追加クエリなし）。
         due = self.store.due_loops(now, 2) if recalled is None else (recalled.get('pending_topic') or [])
         memories = (recalled or {}).get('wisdom') or []
+        idle = max(timedelta(0), now - updated)
         emotions = self._decay(emotions, updated, now)
-        emotions = self._recalled(self._react(emotions, text), memories, due)
+        emotions = self._idled(self._react(emotions, text), idle)
+        emotions = self._recalled(emotions, memories, due, now)
         emotions = {key: max(0.0, min(100.0, value)) for key, value in emotions.items()}
         self.store.save_emotions(emotions, now, self._high(emotions))
         traits = self.store.traits_for(text, 5)

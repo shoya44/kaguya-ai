@@ -70,6 +70,18 @@ class LocalCase(unittest.TestCase):
         self.assertIsNotNone(proactive.tick(True, False, self.now, topic=topic))
         self.assertEqual(len(asked), 1)
 
+    def test_quiet_can_be_asked_for_and_taken_back_in_conversation(self):
+        """会話で静音に入れるのに、会話で出られないのは「急に黙った」だけに見える。"""
+        for text in ('静かにしてて', '黙っててね', '話しかけないで', '声かけはやめて'):
+            self.assertIs(Controller._quiet_request(text), True, text)
+        for text in ('もう声かけていいよ', '話しかけてね', '声かけを再開して',
+                     '静音を解除して', '静かにしてなくていいよ'):
+            self.assertIs(Controller._quiet_request(text), False, text)
+
+    def test_ordinary_talk_does_not_touch_the_quiet_setting(self):
+        for text in ('今日は暑いね', '静かな場所が好き', 'うん'):
+            self.assertIsNone(Controller._quiet_request(text), text)
+
     def test_no_pending_topic_keeps_the_existing_greeting(self):
         proactive = Proactive(self.store, self.now)
         event = proactive.tick(True, False, self.now, topic=lambda: '')
