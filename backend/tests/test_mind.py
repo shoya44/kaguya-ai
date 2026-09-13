@@ -1,5 +1,6 @@
 import unittest
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 from app.mind import KaguyaMind
 from app.persona import memory_prompt
@@ -188,10 +189,16 @@ class RecalledEmotionTests(unittest.TestCase):
     """思い出したことで感情が動く。言葉づかいだけで決めない（記憶 → 感情）。"""
 
     @staticmethod
-    def react(memories=(), concerns=()):
+    def holder():
+        """_recalled が見るのは「最後に心配した時刻」だけ。DBは要らない。"""
+        return SimpleNamespace(concerned_at=datetime.min.replace(tzinfo=timezone.utc))
+
+    @classmethod
+    def react(cls, memories=(), concerns=(), holder=None, now=NOW):
         from app import tuning
         from app.mind.engine import KaguyaMind as Engine
-        return Engine._recalled(dict(tuning.EMOTION_BASELINE), list(memories), list(concerns))
+        return Engine._recalled(holder or cls.holder(), dict(tuning.EMOTION_BASELINE),
+                                list(memories), list(concerns), now)
 
     def test_nothing_recalled_leaves_the_feelings_alone(self):
         from app import tuning
@@ -214,11 +221,58 @@ class RecalledEmotionTests(unittest.TestCase):
         after = self.react(concerns=[{'topic': '面接'}])
         self.assertGreater(after['concern'], tuning.EMOTION_BASELINE['concern'])
 
+    def test_the_same_concern_worries_her_once_not_every_turn(self):
+        """気がかりは片付くまで毎ターン引き直される。そのたび足すと顔が固定される。"""
+        from app import tuning
+        holder = self.holder()
+        first = self.react(concerns=[{'topic': '面接'}], holder=holder)
+        self.assertGreater(first['concern'], tuning.EMOTION_BASELINE['concern'])
+        # 同じ気がかりのまま話し続けても、もう足さない。
+        again = self.react(concerns=[{'topic': '面接'}], holder=holder,
+                           now=NOW + tuning.CONCERN_REACTION_QUIET / 2)
+        self.assertEqual(again['concern'], tuning.EMOTION_BASELINE['concern'])
+        # しばらく経てば、また思い出して心配になる。
+        later = self.react(concerns=[{'topic': '面接'}], holder=holder,
+                           now=NOW + tuning.CONCERN_REACTION_QUIET)
+        self.assertGreater(later['concern'], tuning.EMOTION_BASELINE['concern'])
+
     def test_malformed_rows_are_ignored_instead_of_raising(self):
         from app import tuning
         self.assertEqual(self.react([None, 'not a row']), dict(tuning.EMOTION_BASELINE))
         self.assertEqual(self.react([{'importance': None}])['curiosity'],
                          tuning.EMOTION_BASELINE['curiosity'] + tuning.RECALL_REACTION['curiosity'])
+
+
+class BoredomTests(unittest.TestCase):
+    """退屈は言われた言葉ではなく、話していない時間で動く。"""
+
+    @staticmethod
+    def idled(minutes):
+        from app import tuning
+        from app.mind.engine import KaguyaMind as Engine
+        return Engine._idled(dict(tuning.EMOTION_BASELINE), timedelta(minutes=minutes))
+
+    def test_being_left_alone_makes_her_bored(self):
+        from app import tuning
+        self.assertGreater(self.idled(60)['boredom'], tuning.EMOTION_BASELINE['boredom'])
+
+    def test_long_enough_alone_actually_shows_on_her_face(self):
+        """以前は退屈を上げるコードが無く、退屈な顔は一度も出せなかった。"""
+        from app import tuning
+        full = tuning.BOREDOM_IDLE_FULL.total_seconds() / 60
+        self.assertGreaterEqual(self.idled(full)['boredom'], tuning.EMOTION_THRESHOLD['boredom'])
+
+    def test_talking_takes_her_mind_off_it(self):
+        from app import tuning
+        self.assertLess(self.idled(1)['boredom'], tuning.EMOTION_BASELINE['boredom'])
+
+    def test_the_longer_the_wait_the_more_bored(self):
+        self.assertGreater(self.idled(120)['boredom'], self.idled(30)['boredom'])
+
+    def test_boredom_does_not_keep_growing_past_the_cap(self):
+        from app import tuning
+        full = tuning.BOREDOM_IDLE_FULL.total_seconds() / 60
+        self.assertEqual(self.idled(full * 10)['boredom'], self.idled(full)['boredom'])
 
 
 @unittest.skipUnless(pgtemp.available(), pgtemp.reason())

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 import time
 from contextlib import suppress
 
@@ -9,6 +10,15 @@ from .tuning import FACE_REFRESH_TICKS, PROACTIVE_COMPOSE_SECONDS
 from .proactive import Proactive, tokyo_now
 from .jobs import Jobs
 from . import pc, relationship, tools
+
+# 会話から静音（声かけ停止）を出入りする言い方。ツール呼び出しを待たずに
+# その場で効かせたいので、ここだけは言葉で直に見る。
+# 以前は「静かにしてて」でONにするだけで、戻す言い方が無かった。会話で入った
+# 状態から会話で出られないのは、本人からすると「急に黙った」だけに見える。
+_QUIET_ON = re.compile(r'静かにして|黙ってて|話しかけないで|声かけ(?:は)?(?:やめ|止め|いらな|しないで)')
+_QUIET_OFF = re.compile(r'声かけて|話しかけて|声かけ(?:を)?(?:再開|戻し)|静音(?:を)?(?:解除|オフ)'
+                        r'|静かにし(?:なくて|てなくて)(?:も)?いい')
+
 
 class Controller:
     """One active turn and at most one unsaved answer, owned by the process.
@@ -218,6 +228,20 @@ class Controller:
         except ChatError:
             await self.broadcast(ChatError('status_save_failed', '失敗状態も保存できませんでした。DB復旧後に同じ会話を再試行してください。').event(turn_id))
 
+    @staticmethod
+    def _quiet_request(text) -> bool | None:
+        """声かけを止める / 再開する求め。どちらでもなければ None。
+
+        「静かにしてなくていいよ」は止める側の言い方をそのまま含む。
+        戻す側を先に見て、含んでいたらそこで決める。
+        """
+        value = str(text or '')
+        if _QUIET_OFF.search(value):
+            return False
+        if _QUIET_ON.search(value):
+            return True
+        return None
+
     async def _run(self, turn):
         turn_id = turn['turn_id']
         admitted = False
@@ -225,8 +249,9 @@ class Controller:
             await self.broadcast(self.state())
             if self.jobs.running:
                 await self.jobs.pause_for_chat()
-            if '静かにしてて' in turn['text']:
-                self.runtime.update({'quiet': True})
+            quiet = self._quiet_request(turn['text'])
+            if quiet is not None and quiet != self.runtime.options.quiet:
+                self.runtime.update({'quiet': quiet})
                 await self.broadcast({'type': 'settings.changed', 'options': self.runtime.options.model_dump()})
             row = await self.memory.begin(turn)
             if row['status'] == 'completed':
