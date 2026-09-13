@@ -960,6 +960,7 @@ kaguya.bat check
 | `voice.test.cjs` | 通話が使えない理由の案内、音量と消音の保存 |
 | `pc.test.cjs` | 動画検索・再生、BAT実行の確認 |
 | `manual.test.cjs` | READMEから「使い方」を作る変換 |
+| `style.test.cjs` | フォーカス枠が切れない余白、指で押せる大きさ |
 
 ## GitHub Actions
 
