@@ -7,7 +7,9 @@ const { test } = require('node:test');
 const css = fs.readFileSync(path.join(__dirname, '../src/style.css'), 'utf8')
   .replace(/\/\*[\s\S]*?\*\//g, '');
 
-/** セレクタを含むブロックの中身を返す。まとめ書き（`a, b { }`）にも当たる。 */
+/** セレクタを含むブロックの中身を返す。まとめ書き（`a, b { }`）にも当たる。
+    `.panel` のように前方一致で別のルール（`.panel::-webkit-scrollbar`）を
+    拾ってしまう場合は、`.panel {` のように波括弧まで渡す。 */
 function block(selector) {
   const at = css.indexOf(selector);
   assert.notEqual(at, -1, `${selector} が見つからない`);
@@ -51,7 +53,7 @@ test('縦にスクロールする画面は、フォーカスの枠が切れな�
   // 余白が足りないと、画面の縁にある操作の枠が欠ける。実際、記憶タブの
   // 「会話履歴」は左の余白が0で、選んだときの枠が切れていた。
   const needed = ringReach();
-  const [top, right, bottom, left] = sides(declaration('.panel', 'padding'));
+  const [top, right, bottom, left] = sides(declaration('.panel {', 'padding'));
   for (const [name, gap] of [['上', top], ['右', right], ['下', bottom], ['左', left]]) {
     assert.ok(gap >= needed, `.panel の${name}の余白 ${gap}px が、枠に必要な ${needed}px に足りない`);
   }
