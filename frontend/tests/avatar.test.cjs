@@ -60,15 +60,36 @@ function harness() {
     idleBreak: () => fire(Infinity, 10_000) };
 }
 
-test('quiet changes the sprite even when the logical sleep state is unchanged', () => {
+test('何かしている最中は、気分より活動の姿を出す', () => {
+  // 気分は何日も同じ値で張り付くことがある。気分の絵を常に優先していたため、
+  // そのあいだ読書も作業もおやつも一度も画面に出なかった。
+  const h = harness();
+  h.life({ mood: 'worried', activity: 'working', energy: 60 });
+  assert.equal(h.rendered.at(-1), '/sprites/laptop.png', '心配していても作業はしている');
+  h.life({ mood: 'worried', activity: 'snacking', energy: 60 });
+  assert.equal(h.rendered.at(-1), '/sprites/snack.png');
+  // 手が空いて、そばにいるときだけ顔で気分を出す。
+  h.life({ mood: 'worried', activity: 'idle', energy: 60 });
+  assert.equal(h.rendered.at(-1), '/sprites/worry.png');
+});
+
+test('気分の絵が無くても、活動の姿は出る', () => {
+  const h = harness();
+  h.life({ mood: 'normal', activity: 'playing', energy: 60 });
+  assert.equal(h.rendered.at(-1), '/sprites/cards.png');
+});
+
+test('眠った絵になるかはサーバの生活状態だけで決まる', () => {
+  // 静音（声かけ停止）は眠りではない。ここを睡眠扱いにしていたため、
+  // 静音にした日からずっと寝た絵のままになっていた。
   const h = harness();
   h.life({ mood: 'normal', activity: 'working', energy: 60 });
   h.avatar.setState('sleeping');
-  assert.equal(h.rendered.at(-1), '/sprites/laptop.png');
-  h.avatar.setState('sleeping', true);
-  assert.equal(h.rendered.at(-1), '/sprites/sleep.png');
-  h.avatar.setState('sleeping', false);
-  assert.equal(h.rendered.at(-1), '/sprites/laptop.png');
+  assert.equal(h.rendered.at(-1), '/sprites/laptop.png', '起きて作業中なら寝ない');
+  h.life({ mood: 'sleepy', activity: 'sleeping', energy: 20 });
+  assert.equal(h.rendered.at(-1), '/sprites/sleep.png', '眠いと届いて初めて寝る');
+  h.life({ mood: 'normal', activity: 'working', energy: 60 });
+  assert.equal(h.rendered.at(-1), '/sprites/laptop.png', '起きたらまた作業に戻る');
 });
 
 test('old image finishing later cannot overwrite the current talking sprite', () => {
@@ -217,11 +238,11 @@ test('眠りへ入るときと、目を覚ますときに動く', () => {
   const h = harness();
   h.life({ mood: 'normal', activity: 'reading', energy: 60 });
   h.settle();
-  // 静音にすると生活の演出より眠りが優先され、実際に眠った絵になる。
-  h.avatar.setState('sleeping', true);
+  // 眠ったことはサーバの生活状態から届く。
+  h.life({ mood: 'sleepy', activity: 'sleeping', energy: 20 });
   assert.equal(h.canvas.style.transform, 'scaleY(0.98)', '寝入るときは沈む');
   h.settle();
-  h.avatar.setState('idle');
+  h.life({ mood: 'normal', activity: 'reading', energy: 60 });
   assert.equal(h.canvas.style.transform, 'scaleY(1.04)', '目を覚ますときは伸びをする');
 });
 
@@ -303,7 +324,8 @@ test('まばたきは重ね合わせずに差し替える', () => {
 
 test('眠っている絵では瞬かない', () => {
   const h = harness();
-  h.avatar.setState('sleeping', true);
+  h.life({ mood: 'sleepy', activity: 'sleeping', energy: 20 });
+  h.avatar.setState('sleeping');
   assert.equal(h.rendered.at(-1), '/sprites/sleep.png');
   const before = h.rendered.length;
   h.blink();
