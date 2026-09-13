@@ -186,16 +186,21 @@ body {
   scrollbar-gutter: stable;
 }
 
-#history::-webkit-scrollbar {
-  width: 8px;
+/* スクロールする領域は会話履歴と各パネルの2種類ある。片方だけ整えると、
+   タブを切り替えるたびにバーの見た目が変わる。同じ扱いにする。 */
+#history::-webkit-scrollbar,
+.panel::-webkit-scrollbar {
+  width: var(--space-2);
 }
 
-#history::-webkit-scrollbar-track {
+#history::-webkit-scrollbar-track,
+.panel::-webkit-scrollbar-track {
   background: transparent;
-  margin-block: 12px;
+  margin-block: var(--space-3);
 }
 
-#history::-webkit-scrollbar-thumb {
+#history::-webkit-scrollbar-thumb,
+.panel::-webkit-scrollbar-thumb {
   background: rgba(242, 238, 252, 0.25);
   border-radius: var(--radius-s);
 }
@@ -233,6 +238,8 @@ body {
      枠が必要とする分＋わずかな余裕を四辺に取る。スクロールバーと内容が
      触れないようにする右の余白も、ここに含めている。 */
   padding: var(--space-2);
+  /* バーの出入りで内容が横へずれないよう、先に幅を確保する。 */
+  scrollbar-gutter: stable;
 }
 
 .panel h1 {
@@ -711,6 +718,18 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* ブラウザ既定のままだと、決めた段階から外れる要素がある。small は 0.83倍、
+   ul は 40px の字下げが勝手に付く（実際、記憶カードの日時と「最近の更新」が
+   そうなっていた）。役割に合う値へ寄せる。 */
+small {
+  font-size: var(--text-small);
+}
+
+.panel ul {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
 /* 押せるもの・打てるものの最小の大きさ。入力手段で分けない。指で押し間違え
    ないための下限だが、マウスでも小さい的は狙いにくい。簡易表示だけは幅160px
    に収める必要があるので、あとで個別に小さくしている。 */
@@ -954,10 +973,11 @@ body.mini-mode {
     padding-left: max(10px, env(safe-area-inset-left));
   }
 
-  /* 指で押しやすい大きさに。簡易表示はデスクトップ専用。 */
+  /* 指で押しやすい大きさに。簡易表示はデスクトップ専用。
+     42pxにしていたが、狙いは44ptの確保なのに2px足りていなかった。 */
   #app.mode-normal .toolbar button {
-    width: 42px;
-    height: 42px;
+    width: var(--tap);
+    height: var(--tap);
   }
 
   #app.mode-normal #mini-toggle-btn {

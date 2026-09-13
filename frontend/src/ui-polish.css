@@ -485,9 +485,10 @@ button:active:not(:disabled) {
     padding-inline: 12px;
   }
 
+  /* 補足情報なので本文より小さく。段階から外して実寸で書く理由は無い。 */
   .msg-timing,
   .chat-status-line {
-    font-size: 12px;
+    font-size: var(--text-small);
   }
 
   /* 行の高さではなく、押す対象そのものを最小サイズにする。行が広くても、
