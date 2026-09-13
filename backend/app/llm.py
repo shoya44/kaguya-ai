@@ -11,7 +11,7 @@ from google.genai import errors, types
 
 from .errors import ChatError
 from .persona import memory_prompt, conversation_context, now_label
-from .memory_store import PERSONA_KEYS, WisdomBatch, PersonaCandidate, validate_batch
+from .memory_store import PERSONA_AUTO_KEYS, WisdomBatch, PersonaCandidate, validate_batch
 from . import tools
 
 
@@ -55,7 +55,7 @@ PERSONA_SCHEMA = types.Schema(
     type=types.Type.OBJECT,
     required=['key', 'value', 'source_wisdom_ids'],
     properties={
-        'key': _string(enum=list(PERSONA_KEYS)),
+        'key': _string(enum=list(PERSONA_AUTO_KEYS)),
         'value': _string(description='短い日本語。'),
         'source_wisdom_ids': types.Schema(type=types.Type.ARRAY, items=_string()),
     },

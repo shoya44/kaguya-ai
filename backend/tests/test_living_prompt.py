@@ -57,7 +57,9 @@ class PromptTests(unittest.TestCase):
         for activity, label in ACTIVITY_LABELS.items():
             self.assertIn(label, living_context({'activity': activity}, now=NOW)['直前の活動'])
         values = json.loads(memory_prompt(now=NOW).splitlines()[-1])
-        self.assertEqual(set(values), {'現在日時', '時間帯の口調'})
+        # 接し方はDBが読めなくても必ず載る。空にすると性格の無い受け答えになる。
+        self.assertEqual(set(values), {'現在日時', '時間帯の口調', '接し方'})
+        self.assertEqual([row['key'] for row in values['接し方']], ['base_personality'])
 
     def test_memory_and_persona_are_independent_of_mood(self):
         recalled = {'pending_topic': [{'topic': '面接', 'kind': 'plan', 'quote': '明日面接がある'}],

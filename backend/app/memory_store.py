@@ -11,7 +11,11 @@ from fastapi import HTTPException
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field
 
-PERSONA_KEYS = ('reply_style', 'addressing', 'support_style')
+# 画面に出す接し方の全行。UIからはこの全てを編集できる。
+PERSONA_KEYS = ('base_personality', 'reply_style', 'addressing', 'support_style')
+# 自動整理（LLM）が書き換えを提案してよいキー。ここに無い行は推測では動かない。
+# base_personality は核なので、本人がUIで書くときだけ変わる。
+PERSONA_AUTO_KEYS = ('reply_style', 'addressing', 'support_style')
 
 
 class WisdomItem(BaseModel):
@@ -215,7 +219,7 @@ def summary(conn):
 def weekly_snapshot(conn):
     wisdom = conn.execute("SELECT * FROM memory_long WHERE kind='explicit' AND support_level='repeated' ORDER BY updated_at DESC LIMIT 50").fetchall()
     wisdom = [row for row in wisdom if len({entry['date'] for entry in row['evidence']}) >= 3][:5]
-    persona = conn.execute('SELECT * FROM persona_character WHERE key=ANY(%s) AND NOT locked', (list(PERSONA_KEYS),)).fetchall()
+    persona = conn.execute('SELECT * FROM persona_character WHERE key=ANY(%s) AND NOT locked', (list(PERSONA_AUTO_KEYS),)).fetchall()
     newest = max((row['updated_at'] for row in wisdom), default=None)
     if not newest or not any(row['updated_at'] < newest for row in persona):
         wisdom = []
@@ -276,10 +280,11 @@ def impact(conn, layer, key):
         selected = conn.execute('SELECT * FROM memory_short WHERE id=%s', (UUID(key),)).fetchone()
     elif layer == 'wisdom':
         selected = conn.execute('SELECT * FROM memory_long WHERE id=%s', (UUID(key),)).fetchone()
-    elif layer == 'persona' and key in PERSONA_KEYS:
+    elif layer == 'persona':
+        # 接し方はどの行も本人が書き換えられる。推測で動かないことは locked が担う。
         selected = conn.execute('SELECT * FROM persona_character WHERE key=%s', (key,)).fetchone()
     else:
-        raise HTTPException(400, '固定性格は変更できません。')
+        raise HTTPException(404, '記憶が見つかりません。')
     if not selected:
         raise HTTPException(404, '記憶が見つかりません。')
     all_wisdom = conn.execute('SELECT * FROM memory_long').fetchall()
@@ -330,7 +335,7 @@ def mutate(conn, layer, key, body, delete=False):
     if not delete and layer == 'raw' and selected['role'] != 'user':
         raise HTTPException(400, 'AIの回答は訂正できません。会話全体の削除はできます。')
     for persona_key in affected['persona_keys']:
-        if persona_key not in PERSONA_KEYS:
+        if persona_key not in PERSONA_AUTO_KEYS:
             continue
         conn.execute('''UPDATE persona_character SET value=%s,source_wisdom_ids='[]',previous_value=NULL,
             previous_source_wisdom_ids='[]',revision=revision+1,updated_at=now()
@@ -358,8 +363,6 @@ def mutate(conn, layer, key, body, delete=False):
 
 
 def restore_persona(conn, key, revision):
-    if key not in PERSONA_KEYS:
-        raise HTTPException(400, '固定性格は変更できません。')
     lock(conn)
     row = conn.execute('SELECT * FROM persona_character WHERE key=%s FOR UPDATE', (key,)).fetchone()
     if not row or row['revision'] != revision or row['previous_value'] is None:

@@ -321,7 +321,7 @@ class Controller:
                 self.references = ([{'label': row['topic_key'], 'text': row['summary']}
                                     for row in recalled.get('wisdom', [])[:5]]
                                    + [{'label': row['key'], 'text': row['value']}
-                                      for row in recalled.get('persona', []) if row['key'] != 'base_personality'])
+                                      for row in recalled.get('persona', [])])
                 await self.broadcast(self.state())
                 answer = await self.llm.reply(context, turn['text'], recalled, proactive,
                                               self.runtime.options.reply_tokens, memory=self.memory, on_text=self.progress)

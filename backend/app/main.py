@@ -17,6 +17,7 @@ from .controller import Controller
 from .errors import ChatError
 from .llm import Gemini
 from .memory_api import MemoryClient
+from .memory_store import PERSONA_KEYS
 from .mind import KaguyaMind
 from .models import Turn
 from .db import Database
@@ -251,7 +252,7 @@ async def memory_request(request, method, path, **kwargs):
 
 def memory_key(layer, key):
     if layer == 'persona':
-        if key not in ('base_personality', 'reply_style', 'addressing', 'support_style'):
+        if key not in PERSONA_KEYS:
             raise HTTPException(422, '記憶の項目を確認してください。')
         return key
     try:
