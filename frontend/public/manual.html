@@ -12,6 +12,8 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <p>既定地点は東京です。会話で「天気の場所を横浜にして」のように変更できます。</p>
 <h2>起動と終了</h2>
 <ul><li>起動は <code>C:\kaguya-ai\start.bat</code>。DBマイグレーションとビルドを行って起動します</li><li><strong>通常起動ではGitHubから自動更新しません。</strong> 使っている版を勝手に変えない設計です</li><li>終了はタスクトレイの「終了」または <code>stop.bat</code>。ウィンドウの×は常駐したまま非表示になります</li><li>iPhone画面には更新ボタンを出しません。PCのソース更新・再ビルドはPC版からだけ実行します</li></ul>
+<p><strong>PC版はタスクバーに出しません。タスクトレイが唯一の入口です。</strong></p>
+<ul><li><strong>トレイのアイコンを左クリックすると、簡易表示で出ます。</strong> 通常表示で開いていたときも簡易表示へ切り替わります</li><li>通常表示へ戻すのは、キャラのダブルクリックか右クリックメニューです</li><li>トレイの右クリックメニューからは「表示」「非表示」「静音／声かけ再開」「設定」「終了」を選べます</li></ul>
 <h3>PC起動時から常駐させる</h3>
 <p><code>kaguya.bat</code> をダブルクリック → <code>5</code> で登録します。管理者権限は不要です。</p>
 <ul><li>かぐやは<strong>簡易表示</strong>で起動し、タスクトレイに常駐します</li><li>AivisSpeech も一緒に起動します。よくある置き場（<code>%LOCALAPPDATA%\Programs\AivisSpeech</code> など）を探して見つかれば登録します</li><li>見つからなかった場合はその旨を表示します。Win+R で <code>shell:startup</code> を開き、AivisSpeech のショートカットを置いてください</li><li>AivisSpeech が起動していないと、通話は Gemini の声に切り替わります（会話自体は続きます）</li><li>解除は同じ <code>5</code> から。両方の登録を外します</li><li>登録先は Windows の<strong>スタートアップフォルダー</strong>（Win+R → <code>shell:startup</code>）です。<code>Kaguya AI.cmd</code> と <code>Kaguya AI Voice.cmd</code> が置かれます</li></ul>

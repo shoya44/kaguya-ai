@@ -7,6 +7,7 @@ import { PCPanel } from './pc';
 import { VoiceChat } from './voice';
 import { getCurrentWindow, currentMonitor, primaryMonitor, LogicalSize, PhysicalPosition, PhysicalSize } from '@tauri-apps/api/window';
 import { Menu } from '@tauri-apps/api/menu';
+import { listen } from '@tauri-apps/api/event';
 
 // Stage 6 (home Wi-Fi only, no HTTPS/pairing yet): inside Tauri the backend
 // is always our own loopback child process, so 127.0.0.1 stays correct.
@@ -1042,6 +1043,13 @@ async function main(): Promise<void> {
   setBusy(false);
 
   setupAvatarContextMenu();
+  // トレイのアイコンを押されたら簡易表示で出す。タスクバーに出さない設定なので、
+  // トレイが唯一の入口になる。通常表示で開いていたときも簡易表示へ切り替える。
+  if (isTauri()) {
+    listen('ui.mini', () => {
+      setMiniMode(true).catch(() => showError('簡易表示に切り替えられませんでした。', null));
+    }).catch(() => showError('トレイ操作を接続できませんでした。', null));
+  }
   document.getElementById('mini-toggle-btn')?.addEventListener('click', () => {
     setMiniMode(true).catch(() => showError('簡易表示に切り替えられませんでした。', null));
   });

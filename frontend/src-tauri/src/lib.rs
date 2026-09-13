@@ -261,6 +261,9 @@ pub fn run() {
                     {
                         let app = tray.app_handle();
                         show_character(app);
+                        // タスクバーに出さないので、トレイが唯一の入口になる。
+                        // 出すのは簡易表示。通常表示だったときも切り替える。
+                        let _ = app.emit("ui.mini", ());
                     }
                 })
                 .build(app)?;
