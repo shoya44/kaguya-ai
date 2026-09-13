@@ -373,7 +373,6 @@ function createTurnId(): string {
 // キャラクターの表情は、ここにある状態から毎回一意に決まる。
 const TALKING_MS = 6000;
 const SLEEP_AFTER_MS = 10 * 60 * 1000;
-let quietMode = false;
 let organizing = false;
 let talkingUntil = 0;
 let talkingTimer: number | null = null;
@@ -385,9 +384,11 @@ function refreshAvatar(): void {
   const now = Date.now();
   if (talkingTimer !== null) window.clearTimeout(talkingTimer);
   talkingTimer = now < talkingUntil ? window.setTimeout(refreshAvatar, talkingUntil - now) : null;
+  // 静音（quiet）は「自分から声をかけない」設定であって、眠っているわけではない。
+  // ここで睡眠扱いにしていたため、静音にした日からずっと寝た絵のままになっていた。
   const state = busy ? 'thinking' : organizing ? 'organizing' : now < talkingUntil ? talkingState
-    : quietMode || now - lastConversation > SLEEP_AFTER_MS ? 'sleeping' : 'idle';
-  avatar.setState(state, quietMode);
+    : now - lastConversation > SLEEP_AFTER_MS ? 'sleeping' : 'idle';
+  avatar.setState(state);
 }
 
 // 通話の開始と終了でまとめて切り替えるもの。VoiceChatから呼ばれる。
@@ -1050,10 +1051,7 @@ async function main(): Promise<void> {
   setupViewportHeight();
   inputEl.placeholder = INPUT_PLACEHOLDER;
   connectionStatus('接続中…');
-  controls = new Controls(api, options => {
-    quietMode = options.quiet === true;
-    refreshAvatar();
-  });
+  controls = new Controls(api);
   new PCPanel(api, API_BASE);
   new VoiceChat(API_BASE, ensureSession, voiceToggle);
   setBusy(false);

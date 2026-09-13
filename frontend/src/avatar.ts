@@ -154,7 +154,6 @@ export class Avatar {
   private lifeMood: LifeMood = 'normal';
   private lifeActivity: LifeActivity = 'idle';
   private lifeEnergy = 60;
-  private quiet = false;
   private drawVersion = 0;
   // 通話中に固定する絵。null なら状態どおりに切り替える。
   private heldBase: string | null = null;
@@ -176,11 +175,11 @@ export class Avatar {
     window.addEventListener('kaguya-life', event => {
       const detail = (event as CustomEvent).detail ?? {};
       const before = this.lifeMood;
+      const wasAsleep = this.looksAsleep();
       if (Object.prototype.hasOwnProperty.call(MOOD_SPRITES, detail.mood)) this.lifeMood = detail.mood;
       if (Object.prototype.hasOwnProperty.call(LIFE_SPRITES, detail.activity)) this.lifeActivity = detail.activity;
       if (Number.isFinite(detail.energy)) this.lifeEnergy = Number(detail.energy);
       // main.tsの「長時間会話なし=睡眠」より、復帰直後の生活演出を優先する。
-      // ただし静音中は従来どおり睡眠表示のままにする。
       if (this.state === 'idle' || this.state === 'sleeping') {
         this.frame = 0;
         this.rotate();
@@ -190,7 +189,11 @@ export class Avatar {
       if (detail.reentry) this.react('perk');
       // 気分が「変わった」ことにだけ反応する。同じ気分が届き続けても跳ねない。
       const nudge = this.lifeMood !== before ? MOOD_NUDGE[this.lifeMood] : undefined;
+      // 眠りの出入りはサーバの生活状態で決まる。絵だけ差し替わると寝落ちに見えない。
+      const asleep = this.looksAsleep();
       if (nudge) this.react(nudge);
+      else if (!wasAsleep && asleep) this.react('sink');
+      else if (wasAsleep && !asleep) this.react('stretch');
       else if (!detail.reentry) this.updateMotion();
     });
     this.rotate();
@@ -200,11 +203,10 @@ export class Avatar {
     this.scheduleBlink();
   }
 
-  setState(state: AvatarState, quiet = false): void {
-    if (this.state === state && this.quiet === quiet) return;
+  setState(state: AvatarState): void {
+    if (this.state === state) return;
     const wasAsleep = this.looksAsleep();
     this.state = state;
-    this.quiet = quiet;
     this.frame = 0;
     this.rotate();
     this.draw();
@@ -310,13 +312,13 @@ export class Avatar {
     const wait = IDLE_BREAK_MIN_MS + Math.random() * (IDLE_BREAK_MAX_MS - IDLE_BREAK_MIN_MS);
     this.breakTimer = window.setTimeout(() => {
       this.breakTimer = null;
-      if (this.state === 'idle' && !this.quiet && !this.looksAsleep()) this.react('settle');
+      if (this.state === 'idle' && !this.looksAsleep()) this.react('settle');
       this.scheduleIdleBreak();
     }, wait);
   }
 
   private livingOverridesSleeping(): boolean {
-    return this.state === 'sleeping' && !this.quiet
+    return this.state === 'sleeping'
       && this.lifeMood !== 'sleepy' && this.lifeActivity !== 'sleeping' && this.lifeEnergy >= 20;
   }
 
@@ -325,19 +327,24 @@ export class Avatar {
     return src ? [src] : null;
   }
 
+  /**
+   * いま出す絵。
+   *
+   * 以前は気分の絵が活動より常に優先だった。気分は何日も同じ値で張り付くこと
+   * があり（気がかりが1つ残っているだけで心配顔のまま等）、そのあいだ読書も
+   * 作業もおやつも一度も画面に出なかった。
+   *
+   * 顔で気分を出すのは、そばにいて手が空いているとき（activity が idle）だけに
+   * する。何かしている最中の気分は、呼吸の深さと一回性の動き（breath / react）
+   * が引き受ける。そちらは絵を差し替えないので、活動の姿と両立する。
+   */
   private frames(): string[] {
-    if (this.state === 'sleeping' && this.livingOverridesSleeping()) {
-      // 眠りより生活の演出を優先する場面。眠そうな気分はここへ来ない。
-      return this.moodFrames()
-        ?? (this.lifeActivity !== 'idle' ? LIFE_SPRITES[this.lifeActivity] : IDLE_BY_TIME[timeSlot()]);
-    }
-    if (this.state !== 'idle') return SPRITES[this.state];
-    if (this.lifeMood === 'happy') return ['/sprites/laugh.png'];
+    if (this.state !== 'idle' && !this.livingOverridesSleeping()) return SPRITES[this.state];
     if (this.lifeMood === 'sleepy' || this.lifeActivity === 'sleeping' || this.lifeEnergy < 20) {
       return ['/sprites/sleep.png'];
     }
-    return this.moodFrames()
-      ?? (this.lifeActivity !== 'idle' ? LIFE_SPRITES[this.lifeActivity] : IDLE_BY_TIME[timeSlot()]);
+    if (this.lifeActivity !== 'idle') return LIFE_SPRITES[this.lifeActivity];
+    return this.moodFrames() ?? IDLE_BY_TIME[timeSlot()];
   }
 
   private rotate(): void {
