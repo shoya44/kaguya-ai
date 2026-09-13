@@ -188,7 +188,7 @@ class DatabaseRecallTests(unittest.TestCase):
             self.assertIsNone(result['wisdom'][0]['last_used_at'])
             conn.execute('''INSERT INTO memory_short(id,turn_id,role,content,status,origin_client_id,input_mode)
                 VALUES (%s,%s,'user','猫','pending',%s,'text')''', (uuid4(), turn_id, client_id))
-        with patch.object(memory_api, 'connection', side_effect=self.db.session):
+        with patch.object(memory_api, 'connection', side_effect=lambda request: self.db.session()):
             memory_api.complete(turn_id, Completion(answer='猫だね', recalled_ids=[selected]), SimpleNamespace())
         with self.db.session() as conn:
             used = {row['id']: row['last_used_at'] for row in conn.execute('SELECT id,last_used_at FROM memory_long').fetchall()}
