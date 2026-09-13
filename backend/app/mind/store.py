@@ -132,8 +132,7 @@ class MindStore:
                   AND (last_asked_at IS NULL OR last_asked_at<=%s)
                 ORDER BY due_at ASC LIMIT %s""",
                                 (now, LOOP_MAX_ASKS, now - LOOP_QUIET, limit)).fetchall()
-            for row in rows:
-                conn.execute('UPDATE memory_concern SET last_asked_at=%s WHERE topic=%s', (now, row['topic']))
+        # 読んだだけでは記録しない。実際に触れたときに mark_asked で数える。
         return [_row(row) for row in rows]
 
     def unresolved_topics(self, limit: int = 40) -> list[str]:
@@ -149,7 +148,9 @@ class MindStore:
 
     def mark_asked(self, topic: str, now: datetime) -> None:
         with self._session() as conn:
-            conn.execute('UPDATE memory_concern SET asked=asked+1,last_asked_at=%s WHERE topic=%s', (now, topic))
+            # 同じ話題を会話側と声かけ側で二重に数えない（LOOP_QUIET の間は1回だけ）。
+            conn.execute('''UPDATE memory_concern SET asked=asked+1,last_asked_at=%s WHERE topic=%s
+                AND (last_asked_at IS NULL OR last_asked_at<=%s)''', (now, topic, now - LOOP_QUIET))
 
     def prune_loops(self, now: datetime) -> None:
         """人間は全部は覚えていない。片付いた話題と、古すぎる未完の話題は忘れる。"""

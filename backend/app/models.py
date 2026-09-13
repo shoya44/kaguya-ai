@@ -23,6 +23,8 @@ class Turn(BaseModel):
 class Completion(BaseModel):
     answer: str = Field(min_length=1, max_length=30000)
     recalled_ids: list[UUID] = Field(default_factory=list, max_length=5)
+    # そのターンでプロンプトへ渡した気がかりの話題。会話後の更新対象を限定する。
+    concern_topics: list[str] = Field(default_factory=list, max_length=3)
 
 
 class Failure(BaseModel):
