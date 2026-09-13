@@ -3,6 +3,7 @@ import json
 import math
 import re
 from contextlib import aclosing
+from typing import Any
 
 import httpx
 from google import genai
@@ -26,7 +27,7 @@ from . import tools
 #
 # 受け取った値の範囲や長さは WisdomBatch / PersonaCandidate が検証する。ここは
 # 「どんな形で返すか」だけを伝える。項目を増やすときは両方に足す。
-def _string(**extra):
+def _string(**extra: Any) -> types.Schema:
     return types.Schema(type=types.Type.STRING, **extra)
 
 

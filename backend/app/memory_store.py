@@ -152,6 +152,17 @@ TONE_BY_MOOD = {'worried': -1, 'sulky': -1, 'happy': 1}
 
 
 def recall(conn, text, context='', mood=''):
+    from .living_prompt import derive_mood
+
+    # 既存のPersona読み取りにLivingを同梱する。Personaが空でも1行返る。
+    state = conn.execute('''SELECT
+        (SELECT jsonb_agg(p) FROM
+            (SELECT * FROM persona_character ORDER BY key LIMIT 12) p) AS persona,
+        (SELECT to_jsonb(a) FROM living_activity a WHERE id) AS living,
+        (SELECT jsonb_object_agg(name, value) FROM living_emotion) AS emotions''').fetchone()
+    living = state['living'] or {}
+    derived = derive_mood(state['emotions'] or {}, living)
+    mood = derived or mood
     primary = recall_terms(text)
     secondary = [term for term in recall_terms(context) if term not in primary][:20]
     terms = primary + secondary
@@ -177,10 +188,14 @@ def recall(conn, text, context='', mood=''):
 
     rows.sort(key=relevance, reverse=True)
     selected = rows[:5]
-    if selected:
-        conn.execute('UPDATE memory_long SET last_used_at=now() WHERE id=ANY(%s)', ([row['id'] for row in selected],))
-    persona = conn.execute("SELECT * FROM persona_character ORDER BY key LIMIT 12").fetchall()
-    return {'wisdom': selected, 'persona': persona}
+    pending = conn.execute('''SELECT topic, kind, quote, due_at FROM memory_concern
+        WHERE resolved_at IS NULL AND due_at <= now()
+        ORDER BY due_at, topic LIMIT 3''').fetchall()
+    favorites = conn.execute('''SELECT name, valence, confidence FROM persona_favorite
+        WHERE confidence >= %s AND name <> '' AND strpos(lower(%s), lower(name)) > 0
+        ORDER BY confidence DESC, name LIMIT 2''', (0.6, text)).fetchall()
+    return {'wisdom': selected, 'persona': state['persona'] or [],
+            'living': living, 'mood': derived, 'pending_topic': pending, 'favorites': favorites}
 
 
 def summary(conn):

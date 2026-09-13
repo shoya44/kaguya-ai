@@ -39,7 +39,7 @@ class Database:
             try:
                 yield conn
                 conn.commit()
-            except BaseException:
+            except Exception:
                 try:
                     conn.rollback()
                 except psycopg.Error:
