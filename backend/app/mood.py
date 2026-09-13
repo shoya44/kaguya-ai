@@ -4,11 +4,13 @@
 PCで褒めてもiPhoneのかぐやは無反応、という食い違いが起きていた。iPhoneはPC上の
 FastAPIへ繋いでいるだけなので、判定はここ1箇所に置く。
 """
+import random
 import re
 from datetime import datetime
 
 from .tuning import (MOOD_HOLD, NIGHT_FROM_HOUR, NIGHT_UNTIL_HOUR,
-                     THINK_DELAY_HEAVY, THINK_DELAY_MAX, THINK_DELAY_SLEEPY)
+                     THINK_DELAY_HEAVY, THINK_DELAY_JITTER, THINK_DELAY_MAX,
+                     THINK_DELAY_READ_FROM, THINK_DELAY_READ_PER_100, THINK_DELAY_SLEEPY)
 
 
 # 画面に出せる表情。frontend/src/avatar.ts の LifeMood と同じ並びにする。
@@ -57,7 +59,10 @@ def think_delay(text: str, mood: str = '') -> float:
     """返事を書き始めるまでの待ち（秒）。0なら待たない。
 
     即答が続くと機械的に見え、重い相談ほど不自然になる。逆に待たせ過ぎると
-    ただ遅いアプリになるので、材料は「話の重さ」と「眠さ」だけに絞る。
+    ただ遅いアプリになるので、材料は「話の重さ」「眠さ」「読む量」だけに絞る。
+
+    待つと決めた回は、毎回わずかに違う長さで待つ。0.9秒きっかりが繰り返されると、
+    間を置いていること自体が規則として見えてしまうため。
     """
     value = str(text or '')
     delay = 0.0
@@ -65,4 +70,10 @@ def think_delay(text: str, mood: str = '') -> float:
         delay = THINK_DELAY_HEAVY
     elif mood in ('眠そう', 'sleepy'):
         delay = THINK_DELAY_SLEEPY
+    # 長文はまず読む時間がかかる。短い雑談は今までどおり即答のまま。
+    if len(value) > THINK_DELAY_READ_FROM:
+        delay += (len(value) - THINK_DELAY_READ_FROM) / 100 * THINK_DELAY_READ_PER_100
+    if not delay:
+        return 0.0
+    delay *= random.uniform(1 - THINK_DELAY_JITTER, 1 + THINK_DELAY_JITTER)
     return min(delay, THINK_DELAY_MAX)

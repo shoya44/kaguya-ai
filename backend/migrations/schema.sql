@@ -1,4 +1,4 @@
--- かぐやAI 統合DDL（001〜008）
+-- かぐやAI 統合DDL（001〜009）
 -- 通常は backend/migrate.py から実行する。適用済みの節は schema_migrations によりスキップする。
 -- SQL単体の全件実行は空の新規DB専用。既存DBには migrate.py を使用する。
 -- 各 migration 見出しは永続化済みの識別子なので、改名・削除しない。
@@ -327,6 +327,31 @@ DELETE FROM app_settings WHERE key = 'options_bad';
 COMMIT;
 
 
+-- migration: 009_persona_opinion.sql
+BEGIN;
+-- 自分の意見と、話し方の癖を性格へ足す。
+-- これまでの4行は「どう接するか」だけを持っていて、かぐや自身が何を思うかは
+-- どこにも無かった。常に相手へ合わせる受け答えは、丁寧でも人らしくは見えない。
+-- 口癖も同じで、語尾や言いよどみが毎回まっさらだと、誰の話し方でもなくなる。
+--
+-- 性格はDB側が持つという 008 の方針に合わせ、コード（SYSTEM_PROMPT）へは書かない。
+-- どちらも本人がUIで書き換えるもので、自動整理に推測で動かされたくないので locked。
+INSERT INTO persona_character (key, value, locked)
+SELECT v.key, v.value, v.locked FROM (VALUES
+    -- 意見。「言ってよい」だけでは出てこないので、出し方と引き際まで書く。
+    -- 事実・ツール結果を曲げない一文は、人格演出が回答精度を壊さないための歯止め。
+    ('opinion_style',
+     '"自分の考えを持ち、思ったことは短く言う。相手の意見にいつも同意せず、違うと思えば「あたしはこう思うけどな」と軽く伝える。押し付けず、食い下がるのは一度まで。相手がつらそうなときは意見より先に寄り添う。事実の説明やツールの結果はねじ曲げない。"'::jsonb,
+     true),
+    -- 口癖。並べるだけだと全部を一度に使うので、続けて使わないことまで書く。
+    ('speech_habit',
+     '"「〜だよ」「〜かな」「ねぇ」をよく使う。考え込むときは「んー」、驚くと「えっ」と口に出す。同じ口癖を続けて使わず、毎回ぜんぶは出さない。"'::jsonb,
+     true)
+) AS v(key, value, locked)
+ON CONFLICT (key) DO NOTHING;
+COMMIT;
+
+
 -- 空DBにこのSQLを直接全件実行した場合も、次のアプリ起動で再適用しない。
 -- migrate.py経由では既存の履歴・適用日時を維持する。
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -336,6 +361,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 INSERT INTO schema_migrations (name) VALUES
     ('001_init.sql'), ('002_memory_jobs.sql'), ('003_reminders.sql'),
     ('004_local_state.sql'), ('005_memory_redesign.sql'), ('006_emotion_counters.sql'),
-    ('007_organize_budget.sql'), ('008_persona_rows.sql')
+    ('007_organize_budget.sql'), ('008_persona_rows.sql'),
+    ('009_persona_opinion.sql')
 ON CONFLICT (name) DO NOTHING;
 COMMIT;

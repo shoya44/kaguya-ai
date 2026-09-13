@@ -239,7 +239,7 @@ export class Controls {
         continue;
       }
       const title = document.createElement('strong');
-      const personaLabels: Row = { reply_style: '返答の長さ・話し方', addressing: 'あなたの呼び方', support_style: '相談するときの接し方', base_personality: 'かぐやの基本性格' };
+      const personaLabels: Row = { reply_style: '返答の長さ・話し方', addressing: 'あなたの呼び方', support_style: '相談するときの接し方', base_personality: 'かぐやの基本性格', opinion_style: '自分の意見の出し方', speech_habit: '口癖・話し方の癖' };
       title.textContent = this.layer === 'raw' ? `${row.role === 'user' ? 'あなた' : 'かぐや'} ／ ${row.status}`
         : row.topic_key || personaLabels[row.key] || row.key;
       const value = document.createElement('p'); value.textContent = row.content || row.summary || String(row.value);

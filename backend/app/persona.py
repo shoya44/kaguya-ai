@@ -1,8 +1,9 @@
 import json
+import random
 
 from .proactive import tokyo_now
 from .living_prompt import living_context, time_hint
-from .tuning import TRAIT_STANCE
+from .tuning import REPLY_LENGTH_SWAY, TRAIT_STANCE
 from . import reply_hints
 
 _WEEKDAYS = '月火水木金土日'
@@ -31,7 +32,8 @@ SYSTEM_PROMPT = '''あなたは「かぐや」。一人称は「あたし」。
 # DBが読めないときだけ使う最低限の性格。正常時はプロンプトへ出ないので字数を食わない。
 # ここが空だと、DB障害のあいだ性格の無い受け答えになる。
 DEFAULT_PERSONA = ({'key': 'base_personality',
-                    'value': '明るく無邪気で好奇心旺盛。子供っぽくわがまま。相手がつらそうならふざけない。'},)
+                    'value': '明るく無邪気で好奇心旺盛。子供っぽくわがまま。相手がつらそうならふざけない。'
+                             '思ったことは短く言い、違うと思えば軽く伝える。押し付けない。'},)
 
 
 MIND_GUIDANCE = '''
@@ -46,30 +48,56 @@ Kaguya Mindの情報がある場合、それはかぐや自身の現在の感情
 
 # 気分と慣れから決める「今回の返し方」。固定性格は変えず、長さと砕け具合だけを
 # 動かす。毎回まったく同じ温度で返ってくるのが、いちばん機械的に見えるため。
+# 同じ気分でも言い回しは複数持ち、1つ選ぶ。指示文が毎ターン一字一句同じだと、
+# 返ってくる文の形まで揃ってしまう。意味は変えず、寄り方だけを変える。
 _TONE_BY_MOOD = {
-    '少し心配している': '相手を気づかい、茶化さずに聞く。急かさない。',
-    'ちょっと拗ね気味': 'ほんの少しだけ不服そうに、でも突き放さずに返す。',
-    '眠そう': '短めに、ゆっくりした口調で返す。',
-    'ご機嫌': 'いつもより弾んだ調子で返す。',
-    '好奇心高め': '相手の話に関心を示し、知りたいことを一つだけ添える。',
-    '少し退屈': '少しかまってほしそうな一言を自然に混ぜる。',
+    '少し心配している': ('相手を気づかい、茶化さずに聞く。急かさない。',
+                 '心配が声に出る。まず相手の様子を確かめてから話す。'),
+    'ちょっと拗ね気味': ('ほんの少しだけ不服そうに、でも突き放さずに返す。',
+                 '少し口をとがらせた調子で返す。嫌味にはしない。'),
+    '眠そう': ('短めに、ゆっくりした口調で返す。', '眠気の残る、間延びした調子で返す。'),
+    'ご機嫌': ('いつもより弾んだ調子で返す。', '機嫌がよく、言葉が少し多くなる。'),
+    '好奇心高め': ('相手の話に関心を示し、知りたいことを一つだけ添える。',
+              '興味が先に出る。聞きたいことを一つだけ挟む。'),
+    '少し退屈': ('少しかまってほしそうな一言を自然に混ぜる。',
+             '手持ち無沙汰な様子を、一言だけにじませる。'),
 }
 # まだ距離がある段階。ここに無い慣れ方は「気心が知れている」側として扱う。
 _KEEP_DISTANCE = frozenset({'まだ知り合ったばかり', '少し慣れてきた'})
+_DISTANT = ('馴れ馴れしくしすぎず、少し距離を保つ。', 'まだ少し遠慮がある。踏み込みすぎない。')
+_CLOSE = ('気心が知れている相手として、短く砕けて返してよい。',
+          '遠慮のいらない相手。言葉を選びすぎず、そのまま返してよい。')
+# 分量の揺れ。人は毎回同じ長さでは話さない。多くのターンでは何も足さず、
+# ときどきだけ短い側・長い側へ振る（確率は tuning.REPLY_LENGTH_SWAY）。
+_SHORTER = '今回は一言で返してよい。無理に文を足さない。'
+_LONGER = '今回は少しだけ言葉を足して、いつもより丁寧に話してよい。'
+
+
+def length_sway(roll: float) -> str:
+    """0〜1の値から、今回の分量の振れを決める。残りの確率では何も足さない。"""
+    if roll < REPLY_LENGTH_SWAY:
+        return _SHORTER
+    if roll < REPLY_LENGTH_SWAY * 2:
+        return _LONGER
+    return ''
 
 
 def tone_hint(mind=None, relationship=None) -> str:
     """返し方の一言指示。材料がなければ空文字（従来どおり指示なし）。"""
     parts = []
     if isinstance(mind, dict):
-        hint = _TONE_BY_MOOD.get(str(mind.get('現在の気分', '')))
-        if hint:
-            parts.append(hint)
+        choices = _TONE_BY_MOOD.get(str(mind.get('現在の気分', '')))
+        if choices:
+            parts.append(random.choice(choices))
     # 慣れが分からないときは何も足さない。空のまま「気心が知れている」にしない。
     closeness = str((relationship or {}).get('慣れ', '')) if isinstance(relationship, dict) else ''
     if closeness:
-        parts.append('馴れ馴れしくしすぎず、少し距離を保つ。' if closeness in _KEEP_DISTANCE
-                     else '気心が知れている相手として、短く砕けて返してよい。')
+        parts.append(random.choice(_DISTANT if closeness in _KEEP_DISTANCE else _CLOSE))
+    # 分量の揺れは、他に材料があるターンだけ。DBが読めず気分も慣れも分からない
+    # ときまで足すと、最小プロンプトに毎回別の一行が紛れ込む。
+    sway = length_sway(random.random()) if parts else ''
+    if sway:
+        parts.append(sway)
     return ' '.join(parts)
 
 

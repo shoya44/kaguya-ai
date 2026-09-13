@@ -12,9 +12,10 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field
 
 # 画面に出す接し方の全行。UIからはこの全てを編集できる。
-PERSONA_KEYS = ('base_personality', 'reply_style', 'addressing', 'support_style')
+PERSONA_KEYS = ('base_personality', 'reply_style', 'addressing', 'support_style',
+                'opinion_style', 'speech_habit')
 # 自動整理（LLM）が書き換えを提案してよいキー。ここに無い行は推測では動かない。
-# base_personality は核なので、本人がUIで書くときだけ変わる。
+# base_personality・opinion_style・speech_habit は核なので、本人がUIで書くときだけ変わる。
 PERSONA_AUTO_KEYS = ('reply_style', 'addressing', 'support_style')
 
 

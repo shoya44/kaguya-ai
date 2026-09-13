@@ -178,5 +178,17 @@ class ThinkDelayTests(unittest.TestCase):
     def test_the_pause_never_makes_the_app_feel_slow(self):
         from app import tuning
         from app.mood import think_delay
-        for text, mood in (('つらい', '眠そう'), ('疲れた', ''), ('やっほ', '眠そう')):
-            self.assertLessEqual(think_delay(text, mood), tuning.THINK_DELAY_MAX)
+        for text, mood in (('つらい', '眠そう'), ('疲れた', ''), ('やっほ', '眠そう'),
+                           ('しんどい。' + 'あ' * 600, '眠そう')):
+            for _ in range(20):
+                self.assertLessEqual(think_delay(text, mood), tuning.THINK_DELAY_MAX)
+
+    def test_the_same_message_is_not_answered_after_the_exact_same_pause(self):
+        """0.9秒きっかりが毎回続くと、間そのものが規則として見える。"""
+        from app.mood import think_delay
+        self.assertGreater(len({think_delay('最近しんどい') for _ in range(30)}), 1)
+
+    def test_a_long_message_takes_a_moment_to_read(self):
+        from app.mood import think_delay
+        # 重い相談でも眠い時間帯でもないが、読む量そのものが間になる。
+        self.assertGreater(think_delay('聞いてほしいことがあるんだけど、' + 'あ' * 300), 0)
