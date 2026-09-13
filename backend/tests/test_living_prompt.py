@@ -180,10 +180,10 @@ class DatabaseRecallTests(unittest.TestCase):
         selected, unused, turn_id, client_id = uuid4(), uuid4(), uuid4(), uuid4()
         with self.db.session() as conn:
             conn.execute('TRUNCATE memory_long,memory_short')
-            for key, row_id in [('猫', selected), ('山', unused)]:
+            for key, row_id in [('猫好き', selected), ('登山', unused)]:
                 conn.execute('''INSERT INTO memory_long(id,topic_key,summary,kind,support_level)
                     VALUES (%s,%s,%s,'explicit','stated')''', (row_id, key, key))
-            result = memory_store.recall(conn, '猫')
+            result = memory_store.recall(conn, '猫好き')
             self.assertEqual([row['id'] for row in result['wisdom']], [selected])
             self.assertIsNone(result['wisdom'][0]['last_used_at'])
             conn.execute('''INSERT INTO memory_short(id,turn_id,role,content,status,origin_client_id,input_mode)
