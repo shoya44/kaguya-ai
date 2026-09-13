@@ -72,7 +72,7 @@ function harness(options = {}) {
     location: { hostname: '127.0.0.1', port: '5173', origin: 'http://127.0.0.1:5173' },
     // かぐやの動きは avatar.test.cjs が見る。ここでは「どの出来事で
     // どの動きを頼んだか」だけを覚えて、繋ぎ間違いを止める。
-    Avatar: class { setState() {} react(nudge) { nudges.push(nudge); } },
+    Avatar: class { setState() {} hold() {} react(nudge) { nudges.push(nudge); } },
     isTauri: () => !!options.tauri,
     invoke: options.invoke ?? (async () => 'owned'),
     sessionStorage: storage(sessionData), localStorage: storage(localData),
@@ -410,4 +410,16 @@ test('書き始めに気づくが、打つたびには反応を頼まない', ()
   input.handlers.input();
   // 間隔を絞るのはavatar側。main.tsは入力のたびに頼んでよい。
   assert.deepEqual(h.nudges, ['perk', 'perk']);
+});
+
+test('通話中は、簡易表示でも終わらせるボタンが残るようにする', async () => {
+  const h = harness(); await connected(h);
+  // 簡易表示は吹き出しが出ると入力欄ごと隠れる。通話中に隠れると
+  // 終わらせるボタンまで消えるので、通話中であることをCSSへ伝える。
+  h.run('voiceToggle(true)');
+  assert.ok(h.elements.app.classes.has('calling'), '通話開始で calling が付く');
+  h.run('voiceToggle(false)');
+  assert.ok(!h.elements.app.classes.has('calling'), '通話終了で calling が外れる');
+  // 絵も通話に合わせて止め、また動き出す。
+  assert.deepEqual(h.nudges.slice(-2), ['inhale', 'nod']);
 });

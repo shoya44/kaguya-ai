@@ -818,7 +818,9 @@ body.mini-mode {
 /* 返答の吹き出し（#proactive-bubble）が表示中は、同じ位置に重なる入力欄を
    隠す。両方ともキャラの真上に絶対/通常配置しているため、同時に出すと
    重なって読みにくくなるのを防ぐ。 */
-#app.mode-mini:has(#proactive-bubble:not([hidden])) #input-form {
+/* 吹き出しが出ている間は入力欄を隠す。ただし通話中は隠さない。
+   隠すと通話を終わらせるボタンごと消えてしまう。 */
+#app.mode-mini:has(#proactive-bubble:not([hidden])):not(.calling) #input-form {
   display: none;
 }
 
@@ -841,9 +843,32 @@ body.mini-mode {
   color: rgba(242, 238, 252, 0.6);
 }
 
-/* 操作ボタンは出さない。送信はEnterキー、通話は通常表示から。 */
-#app.mode-mini .composer-actions {
+/* 送信ボタンと停止ボタンは出さない。送信はEnterキーで足りる。
+   通話だけは、押さないと始められないのでボタンを残す。 */
+#app.mode-mini #send-btn,
+#app.mode-mini #cancel-btn {
   display: none;
+}
+
+#app.mode-mini .composer-actions {
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+/* 幅160pxに、消音・音量・通話の3つを1行で収める。 */
+#app.mode-mini #voice-gain {
+  width: 58px;
+}
+
+#app.mode-mini .composer-actions button {
+  width: 32px;
+  height: 32px;
+}
+
+#app.mode-mini .composer-actions svg {
+  width: 17px;
+  height: 17px;
 }
 
 /* かぐやの返答をキャラ上部に一時表示する吹き出し（自発的な声かけと共用）。
