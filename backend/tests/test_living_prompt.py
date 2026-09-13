@@ -9,7 +9,8 @@ from app import memory_api, memory_store
 from app.db import Database
 from app.living_prompt import ACTIVITY_LABELS, derive_mood, living_context, time_hint
 from app.models import Completion
-from app.persona import memory_prompt
+from app.persona import (_CLOSE, _DISTANT, _LONGER, _SHORTER, _TONE_BY_MOOD,
+                         length_sway, memory_prompt, tone_hint)
 
 
 NOW = datetime(2026, 9, 13, 8, 30, tzinfo=timezone(timedelta(hours=9)))
@@ -68,6 +69,41 @@ class PromptTests(unittest.TestCase):
         self.assertEqual(values['Living：かぐやの今']['mood'], 'calm')
         self.assertEqual(values['Persona：かぐやの好み'][0]['好み'], '好き')
         self.assertEqual(values['Memory：気にかけている話題'][0]['話題'], '面接')
+
+
+class ToneVariationTests(unittest.TestCase):
+    """今回の返し方。同じ気分でも、毎回そっくり同じ指示にはしない。"""
+
+    def test_the_same_mood_does_not_always_give_the_same_wording(self):
+        self.assertGreater(len({tone_hint({'現在の気分': 'ご機嫌'}) for _ in range(60)}), 1)
+
+    def test_the_wording_always_comes_from_that_mood(self):
+        # 揺らしてよいのは言い回しだけ。別の気分の指示が混ざってはいけない。
+        for _ in range(30):
+            self.assertTrue(tone_hint({'現在の気分': '少し心配している'})
+                            .startswith(_TONE_BY_MOOD['少し心配している']))
+
+    def test_distance_still_follows_familiarity(self):
+        for closeness, expected in (('まだ知り合ったばかり', _DISTANT),
+                                    ('長く話していて気心が知れている', _CLOSE)):
+            with self.subTest(closeness=closeness):
+                for _ in range(20):
+                    self.assertTrue(tone_hint(None, {'慣れ': closeness}).startswith(expected))
+
+    def test_the_length_sway_only_fires_sometimes(self):
+        from app.tuning import REPLY_LENGTH_SWAY
+        self.assertEqual(length_sway(0), _SHORTER)
+        self.assertEqual(length_sway(REPLY_LENGTH_SWAY), _LONGER)
+        self.assertEqual(length_sway(REPLY_LENGTH_SWAY * 2), '')
+        self.assertEqual(length_sway(1), '')
+
+    def test_a_turn_without_any_material_stays_silent(self):
+        # 気分も慣れも分からない回は、分量の揺れも足さない（最小プロンプトのまま）。
+        self.assertEqual({tone_hint() for _ in range(200)}, {''})
+
+    def test_the_sway_does_sometimes_reach_a_real_turn(self):
+        hints = {tone_hint({'現在の気分': 'ご機嫌'}) for _ in range(200)}
+        self.assertTrue(any(hint.endswith((_SHORTER, _LONGER)) for hint in hints))
 
 
 class RecallTests(unittest.TestCase):

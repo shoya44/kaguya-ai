@@ -206,7 +206,7 @@ READMEを確認してiPhone対応を教えて</code></pre>
 <p>PC内動画の再生とBAT実行は、Function Callingで任意パスを操作する方式ではなく、<code>backend/pc_access.json</code> の明示的な許可リストを使う別機能です。安全のため、動画は登録フォルダ内のMP4、BATは事前登録済みファイルだけを対象にします。通常チャットからの依頼はサーバー側で保守的にローカル判定し、依頼元端末のファイルタブを開くだけです。BATの実行そのものは従来どおり確認トークンを発行し、ブラウザで明示確認してから行います。</p>
 <h2>記憶</h2>
 <h3>会話履歴・長期記憶・接し方</h3>
-<div class="scroll"><table><tr><th>層</th><th>画面上の呼び方</th><th>役割</th><th>できる操作</th></tr><tr><td><code>memory_short</code></td><td>会話履歴</td><td>過去のやり取りを読み返す</td><td>訂正 / 削除</td></tr><tr><td><code>memory_long</code></td><td>あなたについて覚えていること</td><td>好み・習慣・続いている事情</td><td>訂正 / もう当てはまらない</td></tr><tr><td><code>persona_character</code></td><td>かぐやの接し方</td><td>呼び方、返答の長さ、相談時の接し方</td><td>変更 / 元に戻す</td></tr></table></div>
+<div class="scroll"><table><tr><th>層</th><th>画面上の呼び方</th><th>役割</th><th>できる操作</th></tr><tr><td><code>memory_short</code></td><td>会話履歴</td><td>過去のやり取りを読み返す</td><td>訂正 / 削除</td></tr><tr><td><code>memory_long</code></td><td>あなたについて覚えていること</td><td>好み・習慣・続いている事情</td><td>訂正 / もう当てはまらない</td></tr><tr><td><code>persona_character</code></td><td>かぐやの接し方</td><td>呼び方、返答の長さ、相談時の接し方、自分の意見の出し方、口癖</td><td>変更 / 元に戻す</td></tr></table></div>
 <p>知恵の蓄積（<code>memory_long</code>）と会話履歴の長期保存（<code>memory_short</code>）は別に設計しています。整理済みで7日を過ぎた会話原文は削除されますが、そこから作られた知恵は残ります。</p>
 <p>「記憶」タブの先頭には、いま何件が長期記憶への反映待ちかと、最近覚えた・更新した内容を出します。かぐやが返答で実際に参照した記憶は、その返答の下の「参照した記憶」から確認できます。</p>
 <p>会話履歴・長期記憶・接し方に加えて、「かぐやの心」ではKaguya Mindの保存内容を閲覧できます。種類の切り替えは即時反映され、検索は「表示・更新」で実行します。読み込み中は古い一覧とページ操作を無効にし、取得に失敗した場合は再試行の案内を表示します。</p>

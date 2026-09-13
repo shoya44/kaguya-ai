@@ -875,7 +875,7 @@ PC内動画の再生とBAT実行は、Function Callingで任意パスを操作�
 |---|---|---|---|
 | `memory_short` | 会話履歴 | 過去のやり取りを読み返す | 訂正 / 削除 |
 | `memory_long` | あなたについて覚えていること | 好み・習慣・続いている事情 | 訂正 / もう当てはまらない |
-| `persona_character` | かぐやの接し方 | 呼び方、返答の長さ、相談時の接し方 | 変更 / 元に戻す |
+| `persona_character` | かぐやの接し方 | 呼び方、返答の長さ、相談時の接し方、自分の意見の出し方、口癖 | 変更 / 元に戻す |
 
 知恵の蓄積（`memory_long`）と会話履歴の長期保存（`memory_short`）は別に設計しています。
 整理済みで7日を過ぎた会話原文は削除されますが、そこから作られた知恵は残ります。
@@ -1330,7 +1330,8 @@ emotion / activityは表示上の略記。値の範囲はDB制約とアプリ側
 | previous_source_wisdom_ids | jsonb | 直前の根拠ID配列 |
 | updated_at | timestamptz | 更新時刻 |
 
-key: base_personality / reply_style / addressing / support_style / style_feedback / disposition。一般UIで変更・復元する項目はAPI側で制限。
+key: base_personality / reply_style / addressing / support_style / opinion_style / speech_habit / style_feedback / disposition。一般UIで変更・復元する項目はAPI側で制限。
+opinion_style（自分の意見の出し方）と speech_habit（口癖）は自動整理の対象外で、本人が画面から書いたときだけ変わります。
 
 ### persona_favorite / app_settings
 
