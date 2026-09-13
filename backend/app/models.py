@@ -22,6 +22,7 @@ class Turn(BaseModel):
 
 class Completion(BaseModel):
     answer: str = Field(min_length=1, max_length=30000)
+    recalled_ids: list[UUID] = Field(default_factory=list, max_length=5)
 
 
 class Failure(BaseModel):

@@ -25,6 +25,7 @@ class Controller:
         self.phase = 'idle'
         self.cancel_requested = False
         self.unsaved = None
+        self.recalled_ids = []
         self.editing = False
         self.voice_active = False
         self.runtime = runtime
@@ -190,6 +191,7 @@ class Controller:
 
         # Reserve without yielding; job cancellation happens inside the owned task.
         self.active = dict(turn)
+        self.recalled_ids = []
         self.last_chat_at = time.monotonic()
         self.turn_started = self.last_chat_at
         self.partial_answer = ''
@@ -233,8 +235,6 @@ class Controller:
             admitted = True
             await self.broadcast({'type': 'chat.accepted', 'turn_id': turn_id,
                                   'text': turn['text'], 'client_id': turn['client_id']})
-            if self.living:
-                self.living.seen(tokyo_now(), counted=False)
             hint = relationship.style_feedback(turn['text'])
             if hint:
                 # 接し方と同じ場所へ残す。演出用なので、保存できなくても会話は続ける。
@@ -267,6 +267,10 @@ class Controller:
                 # 始まる前の気分」になる。人間の思い出し方と同じ順序。
                 recalled = await self.memory.call('GET', '/recall', params={
                     'text': turn['text'], 'context': hint, 'mood': self.face(tokyo_now())})
+                self.recalled_ids = [str(row['id']) for row in recalled.get('wisdom', [])[:5]]
+            # 想起が前回のlast_seen_atを取得してから、今回の到着を記録する。
+            if self.living:
+                self.living.seen(tokyo_now(), counted=False)
             mind_context = self.mind.before_reply(turn['text'], tokyo_now(), recalled) if self.mind else {}
             await self.emit_mood(refresh=True)
 
@@ -293,7 +297,7 @@ class Controller:
                 raise asyncio.CancelledError
             self.unsaved = (turn, answer)
             try:
-                await self.memory.complete(turn_id, answer)
+                await self._complete(turn_id, answer)
             except ChatError:
                 await self.broadcast(self.unsaved_event())
                 return
@@ -353,7 +357,7 @@ class Controller:
         self.phase = 'saving'
         try:
             await self.broadcast(self.state())
-            await self.memory.complete(turn_id, answer)
+            await self._complete(turn_id, answer)
             self.unsaved = None
             if self.living:
                 self.living.seen(tokyo_now(), counted=True)
@@ -367,6 +371,12 @@ class Controller:
             self.active = None
             self.phase = 'idle'
             await self.broadcast(self.state())
+
+    async def _complete(self, turn_id, answer):
+        if self.recalled_ids:
+            await self.memory.complete(turn_id, answer, recalled_ids=self.recalled_ids)
+        else:
+            await self.memory.complete(turn_id, answer)
 
     async def close(self):
         if self.periodic_task:

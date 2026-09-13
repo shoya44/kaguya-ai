@@ -92,6 +92,9 @@ def complete(turn_id: UUID, body: Completion, request: Request):
                 VALUES (%s,%s,'assistant',%s,'completed',%s,%s)''',
                 (uuid4(), turn_id, body.answer, user['origin_client_id'], user['input_mode']))
         conn.execute("UPDATE memory_short SET status='completed' WHERE turn_id=%s AND role='user'", (turn_id,))
+        if not existing and body.recalled_ids:
+            conn.execute('UPDATE memory_long SET last_used_at=now() WHERE id=ANY(%s)',
+                         (body.recalled_ids,))
     return {'ok': True}
 
 
@@ -164,8 +167,9 @@ class MemoryClient:
     async def context(self):
         return await self.call('GET', '/context')
 
-    async def complete(self, turn_id: str, answer: str):
-        return await self.call('POST', f'/turns/{turn_id}/complete', json={'answer': answer})
+    async def complete(self, turn_id: str, answer: str, recalled_ids=None):
+        return await self.call('POST', f'/turns/{turn_id}/complete',
+                               json={'answer': answer, 'recalled_ids': recalled_ids or []})
 
     async def fail(self, turn_id: str, status: str):
         return await self.call('POST', f'/turns/{turn_id}/fail', json={'status': status})

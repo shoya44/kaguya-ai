@@ -155,7 +155,8 @@ class RecallOrderTests(unittest.IsolatedAsyncioTestCase):
         from types import SimpleNamespace
         from app.controller import Controller
 
-        recalled = {'wisdom': [{'topic_key': '猫', 'summary': '猫が好き', 'importance': 5}],
+        recalled = {'wisdom': [{'id': '00000000-0000-0000-0000-000000000001',
+                               'topic_key': '猫', 'summary': '猫が好き', 'importance': 5}],
                     'persona': []}
         calls = []
 

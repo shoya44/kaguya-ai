@@ -1,6 +1,8 @@
 import json
 
 from .proactive import tokyo_now
+from .living_prompt import living_context, time_hint
+from .tuning import TRAIT_STANCE
 
 _WEEKDAYS = '月火水木金土日'
 
@@ -66,13 +68,29 @@ def tone_hint(mind=None, relationship=None) -> str:
 
 def memory_prompt(recalled=None, proactive=None, now=None):
     recalled = recalled or {}
+    now = now or tokyo_now()
     values = {
         '現在日時': now_label(now),
+        '時間帯の口調': time_hint(now),
         '接し方': [{'key': row['key'], 'value': row['value']} for row in recalled.get('persona', [])[:12]
                     if row['key'] != 'base_personality'],
         '関連する記憶': [{'内容': row['summary'], '種類': row['kind'], '根拠': row['support_level']}
                        for row in recalled.get('wisdom', [])[:5]],
     }
+    values = {key: value for key, value in values.items() if value}
+    living = living_context(recalled.get('living'), recalled.get('mood', ''), now)
+    if living:
+        values['Living：かぐやの今'] = living
+    if recalled.get('pending_topic'):
+        values['Memory：気にかけている話題'] = [
+            {'話題': row['topic'], '種類': row['kind'], 'きっかけ': row['quote']}
+            for row in recalled['pending_topic'][:3]]
+        values['気がかりの扱い'] = '今の話題を邪魔しない範囲で短く触れてよい。毎回蒸し返さず、結果は推測しない。'
+    if recalled.get('favorites'):
+        values['Persona：かぐやの好み'] = [
+            {'対象': row['name'], '好み': '好き' if row['valence'] >= TRAIT_STANCE['like'] else
+             '苦手' if row['valence'] <= TRAIT_STANCE['dislike'] else 'まだ曖昧'}
+            for row in recalled['favorites'][:2]]
     relationship = recalled.get('relationship')
     if isinstance(relationship, dict) and relationship:
         values['関係性'] = relationship
