@@ -131,6 +131,22 @@ async function transitionMiniMode(enabled: boolean): Promise<void> {
   applyMiniUi(false);
 }
 
+// 簡易表示へ切り替えてから出す。先に出すと、縮む前の通常表示が見えてしまう。
+// 切り替えに失敗しても、出すところまでは必ず行う。出せないと、タスクバーに
+// 出していないぶん画面へ戻る手段が無くなる。
+async function showAsMini(): Promise<void> {
+  try {
+    await setMiniMode(true);
+  } catch {
+    showError('簡易表示に切り替えられませんでした。', null);
+  }
+  // 既に簡易表示だったときは上の切り替えが何もしないので、ここで必ず出す。
+  const win = getCurrentWindow();
+  await win.unminimize().catch(() => {});
+  await win.show().catch(() => {});
+  await win.setFocus().catch(() => {});
+}
+
 // キャラ画像を右クリックすると、表示切替と終了をまとめた簡易メニューを出す。
 // 画面上に専用ボタンを置かないぶん、右クリックが簡易版での主な操作導線になる。
 function setupAvatarContextMenu(): void {
@@ -1046,9 +1062,8 @@ async function main(): Promise<void> {
   // トレイのアイコンを押されたら簡易表示で出す。タスクバーに出さない設定なので、
   // トレイが唯一の入口になる。通常表示で開いていたときも簡易表示へ切り替える。
   if (isTauri()) {
-    listen('ui.mini', () => {
-      setMiniMode(true).catch(() => showError('簡易表示に切り替えられませんでした。', null));
-    }).catch(() => showError('トレイ操作を接続できませんでした。', null));
+    listen('ui.mini', () => { void showAsMini(); })
+      .catch(() => showError('トレイ操作を接続できませんでした。', null));
   }
   document.getElementById('mini-toggle-btn')?.addEventListener('click', () => {
     setMiniMode(true).catch(() => showError('簡易表示に切り替えられませんでした。', null));
