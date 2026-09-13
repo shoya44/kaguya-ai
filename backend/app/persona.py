@@ -106,6 +106,8 @@ def memory_prompt(recalled=None, proactive=None, now=None, text='', history=None
     tone = tone_hint(mind if mind_enabled else None, relationship)
     if tone:
         values['今回の返し方'] = tone
+    if text:
+        values['応答方針'] = reply_hints.RESPONSE_PLAN[reply_hints.intent(text)]
     look_back = reply_hints.callback(recalled, text, history, now)
     if look_back:
         values['前に話したこと'] = look_back

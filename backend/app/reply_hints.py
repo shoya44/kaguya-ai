@@ -119,3 +119,35 @@ def callback(recalled: dict, text: str, history, now) -> dict:
     return {'話題': best['topic_key'], '覚えていること': best['summary'],
             '触れ方': '「前に話した◯◯だね」のように、短く一度だけ触れる。'
                     '記録にない日時・発言・出来事は足さない。今の話題を押しのけない。'}
+
+
+# --- 応答方針（共感・相談・雑談） ------------------------------------------
+# 「疲れた」に助言を返す、「どうしたらいい？」に共感だけで終わる、という
+# ずれを防ぐ。判定は発言の言葉づかいだけで行い、LLMもDBも使わない。
+# 分からないときは雑談（何も足さない側）に倒す。
+_NO_ADVICE = re.compile(r'アドバイス(?:は)?いらない|聞いて(?:ほしい|て)|愚痴|吐き出')
+_CONSULT = re.compile(r'どうしたら|どうすれば|どうやって|どうしよう|方法|やり方|手順'
+                      r'|教えて|決められない|どっちが|選べない|助けて')
+_EMPATHY = re.compile(r'疲れた|つらい|しんど|きつい|悲しい|落ち込|不安|最悪|泣き')
+
+RESPONSE_PLAN = {
+    'empathy': 'まず短くねぎらう。助言・解決策・原因の掘り下げは、求められるまで出さない。'
+               '質問で終わらず、相手の気持ちをそのまま受け止める。',
+    'consult': '求められた相談に答える。実行できる具体案を先に、短く伝える。'
+               'ねぎらいは一言に留め、前置きを長くしない。',
+    'chat': '相づちと感想で受け、話題を少し広げる。助言はしない。'
+            '無理に質問を足さず、一言で終わってもよい。',
+}
+
+
+def intent(text: str) -> str:
+    """ユーザー発話の意図。'empathy' / 'consult' / 'chat' のいずれか。"""
+    value = str(text or '')
+    if _NO_ADVICE.search(value):
+        return 'empathy'
+    # 弱音と一緒に聞かれたときは、聞かれている側を採る（相談を共感で流さない）。
+    if _CONSULT.search(value):
+        return 'consult'
+    if _EMPATHY.search(value):
+        return 'empathy'
+    return 'chat'

@@ -149,3 +149,23 @@ class CallbackTests(unittest.TestCase):
         # 直近の返答で振り返ったばかりなら、続けて振り返らない。
         history = [{'text': 'ねえ', 'answer': 'そういえば猫の話、どうなった？'}]
         self.assertEqual(callback(recalled, 'ひさしぶり', history, NOW), {})
+
+
+class IntentTests(unittest.TestCase):
+    """共感・相談・雑談で、返答の構成を切り替える。"""
+
+    def test_three_intents_change_the_plan(self):
+        from app.persona import memory_prompt
+        from app.reply_hints import RESPONSE_PLAN, intent
+        for said, expected in [
+            ('疲れた', 'empathy'), ('しんどい、聞いてほしい', 'empathy'),
+            ('どうしたらいい？', 'consult'), ('疲れたけど、どうすればいいかな', 'consult'),
+            ('今日暑いね', 'chat'), ('', 'chat'),
+        ]:
+            with self.subTest(said=said):
+                self.assertEqual(intent(said), expected)
+        # 「疲れた」には助言を出さず、「どうしたらいい？」には具体案を求める。
+        self.assertIn('助言', RESPONSE_PLAN['empathy'])
+        self.assertIn('具体案', RESPONSE_PLAN['consult'])
+        self.assertIn(RESPONSE_PLAN['empathy'], memory_prompt(now=NOW, text='疲れた'))
+        self.assertIn(RESPONSE_PLAN['chat'], memory_prompt(now=NOW, text='今日暑いね'))
