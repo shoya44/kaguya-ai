@@ -423,3 +423,10 @@ test('通話中は、簡易表示でも終わらせるボタンが残るよう�
   // 絵も通話に合わせて止め、また動き出す。
   assert.deepEqual(h.nudges.slice(-2), ['inhale', 'nod']);
 });
+
+test('タスクバーに出さない設定が残っていること', () => {
+  // トレイが唯一の入口になる設定。外すとタスクバーにも出てしまう。
+  const conf = JSON.parse(fs.readFileSync(path.join(__dirname, '../src-tauri/tauri.conf.json'), 'utf8'));
+  const main = conf.app.windows.find(w => w.label === 'main');
+  assert.equal(main.skipTaskbar, true);
+});
