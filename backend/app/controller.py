@@ -9,7 +9,7 @@ from .mood import Mood, think_delay
 from .tuning import FACE_REFRESH_TICKS, PROACTIVE_COMPOSE_SECONDS
 from .proactive import Proactive, tokyo_now
 from .jobs import Jobs
-from . import pc, relationship, tools
+from . import pc, relationship, tools, update_awareness
 
 # 会話から静音（声かけ停止）を出入りする言い方。ツール呼び出しを待たずに
 # その場で効かせたいので、ここだけは言葉で直に見る。
@@ -316,6 +316,7 @@ class Controller:
                 if delay:
                     await asyncio.sleep(delay)
                 recalled['relationship'] = relationship.context(self.living) if self.living else {}
+                recalled['app_update'] = update_awareness.context(self.runtime, turn['text'])
                 if mind_context:
                     recalled['mind'] = mind_context
                 self.references = ([{'label': row['topic_key'], 'text': row['summary']}
@@ -414,6 +415,7 @@ class Controller:
         if self.concern_topics:
             extra['concern_topics'] = self.concern_topics
         await self.memory.complete(turn_id, answer, **extra)
+        update_awareness.acknowledge(self.runtime, answer)
 
     async def close(self):
         if self.periodic_task:

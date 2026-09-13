@@ -14,7 +14,7 @@ from google.genai import types
 
 import httpx
 
-from . import relationship, tts
+from . import relationship, tts, update_awareness
 from .persona import memory_prompt
 from .proactive import tokyo_now
 from .tuning import VOICE_LANGUAGE
@@ -66,6 +66,8 @@ class Transcript:
             await c.broadcast(c.unsaved_event())
             raise
         c.unsaved = None
+        if not interrupted:
+            update_awareness.acknowledge(c.runtime, answer)
         if c.living:
             c.living.seen(tokyo_now(), counted=True)
         if c.mind and not interrupted:
@@ -105,6 +107,7 @@ async def handle(ws: WebSocket):
         hint = ' '.join(row['text'] for row in history[-2:])[:2000]
         recalled = await controller.memory.call('GET', '/recall', params={'text': hint or '会話', 'context': hint})
         recalled['relationship'] = relationship.context(controller.living) if controller.living else {}
+        recalled['app_update'] = update_awareness.context(controller.runtime)
         if controller.mind:
             snapshot = controller.mind.snapshot(tokyo_now())
             if snapshot.get('enabled'):
