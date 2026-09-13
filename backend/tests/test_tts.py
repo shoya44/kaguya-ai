@@ -79,6 +79,20 @@ class SpeakerLookupTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SynthesisTests(unittest.IsolatedAsyncioTestCase):
+    async def test_reading_dictionary_changes_only_synthesis_input(self):
+        engine = Engine()
+        client, speech = engine.speech()
+        self.addAsyncCleanup(client.aclose)
+        original = '明日の朝会で話そう。'
+        await speech.say(original)
+        self.assertEqual(engine.queries[0]['text'], '明日のあさかいで話そう。')
+        self.assertEqual(original, '明日の朝会で話そう。')
+
+    def test_long_sentence_does_not_split_dictionary_word(self):
+        ready, rest = tts.sentences('あ' * (tts.MAX_TEXT - 1) + '朝会の話')
+        self.assertEqual(ready, ['あ' * (tts.MAX_TEXT - 1)])
+        self.assertEqual(rest, '朝会の話')
+
     async def test_the_output_format_is_forced_to_what_the_screen_plays(self):
         engine = Engine()
         client, speech = engine.speech()

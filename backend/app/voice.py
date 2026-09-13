@@ -14,7 +14,7 @@ from google.genai import types
 
 import httpx
 
-from . import relationship, tts, update_awareness
+from . import relationship, tts, update_awareness, voice_words
 from .persona import memory_prompt
 from .proactive import tokyo_now
 from .tuning import VOICE_LANGUAGE
@@ -25,7 +25,7 @@ _SECRET = re.compile(r'(?i)\b(key|token|authorization)=[^&\s\'"]+')
 
 def live_config(prompt: str, voice_name: str) -> dict:
     """Live session config. Barge-in is disabled unless explicitly reintroduced later."""
-    return {'response_modalities': ['AUDIO'], 'system_instruction': prompt,
+    return {'response_modalities': ['AUDIO'], 'system_instruction': prompt + voice_words.guidance(),
             'input_audio_transcription': {}, 'output_audio_transcription': {},
             'realtime_input_config': {'activity_handling': 'NO_INTERRUPTION'},
             'speech_config': {'language_code': VOICE_LANGUAGE,
@@ -45,7 +45,7 @@ class Transcript:
         self.answer = ''
 
     async def save(self, interrupted=False):
-        text, answer = self.text.strip(), self.answer.strip()
+        text, answer = voice_words.transcript_text(self.text.strip()), self.answer.strip()
         self.text = self.answer = ''
         if not text:
             return
@@ -172,7 +172,8 @@ async def handle(ws: WebSocket):
                                 transcript.text += content.input_transcription.text
                                 if len(transcript.text) > 2000:
                                     raise ValueError('1回の発話が長すぎます。短く区切ってください。')
-                                await ws.send_json({'type': 'transcript', 'role': 'user', 'text': transcript.text})
+                                await ws.send_json({'type': 'transcript', 'role': 'user',
+                                                    'text': voice_words.transcript_text(transcript.text)})
                             if content.output_transcription and content.output_transcription.text:
                                 chunk = content.output_transcription.text
                                 transcript.answer += chunk

@@ -16,6 +16,8 @@ from contextlib import suppress
 
 import httpx
 
+from . import voice_words
+
 # 画面側が再生する形。audio_query でこの形を指定してから合成する。
 SAMPLE_RATE = 24000
 # 1回に読み上げる長さの上限。長いと合成が返るまで黙る時間が延びる。
@@ -49,8 +51,14 @@ def sentences(buffer: str, soft_break: int = SOFT_BREAK) -> tuple[list[str], str
         ready.append(head + '、')
     # 句読点がまったく来ない場合でも、say() で切り捨てずに済むよう必ず区切る。
     while len(rest) >= MAX_TEXT:
-        ready.append(rest[:MAX_TEXT])
-        rest = rest[MAX_TEXT:]
+        end = MAX_TEXT
+        for word in voice_words.READINGS:
+            for start in range(max(0, end - len(word) + 1), end):
+                if rest.startswith(word, start) and start + len(word) > end:
+                    end = start
+                    break
+        ready.append(rest[:end])
+        rest = rest[end:]
     return [text for text in (t.strip() for t in ready) if text], rest
 
 
@@ -92,7 +100,7 @@ class Speech:
                           + (f'このエンジンにあるのは: {found}' if found else ''))
 
     async def say(self, text: str) -> bytes:
-        text = text.strip()[:MAX_TEXT]
+        text = voice_words.for_speech(text.strip()[:MAX_TEXT])
         if not text:
             return b''
         speaker = await self.speaker_id()
