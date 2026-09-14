@@ -662,6 +662,40 @@ function markPendingSettled(turnId: string, answerText: string | null): void {
 
 let miniReplyTimer: number | null = null;
 let reminderId: string | null = null;
+let voice: VoiceChat | null = null;
+
+/** 予約の時刻になったことをOSの通知でも知らせる。PC（Tauri）だけ。
+ * 画面を見ていないと吹き出しに気づけないため。出せなくても吹き出しは出ている。 */
+async function notifyReminder(text: string): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const plugin = await import('@tauri-apps/plugin-notification');
+    const granted = await plugin.isPermissionGranted()
+      || (await plugin.requestPermission()) === 'granted';
+    if (granted) plugin.sendNotification({ title: 'かぐや', body: text });
+  } catch {
+    // 通知が出せない環境でも、会話や吹き出しは止めない。
+  }
+}
+
+/** 「通話に出る」ボタンの出し入れ。通話できない端末・状況では出さない。 */
+function showReminderCall(show: boolean): void {
+  const button = document.getElementById('reminder-call') as HTMLButtonElement;
+  button.hidden = !show || !!VoiceChat.unavailable();
+}
+
+document.getElementById('reminder-call')!.addEventListener('click', () => {
+  showReminderCall(false);
+  // 押した時点で気づいているので、確認済みとして扱う。通話の開始が主で、
+  // 確認の保存が失敗しても通話は始める（吹き出しは残るので押し直せる）。
+  const id = reminderId;
+  void voice?.start();
+  if (!id) return;
+  api(`/reminders/${encodeURIComponent(id)}/ack`, { method: 'POST' }).then(() => {
+    if (reminderId === id) { reminderId = null; hideBubble(); }
+  }).catch(() => showError('通知の確認を保存できませんでした。吹き出しをクリックしてください。', null));
+});
+
 document.getElementById('proactive-bubble')!.addEventListener('click', () => {
   if (reminderId) {
     const id = reminderId;
@@ -677,6 +711,7 @@ function hideBubble(): void {
   if (reminderId) return;
   if (miniReplyTimer !== null) { window.clearTimeout(miniReplyTimer); miniReplyTimer = null; }
   document.getElementById('proactive-bubble')!.hidden = true;
+  showReminderCall(false);
 }
 
 function showMiniReply(text: string): void {
@@ -835,7 +870,9 @@ function handleServerEvent(data: Record<string, unknown>): void {
       if (miniReplyTimer !== null) window.clearTimeout(miniReplyTimer);
       // 声かけと違い自動では消さない。クリックで閉じるまで残す。
       miniReplyTimer = null;
+      showReminderCall(true);
       if (repeated) break;
+      void notifyReminder(data.text as string);
       talkingState = 'talking';
       talkingUntil = Date.now() + TALKING_MS;
       refreshAvatar();
@@ -1053,7 +1090,7 @@ async function main(): Promise<void> {
   connectionStatus('接続中…');
   controls = new Controls(api);
   new PCPanel(api, API_BASE);
-  new VoiceChat(API_BASE, ensureSession, voiceToggle);
+  voice = new VoiceChat(API_BASE, ensureSession, voiceToggle);
   setBusy(false);
 
   setupAvatarContextMenu();

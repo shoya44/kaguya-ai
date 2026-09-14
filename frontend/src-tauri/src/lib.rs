@@ -188,6 +188,8 @@ fn quit_app(app: &AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 予約の時刻をOSの通知でも知らせる。画面を見ていないと吹き出しに気づけない。
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if args.iter().any(|arg| arg == "--quit") { quit_app(app); }
             else { show_character(app); }

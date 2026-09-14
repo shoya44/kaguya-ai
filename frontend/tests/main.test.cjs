@@ -74,6 +74,8 @@ function harness(options = {}) {
     // どの動きを頼んだか」だけを覚えて、繋ぎ間違いを止める。
     Avatar: class { setState() {} hold() {} react(nudge) { nudges.push(nudge); } },
     isTauri: () => !!options.tauri,
+    // 通話できる端末かどうかだけを見る。実際の通話はvoice.test.cjsが確かめる。
+    VoiceChat: { unavailable: () => options.voiceBlocked ?? '' },
     invoke: options.invoke ?? (async () => 'owned'),
     sessionStorage: storage(sessionData), localStorage: storage(localData),
     WebSocket: Socket, URLSearchParams, AbortSignal, Date, Error,
@@ -248,6 +250,27 @@ test('reminder survives duplicates and replies until acknowledgement succeeds', 
   assert.ok(h.calls.some(call => call.url.endsWith('/reminders/reminder-one/ack')));
   assert.equal(bubble.hidden, true);
   assert.equal(h.run('reminderId'), null);
+});
+
+test('予約の時刻には、そのまま通話に出られる', async () => {
+  const h = harness(); await connected(h);
+  h.sockets[0].emit({ type: 'reminder.due', id: 'r-call', text: '休憩する' });
+  const button = h.elements['reminder-call'];
+  assert.equal(button.hidden, false);
+  button.handlers.click(); await h.flush();
+  // 押した時点で気づいているので、確認済みとして送る。ボタンは出したままにしない。
+  assert.ok(h.calls.some(call => call.url.endsWith('/reminders/r-call/ack')));
+  assert.equal(button.hidden, true);
+  assert.equal(h.run('reminderId'), null);
+});
+
+test('通話できない端末では、出るボタンを出さない', async () => {
+  const h = harness({ voiceBlocked: 'この接続ではブラウザがマイクを使えません。' });
+  await connected(h);
+  h.sockets[0].emit({ type: 'reminder.due', id: 'r-mute', text: '休憩する' });
+  assert.equal(h.elements['reminder-call'].hidden, true);
+  // 吹き出しは今までどおり出る。
+  assert.equal(h.elements['proactive-bubble'].hidden, false);
 });
 
 test('failed reminder acknowledgement leaves notification available to retry', async () => {
