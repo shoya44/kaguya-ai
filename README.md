@@ -876,7 +876,13 @@ PC内動画の再生とBAT実行は、Function Callingで任意パスを操作�
 |---|---|---|---|
 | `memory_short` | 会話履歴 | 過去のやり取りを読み返す | 訂正 / 削除 |
 | `memory_long` | あなたについて覚えていること | 好み・習慣・続いている事情 | 訂正 / もう当てはまらない |
-| `persona_character` | かぐやの接し方 | 呼び方、返答の長さ、相談時の接し方、自分の意見の出し方、口癖 | 変更 / 元に戻す |
+| `persona_character` | かぐやの接し方 | 呼び方、返答の長さ、相談時の接し方、自分の意見の出し方、口癖 | 追加 / 変更 / 削除 / 元に戻す |
+
+接し方には自分で項目を足せます。「記憶」タブで「接し方」を選ぶと出る＋ボタンから、
+項目名（英小文字と `_`。例：`work_context`）と内容を入力します。足した項目は自動更新から
+保護され、あとから削除もできます。最初から入っている6項目は内容の変更だけで、削除はできません
+（すべて消えると性格の無い受け答えになるためです）。
+接し方は毎回の返答にそのまま載るので、想起で渡せるのは全部で12項目までです。
 
 知恵の蓄積（`memory_long`）と会話履歴の長期保存（`memory_short`）は別に設計しています。
 整理済みで7日を過ぎた会話原文は削除されますが、そこから作られた知恵は残ります。
@@ -1331,7 +1337,8 @@ emotion / activityは表示上の略記。値の範囲はDB制約とアプリ側
 | previous_source_wisdom_ids | jsonb | 直前の根拠ID配列 |
 | updated_at | timestamptz | 更新時刻 |
 
-key: base_personality / reply_style / addressing / support_style / opinion_style / speech_habit / style_feedback / disposition。一般UIで変更・復元する項目はAPI側で制限。
+key: base_personality / reply_style / addressing / support_style / opinion_style / speech_habit / style_feedback / disposition、および画面から足した項目（`^[a-z][a-z0-9_]{1,30}$`）。
+一般UIで変更・復元する項目はAPI側で制限し、style_feedback / disposition は画面から編集できません。
 opinion_style（自分の意見の出し方）と speech_habit（口癖）は自動整理の対象外で、本人が画面から書いたときだけ変わります。
 
 ### persona_favorite / app_settings

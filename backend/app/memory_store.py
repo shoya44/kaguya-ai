@@ -11,12 +11,33 @@ from fastapi import HTTPException
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field
 
-# 画面に出す接し方の全行。UIからはこの全てを編集できる。
+# 最初から入っている接し方の行。本人が書き換えられるが、削除はできない。
+# 全部消せると性格の無い受け答えになるため、消せるのは自分で足した行だけにする。
 PERSONA_KEYS = ('base_personality', 'reply_style', 'addressing', 'support_style',
                 'opinion_style', 'speech_habit')
+# システムが書く行。画面には出るが、本人もLLMも直接は書き換えない。
+# style_feedback は「もっと短く」等の指定から、disposition は週次の傾向から作られる。
+PERSONA_SYSTEM_KEYS = ('style_feedback', 'disposition')
 # 自動整理（LLM）が書き換えを提案してよいキー。ここに無い行は推測では動かない。
 # base_personality・opinion_style・speech_habit は核なので、本人がUIで書くときだけ変わる。
 PERSONA_AUTO_KEYS = ('reply_style', 'addressing', 'support_style')
+# 想起でプロンプトへ渡せる行数。増やすほど毎ターンの字数が増えるので、
+# 追加もこの数で止める。recall() の LIMIT と同じ値を使い、片方だけ動かさない。
+PERSONA_MAX_ROWS = 12
+# 自分で足す行の名前。プロンプトとURLの両方に出るので、英小文字と_だけに絞る。
+PERSONA_KEY_PATTERN = re.compile(r'^[a-z][a-z0-9_]{1,30}$')
+# 画面から書ける1件の長さ。接し方も知恵も同じ上限で扱う（会話原文だけ別枠）。
+MEMORY_VALUE_MAX = 400
+
+
+def persona_editable(key: str) -> bool:
+    """本人が画面から書き換えてよい行か。"""
+    return key not in PERSONA_SYSTEM_KEYS and bool(PERSONA_KEY_PATTERN.match(key))
+
+
+def persona_removable(key: str) -> bool:
+    """本人が画面から消してよい行か。自分で足した行だけ。"""
+    return persona_editable(key) and key not in PERSONA_KEYS
 
 
 class WisdomItem(BaseModel):
@@ -163,9 +184,10 @@ def recall(conn, text, context='', mood=''):
     # 既存のPersona読み取りにLivingを同梱する。Personaが空でも1行返る。
     state = conn.execute('''SELECT
         (SELECT jsonb_agg(p) FROM
-            (SELECT * FROM persona_character ORDER BY key LIMIT 12) p) AS persona,
+            (SELECT * FROM persona_character ORDER BY key LIMIT %(persona_rows)s) p) AS persona,
         (SELECT to_jsonb(a) FROM living_activity a WHERE id) AS living,
-        (SELECT jsonb_object_agg(name, value) FROM living_emotion) AS emotions''').fetchone()
+        (SELECT jsonb_object_agg(name, value) FROM living_emotion) AS emotions''',
+        {'persona_rows': PERSONA_MAX_ROWS}).fetchone()
     living = state['living'] or {}
     derived = derive_mood(state['emotions'] or {}, living)
     mood = derived or mood
@@ -262,6 +284,11 @@ def list_memories(conn, layer, query='', offset=0):
             ORDER BY updated_at DESC,id DESC LIMIT 31 OFFSET %s''', (pattern, pattern, offset)).fetchall()
     elif layer == 'persona':
         rows = conn.execute('SELECT * FROM persona_character ORDER BY key LIMIT 31 OFFSET %s', (offset,)).fetchall()
+        # どの行を変更・削除できるかは画面側で数えず、ここで付ける。
+        # 判定を2箇所に置くと、システムが書く行に「変更」ボタンが出たまま失敗する。
+        for row in rows:
+            row['editable'] = persona_editable(row['key'])
+            row['removable'] = persona_removable(row['key'])
     elif layer == 'mind':
         # 固定の4テーブルのみ。初期値の作成・感情の減衰などは行わず保存値を読む。
         rows = conn.execute('''SELECT * FROM (
@@ -274,6 +301,26 @@ def list_memories(conn, layer, query='', offset=0):
     else:
         raise HTTPException(404, 'Unknown layer')
     return {'items': rows[:30], 'next_offset': offset + 30 if len(rows) > 30 else None}
+
+
+def create_persona(conn, key, value):
+    """接し方の行を1つ足す。自動整理には触らせないので locked で作る。"""
+    lock(conn)
+    key = str(key or '').strip()
+    if not persona_removable(key):
+        raise HTTPException(400, '項目名は英小文字と_で2〜31文字。既存の項目名は使えません。')
+    value = str(value or '').strip()
+    if not value or len(value) > MEMORY_VALUE_MAX:
+        raise HTTPException(400, f'内容は1〜{MEMORY_VALUE_MAX}文字で入力してください。')
+    if conn.execute('SELECT 1 FROM persona_character WHERE key=%s', (key,)).fetchone():
+        raise HTTPException(409, 'その項目名はすでにあります。')
+    # 想起で渡せるのは PERSONA_MAX_ROWS 行まで。超えた行は名前順で黙って落ちるので、
+    # 足す前に止める。消せない初期行・システムの行も同じ枠を使うため、全行を数える。
+    total = conn.execute('SELECT count(*) AS n FROM persona_character').fetchone()['n']
+    if total >= PERSONA_MAX_ROWS:
+        raise HTTPException(400, f'接し方は{PERSONA_MAX_ROWS}行までです。どれかを削除してから追加してください。')
+    conn.execute("INSERT INTO persona_character (key,value,locked) VALUES (%s,%s,true)", (key, Jsonb(value)))
+    return {'ok': True, 'key': key}
 
 
 def impact(conn, layer, key):
@@ -331,10 +378,13 @@ def mutate(conn, layer, key, body, delete=False):
             body.get('impact_token') and body['impact_token'] != affected['impact_token']):
         raise HTTPException(409, 'memory_changed')
     value = body.get('value', '').strip()
-    if not delete and (not value or len(value) > (2000 if layer == 'raw' else 400)):
+    if not delete and (not value or len(value) > (2000 if layer == 'raw' else MEMORY_VALUE_MAX)):
         raise HTTPException(400, '入力文字数を確認してください。')
     if not delete and layer == 'raw' and selected['role'] != 'user':
         raise HTTPException(400, 'AIの回答は訂正できません。会話全体の削除はできます。')
+    # 消せるのは自分で足した行だけ。初期行まで消せると性格の無い受け答えになる。
+    if delete and layer == 'persona' and not persona_removable(key):
+        raise HTTPException(400, '最初から入っている項目は削除できません。内容の変更はできます。')
     for persona_key in affected['persona_keys']:
         if persona_key not in PERSONA_AUTO_KEYS:
             continue
@@ -348,6 +398,8 @@ def mutate(conn, layer, key, body, delete=False):
             conn.execute("DELETE FROM memory_short WHERE turn_id=ANY(%s) AND role='assistant'", (affected['raw_turns'],))
         else:
             conn.execute('DELETE FROM memory_short WHERE turn_id=ANY(%s)', (affected['raw_turns'],))
+    if delete and layer == 'persona':
+        conn.execute('DELETE FROM persona_character WHERE key=%s', (key,))
     if not delete:
         if layer == 'raw':
             conn.execute("""UPDATE memory_short SET content=%s,status='failed',processed_at=NULL,

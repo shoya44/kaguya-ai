@@ -17,7 +17,7 @@ from .controller import Controller
 from .errors import ChatError
 from .llm import Gemini
 from .memory_api import MemoryClient
-from .memory_store import PERSONA_KEYS
+from .memory_store import MEMORY_VALUE_MAX, PERSONA_KEY_PATTERN, persona_editable
 from .mind import KaguyaMind
 from .models import Turn
 from .db import Database
@@ -243,16 +243,23 @@ async def acknowledge_reminder(reminder_id: UUID, request: Request, _client_id: 
     return result
 
 
+# 内部APIの断り方を、画面から見た意味へ置き換える。入力が悪いだけのときに
+# 502（PC側の不調）を返すと、直せば済む話を接続の問題として案内してしまう。
+_MEMORY_STATUS = {'memory_changed': 409, 'invalid_request': 400, 'memory_full': 409}
+
+
 async def memory_request(request, method, path, **kwargs):
     try:
         return await request.app.state.controller.memory.call(method, path, **kwargs)
     except ChatError as exc:
-        raise HTTPException(409 if exc.code == 'memory_changed' else 502, exc.message) from None
+        raise HTTPException(_MEMORY_STATUS.get(exc.code, 502), exc.message) from None
 
 
 def memory_key(layer, key):
     if layer == 'persona':
-        if key not in PERSONA_KEYS:
+        # 自分で足した行も対象なので、固定の一覧ではなく名前の形で見る。
+        # 実在するかは impact() が見て、無ければ404になる。
+        if not persona_editable(key):
             raise HTTPException(422, '記憶の項目を確認してください。')
         return key
     try:
@@ -305,6 +312,28 @@ async def change_memory(layer: Literal['raw', 'wisdom', 'persona'], key: str, bo
     controller.editing = True
     try:
         result = await memory_request(request, 'POST', f'/browse/{layer}/{key}/change', json=body.model_dump())
+        await controller.broadcast({'type': 'memories.changed'})
+        return result
+    finally:
+        controller.editing = False
+
+
+class PersonaCreate(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    key: str = Field(pattern=PERSONA_KEY_PATTERN.pattern)
+    value: str = Field(min_length=1, max_length=MEMORY_VALUE_MAX)
+    confirmed: Literal[True]
+
+
+@app.post('/memories/persona')
+async def add_memory(body: PersonaCreate, request: Request, _client_id: UUID = Depends(require_session)):
+    controller = request.app.state.controller
+    if controller.active or controller.unsaved or controller.editing:
+        raise HTTPException(409, '会話・保存の完了後に記憶を変更してください。')
+    controller.editing = True
+    try:
+        result = await memory_request(request, 'POST', '/browse/persona/create',
+                                      json={'key': body.key, 'value': body.value})
         await controller.broadcast({'type': 'memories.changed'})
         return result
     finally:

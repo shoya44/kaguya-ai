@@ -88,6 +88,7 @@
           <select id="memory-layer" aria-label="記憶の種類"><option value="wisdom">覚えていること</option><option value="persona">接し方</option><option value="mind">かぐやの心</option><option value="raw">会話履歴</option></select>
           <input id="memory-search" type="search" maxlength="200" placeholder="検索" aria-label="記憶を検索">
           <button type="submit" class="icon-button" aria-label="表示・更新" title="表示・更新"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m16 16 5 5"/></svg></button>
+          <button type="button" id="memory-add" class="icon-button" hidden aria-label="接し方の項目を追加" title="接し方の項目を追加"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
         </form>
         <div id="memory-list"></div>
         <div class="button-row"><button id="memory-prev" class="icon-button" disabled aria-label="前へ" title="前へ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button><span id="memory-page"></span><button id="memory-next" class="icon-button" disabled aria-label="次へ" title="次へ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button></div>
@@ -122,6 +123,7 @@
     </div>
     <dialog id="memory-dialog">
       <h2 id="dialog-title"></h2><p id="dialog-description"></p>
+      <label id="memory-key-label" hidden>項目名<input id="memory-key" maxlength="31" placeholder="work_context" aria-label="項目名（英小文字と_）"></label>
       <textarea id="memory-value" rows="6" aria-label="訂正後の記憶" hidden></textarea>
       <label id="memory-lock-label" hidden><input id="memory-lock" type="checkbox" checked>自動更新しない</label>
       <p id="dialog-error" role="alert"></p>

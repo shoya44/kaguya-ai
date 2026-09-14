@@ -376,6 +376,12 @@ def memory_change(layer: str, key: str, body: dict, request: Request):
         return memory_store.mutate(conn, layer, key, body, body.get('delete', False))
 
 
+@router.post('/browse/persona/create')
+def memory_create(body: dict, request: Request):
+    with connection(request) as conn:
+        return memory_store.create_persona(conn, body.get('key', ''), body.get('value', ''))
+
+
 @router.post('/browse/persona/{key}/restore')
 def memory_restore(key: str, body: dict, request: Request):
     with connection(request) as conn:
