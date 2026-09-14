@@ -17,6 +17,8 @@ class Element {
   setAttribute(key, value) { this[key] = value; }
   append(...children) { this.children.push(...children); }
   replaceChildren() { this.children = []; this.textContent = ''; }
+  showModal() { this.open = true; }
+  close() { this.open = false; }
 }
 
 function harness(api) {
@@ -144,6 +146,48 @@ test('older requests cannot replace the newly selected memory layer', async () =
   await old;
   assert.equal(elements['memory-list'].textContent, '該当する記憶はありません。');
   assert.equal(elements['memory-next'].disabled, true);
+});
+
+test('接し方は、行ごとに変更・削除できるかをサーバーの指示どおりに出す', async () => {
+  const { controls, elements } = harness(async () => ({ items: [
+    { key: 'base_personality', value: '明るい', revision: 1, updated_at: new Date().toISOString(),
+      locked: true, previous_value: null, editable: true, removable: false },
+    { key: 'work_context', value: '平日の日中は仕事中', revision: 1, updated_at: new Date().toISOString(),
+      locked: true, previous_value: null, editable: true, removable: true },
+    { key: 'style_feedback', value: '短く返す', revision: 1, updated_at: new Date().toISOString(),
+      locked: true, previous_value: null, editable: false, removable: false },
+  ], next_offset: null }));
+  controls.layer = 'persona';
+  await controls.refreshMemories();
+  const labels = elements['memory-list'].children.map(card =>
+    card.children[card.children.length - 1].children.map(button => button.textContent));
+  // 初期行は変更のみ、足した行は削除も、システムが書く行はどちらも出さない。
+  assert.deepEqual(labels, [['変更'], ['変更', '削除'], []]);
+  // 見出しの無いキーは、そのまま項目名として出す（追加した行が読めなくならない）。
+  assert.equal(elements['memory-list'].children[1].children[0].textContent, 'work_context');
+  assert.equal(elements['memory-add'].hidden, false);
+});
+
+test('追加ボタンは接し方のときだけ出す', async () => {
+  const { controls, elements } = harness(async () => ({ items: [], next_offset: null }));
+  controls.layer = 'wisdom';
+  await controls.refreshMemories();
+  assert.equal(elements['memory-add'].hidden, true);
+});
+
+test('項目の追加は、項目名と内容を確認してから送る', async () => {
+  let sent;
+  const { controls, elements } = harness(async (url, init) => { sent = { url, init }; return {}; });
+  await controls.add();
+  assert.equal(elements['memory-key-label'].hidden, false);
+  assert.equal(elements['memory-value'].hidden, false);
+  elements['memory-key'].value = ' work_context ';
+  elements['memory-value'].value = '平日の日中は仕事中';
+  await controls.action();
+  assert.equal(sent.url, '/memories/persona');
+  assert.equal(sent.init.method, 'POST');
+  assert.deepEqual(JSON.parse(sent.init.body),
+    { key: 'work_context', value: '平日の日中は仕事中', confirmed: true });
 });
 
 test('整理の結果は、いつのものかが分かる形で出す', () => {

@@ -69,6 +69,7 @@ export class Controls {
       this.offset = 0;
       this.perform(() => this.refreshMemories());
     });
+    document.getElementById('memory-add')!.addEventListener('click', () => this.perform(() => this.add()));
     document.getElementById('memory-next')!.addEventListener('click', () => {
       if (this.nextOffset !== null) { this.offset = this.nextOffset; this.perform(() => this.refreshMemories()); }
     });
@@ -213,6 +214,8 @@ export class Controls {
       if (request === this.memoryRequest) list.setAttribute('aria-busy', 'false');
     }
     if (request !== this.memoryRequest) return;
+    // 追加できるのは接し方だけ。会話履歴や知恵は会話から育つもので、手で足す層ではない。
+    document.getElementById('memory-add')!.hidden = this.layer !== 'persona';
     list.replaceChildren();
     for (const row of body.items as Row[]) {
       const card = document.createElement('article'); card.className = 'memory-card';
@@ -262,9 +265,14 @@ export class Controls {
         // 層ごとに役割が違うので操作名も変える。知恵＝訂正／もう当てはまらない、
         // 接し方＝変更／元に戻す、会話履歴＝訂正／削除。
         const editLabel = this.layer === 'persona' ? '変更' : '訂正';
-        const dropLabel = this.layer === 'wisdom' ? 'もう当てはまらない' : '削除・関連記憶も取消';
-        if (this.layer !== 'raw' || row.role === 'user') actions.append(this.button(editLabel, () => this.edit(row, false)));
-        if (this.layer !== 'persona') actions.append(this.button(dropLabel, () => this.edit(row, true)));
+        const dropLabel = this.layer === 'wisdom' ? 'もう当てはまらない'
+          : this.layer === 'persona' ? '削除' : '削除・関連記憶も取消';
+        // 接し方は行ごとに扱いが違う。システムが書く行は変更できず、消せるのは
+        // 自分で足した行だけ。その判定はサーバーが editable / removable で渡す。
+        const editable = this.layer === 'persona' ? row.editable !== false : this.layer !== 'raw' || row.role === 'user';
+        const removable = this.layer === 'persona' ? row.removable === true : this.layer !== 'persona';
+        if (editable) actions.append(this.button(editLabel, () => this.edit(row, false)));
+        if (removable) actions.append(this.button(dropLabel, () => this.edit(row, true)));
         if (this.layer === 'persona' && row.previous_value !== null) {
           actions.append(this.button('元に戻す', async () => {
             this.confirm('直前の接し方へ戻しますか？', `戻す内容：${row.previous_value}。自動更新から保護します。`, async () => {
@@ -317,8 +325,25 @@ export class Controls {
     document.getElementById('dialog-description')!.textContent = description;
     document.getElementById('dialog-error')!.textContent = '';
     document.getElementById('memory-value')!.hidden = true;
+    document.getElementById('memory-key-label')!.hidden = true;
     document.getElementById('memory-lock-label')!.hidden = true;
     this.action = action; this.dialog.showModal();
+  }
+
+  private async add(): Promise<void> {
+    this.confirm('接し方の項目を追加する', '毎回の返答に必ず載る項目です。項目名は英小文字と_（例：work_context）。'
+      + '追加した項目は自動更新から保護され、あとから削除もできます。', async () => {
+      await this.api('/memories/persona', { method: 'POST', body: JSON.stringify({
+        key: (document.getElementById('memory-key') as HTMLInputElement).value.trim(),
+        value: (document.getElementById('memory-value') as HTMLTextAreaElement).value,
+        confirmed: true,
+      }) });
+    });
+    const key = document.getElementById('memory-key') as HTMLInputElement;
+    key.value = '';
+    document.getElementById('memory-key-label')!.hidden = false;
+    const input = document.getElementById('memory-value') as HTMLTextAreaElement;
+    input.hidden = false; input.value = ''; input.maxLength = 400;
   }
 
   private async edit(row: Row, deleting: boolean): Promise<void> {
@@ -329,6 +354,8 @@ export class Controls {
     const description = `対象：${current.content || current.summary || current.value}\n` +
       `影響：元の会話 ${effect.raw_turns.length}往復、知恵 ${effect.wisdom_ids.length}件、接し方 ${effect.persona_keys.length}件。\n` +
       (layer === 'raw' && !deleting ? '元発言は訂正して未処理に戻し、古い回答と派生記憶を削除します。' :
+        // 自分で足した接し方の項目には根拠の会話が無いので、消えるのはその1行だけ。
+        layer === 'persona' && deleting ? 'この項目は次の返答から使われなくなります。' :
         '古い情報の復活を防ぐため、根拠の会話・関連する知恵を削除し、派生した接し方と過去値も取り消します。') +
       '\nこの操作は取り消せません。';
     const title = deleting ? (layer === 'wisdom' ? 'この記憶はもう当てはまりませんか？' : '記憶を削除しますか？')
