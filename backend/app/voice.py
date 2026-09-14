@@ -14,7 +14,7 @@ from google.genai import types
 
 import httpx
 
-from . import relationship, tts, update_awareness, voice_words
+from . import relationship, tools, tts, update_awareness, voice_words
 from .persona import memory_prompt
 from .proactive import tokyo_now
 from .tuning import VOICE_LANGUAGE
@@ -23,13 +23,37 @@ _log = logging.getLogger(__name__)
 _SECRET = re.compile(r'(?i)\b(key|token|authorization)=[^&\s\'"]+')
 
 
+# 通話中に使える道具。予約と記憶だけに絞る。画面で確認してから走らせる操作
+# （BAT実行・動画再生・設定変更・ファイル検索）は、声だけでは実行させない。
+# 文字チャットのように発言ごとに道具を選べないので、ここで固定して渡す。
+VOICE_TOOL_NAMES = ('set_reminder', 'remember')
+VOICE_DECLARATIONS = [item for item in tools.DECLARATIONS if item['name'] in VOICE_TOOL_NAMES]
+
+
 def live_config(prompt: str, voice_name: str) -> dict:
     """Live session config. Barge-in is disabled unless explicitly reintroduced later."""
     return {'response_modalities': ['AUDIO'], 'system_instruction': prompt + voice_words.guidance(),
             'input_audio_transcription': {}, 'output_audio_transcription': {},
             'realtime_input_config': {'activity_handling': 'NO_INTERRUPTION'},
+            'tools': [{'function_declarations': VOICE_DECLARATIONS}],
             'speech_config': {'language_code': VOICE_LANGUAGE,
                               'voice_config': {'prebuilt_voice_config': {'voice_name': voice_name}}}}
+
+
+async def run_tool_calls(tool_call, memory, now=None) -> list[types.FunctionResponse]:
+    """Liveからの道具呼び出しを実行し、返す応答を作る。
+
+    渡していない道具名は実行しない。モデルが別の名前を口にしても、画面での確認が
+    要る操作が声だけで走らないようにする。失敗は tools.run が飲み込むので、
+    予約に失敗しても通話は続き、その旨をかぐやが話す。
+    """
+    replies = []
+    for call in (tool_call.function_calls or [])[:2]:
+        outcome = (await tools.run(call.name, dict(call.args or {}), memory, now)
+                   if call.name in VOICE_TOOL_NAMES
+                   else {'ok': False, 'error': 'この操作は音声通話ではできません。'})
+        replies.append(types.FunctionResponse(id=call.id, name=call.name, response=outcome))
+    return replies
 
 
 def _reason(exc: BaseException) -> str:
@@ -115,7 +139,10 @@ async def handle(ws: WebSocket):
         prompt = memory_prompt(recalled, history=history) + (
             '\n相手の発話は日本語です。日本語として聞き取り、日本語で自然に短く会話してください。'
             '\n聞き取れなかったときは、別の言語として解釈せず、聞き返してください。'
-            '\n音声通話では外部操作を実行できません。操作したと主張しないでください。')
+            '\n時刻を指定した声かけの予約と、「覚えておいて」と頼まれた記憶は、道具を使って'
+            '実際に登録してください。頼まれたのに道具を使わないまま「わかった」と答えないでください。'
+            '\nそれ以外の操作（動画の再生、BATの実行、設定の変更、ファイル検索）は音声通話ではできません。'
+            'できないことを、できたと言わないでください。')
         style = controller.runtime.options.voice_style.strip()
         if style:
             prompt += '\n話し方：' + style
@@ -160,6 +187,10 @@ async def handle(ws: WebSocket):
                         async for response in live.receive():
                             if response.go_away:
                                 await ws.send_json({'type': 'notice', 'message': '接続の更新が必要です。通話を終了し、もう一度開始してください。'})
+                            if response.tool_call:
+                                replies = await run_tool_calls(response.tool_call, controller.memory)
+                                if replies:
+                                    await live.send_tool_response(function_responses=replies)
                             content = response.server_content
                             if not content:
                                 continue

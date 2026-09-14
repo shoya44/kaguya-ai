@@ -62,6 +62,34 @@ PERSONA_SCHEMA = types.Schema(
 )
 
 
+# 道具を渡した回は、渡したことを本文でも伝える。渡しただけだと、頼まれた操作を
+# しないまま「やっておくね」と答えることがあり、予約が入っていないのに入った
+# ことになる（画面の予約一覧と食い違う）。
+TOOL_GUIDANCE = ('\n道具を渡してある。頼まれた操作は、必ず道具を呼んで実行してから答える。'
+                 '実行していないのに「やっておく」「セットした」と答えない。')
+
+# 呼ぶかどうかをモデルに委ねない道具。予約は、入ったかどうかが画面の一覧に出る。
+# 「セットしたよ」と言われたのに何も残っていない取り違えが実際に起きていたので、
+# 頼み方がはっきりしている回は呼び出しを必須にする。引数が読み取れないときは
+# 道具側が断り、その断りがそのまま本文になる（黙って成功したことにはならない）。
+FORCED_TOOLS = ('set_reminder',)
+# 「15時に何て言ってたっけ？」のような問い返しは、頼みではないので強制しない。
+_ASKING = re.compile(r'[？?]|っけ|ですか|でしょうか|かな$')
+
+
+def forced_tools(selected: list[dict], text: str) -> list[str]:
+    """この回で呼び出しを必須にする道具名。無ければ空（モデルの判断に任せる）。
+
+    必須にするのは FORCED_TOOLS が選ばれた回だけ。そのとき呼べる道具は
+    この回に選ばれた全部にする。「明日9時に薬って教えて。このこと覚えて」で
+    予約しか許さないと、同じ一言の後半が落ちるため。
+    """
+    names = [item['name'] for item in selected]
+    if _ASKING.search(str(text or '').strip()):
+        return []
+    return names if any(name in FORCED_TOOLS for name in names) else []
+
+
 class Gemini:
     def __init__(self, settings):
         self.settings = settings
@@ -191,6 +219,9 @@ class Gemini:
     async def reply(self, history: list[dict], text: str, recalled=None, proactive=None,
                     max_tokens=None, memory=None, on_text=None) -> str:
         system = memory_prompt(recalled, proactive, text=text, history=history)
+        selected_tools = tools.declarations_for(text) if memory is not None else []
+        if selected_tools:
+            system += TOOL_GUIDANCE
         contents = [types.Content(role=item['role'], parts=[types.Part(text=item['text'])])
                     for item in conversation_context(history, text, system)]
         config = types.GenerateContentConfig(
@@ -198,11 +229,15 @@ class Gemini:
             max_output_tokens=max_tokens or self.settings.max_output_tokens,
             thinking_config=self._chat_thinking_config(),
         )
-        selected_tools = tools.declarations_for(text) if memory is not None else []
         if not selected_tools and on_text is not None:
             return await self._stream(contents, config, on_text)
         if selected_tools:
             config.tools = [types.Tool(function_declarations=selected_tools)]
+            forced = forced_tools(selected_tools, text)
+            if forced:
+                config.tool_config = types.ToolConfig(
+                    function_calling_config=types.FunctionCallingConfig(
+                        mode='ANY', allowed_function_names=forced))
         response = await self._request(contents, config)
         calls = getattr(response, 'function_calls', None)
         if not calls:
@@ -222,7 +257,9 @@ class Gemini:
                 return quick
 
         contents = contents + [response.candidates[0].content, types.Content(role='user', parts=results)]
-        config.tools = None
+        # 道具の結果を文章にしてもらう回。呼び出しの必須指定を残したまま道具を外すと、
+        # 呼べる道具が無いのに呼べと言っていることになる。両方いっしょに下ろす。
+        config.tools = config.tool_config = None
         return self._text(await self._request(contents, config))
 
     # 声かけは1文だけ。考える余地を与えず、短く早く返させる。

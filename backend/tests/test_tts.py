@@ -4,6 +4,9 @@ import io
 import json
 import unittest
 import wave
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import httpx
 
@@ -224,6 +227,55 @@ class LiveConfigTests(unittest.TestCase):
         self.assertIn('input_audio_transcription', config)
         # SDKが受理する形であること。
         types.LiveConnectConfig.model_validate(config)
+
+    def test_the_call_can_book_a_reminder_and_remember_but_nothing_else(self):
+        """通話では道具を1つも渡しておらず、予約を頼まれても返事だけで何も残らなかった。"""
+        from app.voice import live_config, VOICE_TOOL_NAMES
+        declared = {item['name'] for item in live_config('指示', 'Leda')['tools'][0]['function_declarations']}
+        self.assertEqual(declared, {'set_reminder', 'remember'})
+        self.assertEqual(set(VOICE_TOOL_NAMES), declared)
+        # 画面での確認が要る操作は、声だけで走らせない。
+        self.assertNotIn('app_settings', declared)
+        self.assertNotIn('calendar', declared)
+
+
+class VoiceToolCallTests(unittest.IsolatedAsyncioTestCase):
+    """Liveからの道具呼び出し。予約は実際にDBへ入り、渡していない道具は動かない。"""
+
+    @staticmethod
+    def tool_call(*calls):
+        return SimpleNamespace(function_calls=[
+            SimpleNamespace(id=f'call-{index}', name=name, args=args)
+            for index, (name, args) in enumerate(calls)])
+
+    async def test_a_booked_reminder_reaches_the_store(self):
+        from app.voice import run_tool_calls
+        memory = SimpleNamespace(call=AsyncMock(return_value={'ok': True}))
+        now = datetime(2026, 9, 14, 12, 0, tzinfo=timezone(timedelta(hours=9)))
+        replies = await run_tool_calls(
+            self.tool_call(('set_reminder', {'at': '2026-09-14T15:30:00', 'message': '休憩する'})),
+            memory, now)
+        self.assertEqual(memory.call.await_args.args, ('POST', '/reminders'))
+        self.assertEqual(memory.call.await_args.kwargs['json']['message'], '休憩する')
+        self.assertEqual(replies[0].response['予約時刻'], '2026-09-14 15:30')
+        self.assertEqual((replies[0].id, replies[0].name), ('call-0', 'set_reminder'))
+
+    async def test_a_tool_we_did_not_hand_over_never_runs(self):
+        from app.voice import run_tool_calls
+        memory = SimpleNamespace(call=AsyncMock())
+        replies = await run_tool_calls(self.tool_call(('app_settings', {'name': 'quiet', 'value': True})), memory)
+        memory.call.assert_not_awaited()
+        self.assertFalse(replies[0].response['ok'])
+
+    async def test_a_failed_booking_is_reported_instead_of_ending_the_call(self):
+        from app.voice import run_tool_calls
+        memory = SimpleNamespace(call=AsyncMock())
+        now = datetime(2026, 9, 14, 12, 0, tzinfo=timezone(timedelta(hours=9)))
+        replies = await run_tool_calls(
+            self.tool_call(('set_reminder', {'at': '2020-01-01T00:00:00', 'message': '過去'})), memory, now)
+        memory.call.assert_not_awaited()
+        self.assertFalse(replies[0].response['ok'])
+        self.assertIn('過ぎた時刻', replies[0].response['error'])
 
 
 class FailureMessageTests(unittest.TestCase):
