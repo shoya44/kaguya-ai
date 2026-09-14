@@ -1,9 +1,11 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 from pydantic import SecretStr
 
 from app import tools
+from app.errors import ChatError
 from app.llm import Gemini
 
 
@@ -44,6 +46,74 @@ class FastReplyTests(unittest.TestCase):
         self.assertIn('set_reminder', names)
         self.assertNotIn('calendar', names)
         self.assertNotIn('app_settings', names)
+
+
+class ForcedToolTests(unittest.IsolatedAsyncioTestCase):
+    """頼まれた予約を、道具を呼ばずに「セットした」と答えてしまうのを止める。"""
+
+    @staticmethod
+    def llm():
+        return Gemini(SimpleNamespace(gemini_api_key=SecretStr(''), gemini_model='test-model',
+                                      llm_timeout_seconds=5, max_output_tokens=512))
+
+    async def config_for(self, text):
+        llm = self.llm()
+        seen = {}
+
+        async def request(contents, config):
+            seen['config'] = config
+            raise ChatError('api_error', 'stop here')
+
+        llm._request = request
+        with self.assertRaises(ChatError):
+            await llm.reply([], text, {}, None, 512, memory=SimpleNamespace(), on_text=None)
+        return seen['config']
+
+    async def test_a_plain_reminder_request_must_call_the_tool(self):
+        config = await self.config_for('15:30にリマインドして。仕事のやる気が出る声をかけて。')
+        self.assertEqual(str(config.tool_config.function_calling_config.mode), 'FunctionCallingConfigMode.ANY')
+        self.assertEqual(config.tool_config.function_calling_config.allowed_function_names, ['set_reminder'])
+        # 道具を渡した回は、実行してから答えることも本文で伝える。
+        self.assertIn('実行してから答える', config.system_instruction)
+
+    async def test_a_question_about_the_past_is_left_to_the_model(self):
+        config = await self.config_for('15時に何て言ってたっけ？')
+        self.assertIsNone(config.tool_config)
+
+    async def test_a_reminder_and_a_memory_in_one_sentence_can_both_run(self):
+        config = await self.config_for('明日9時に薬って教えて。このこと覚えて')
+        self.assertEqual(sorted(config.tool_config.function_calling_config.allowed_function_names),
+                         ['remember', 'set_reminder'])
+
+    async def test_writing_up_the_result_drops_both_the_tools_and_the_requirement(self):
+        """呼び出し必須を残したまま道具を外すと、呼べる道具が無いのに呼べと言うことになる。"""
+        llm = self.llm()
+        seen = []
+
+        def call(name, args):
+            return SimpleNamespace(name=name, args=args, id=name)
+
+        async def request(contents, config):
+            seen.append((config.tools, config.tool_config))
+            if len(seen) == 1:
+                return SimpleNamespace(function_calls=[call('set_reminder', {'at': '2030-01-01T09:00', 'message': '薬'}),
+                                                       call('remember', {'topic': '薬', 'fact': '毎朝9時'})],
+                                       candidates=[SimpleNamespace(content=SimpleNamespace(parts=[]))])
+            return SimpleNamespace(text='予約したよ', candidates=[SimpleNamespace(
+                content=SimpleNamespace(parts=[SimpleNamespace(text='予約したよ', thought=False)]),
+                finish_reason='STOP')], function_calls=None)
+
+        llm._request = request
+        memory = SimpleNamespace(call=AsyncMock(return_value={'ok': True}))
+        answer = await llm.reply([], '明日9時に薬って教えて。このこと覚えて', {}, None, 512,
+                                 memory=memory, on_text=None)
+        self.assertEqual(answer, '予約したよ')
+        self.assertIsNotNone(seen[0][1])            # 1回目は呼び出しを必須にする
+        self.assertEqual(seen[1], (None, None))     # 2回目は道具も必須指定も外す
+
+    async def test_remembering_is_still_the_model_s_call(self):
+        config = await self.config_for('これを覚えて：お茶が好き')
+        self.assertIsNone(config.tool_config)
 
 
 class ThinkingConfigTests(unittest.TestCase):
