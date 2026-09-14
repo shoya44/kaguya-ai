@@ -665,14 +665,17 @@ let reminderId: string | null = null;
 let voice: VoiceChat | null = null;
 
 /** 予約の時刻になったことをOSの通知でも知らせる。PC（Tauri）だけ。
- * 画面を見ていないと吹き出しに気づけないため。出せなくても吹き出しは出ている。 */
+ * 画面を見ていないと吹き出しに気づけないため。出せなくても吹き出しは出ている。
+ *
+ * Rust側のプラグインが window.Notification をOSの通知へ差し替えるので、
+ * 標準のAPIをそのまま呼ぶ。@tauri-apps/plugin-notification は同じ呼び出しを
+ * 包んだだけなので入れない（起動時にパッケージを取りに行かない作りを崩さない）。 */
 async function notifyReminder(text: string): Promise<void> {
-  if (!isTauri()) return;
+  if (!isTauri() || typeof Notification === 'undefined') return;
   try {
-    const plugin = await import('@tauri-apps/plugin-notification');
-    const granted = await plugin.isPermissionGranted()
-      || (await plugin.requestPermission()) === 'granted';
-    if (granted) plugin.sendNotification({ title: 'かぐや', body: text });
+    const permission = Notification.permission === 'default'
+      ? await Notification.requestPermission() : Notification.permission;
+    if (permission === 'granted') new Notification('かぐや', { body: text });
   } catch {
     // 通知が出せない環境でも、会話や吹き出しは止めない。
   }
