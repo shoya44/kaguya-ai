@@ -12,7 +12,7 @@ from google.genai import errors, types
 from .errors import ChatError
 from .persona import memory_prompt, conversation_context, now_label
 from .memory_store import PERSONA_AUTO_KEYS, WisdomBatch, PersonaCandidate, validate_batch
-from . import tools
+from . import reply_hints, tools
 
 
 # Geminiへ「この形で返して」と渡すスキーマ。
@@ -73,6 +73,9 @@ TOOL_GUIDANCE = ('\n道具を渡してある。頼まれた操作は、必ず道
 # 頼み方がはっきりしている回は呼び出しを必須にする。引数が読み取れないときは
 # 道具側が断り、その断りがそのまま本文になる（黙って成功したことにはならない）。
 FORCED_TOOLS = ('set_reminder',)
+
+# 相談の回に確保する出力上限（トークン）。設定値がこれより大きければそのまま使う。
+CONSULT_MIN_TOKENS = 2048
 # 「15時に何て言ってたっけ？」のような問い返しは、頼みではないので強制しない。
 _ASKING = re.compile(r'[？?]|っけ|ですか|でしょうか|かな$')
 
@@ -154,18 +157,22 @@ class Gemini:
             raise ChatError('empty_response', '回答を取得できませんでした。入力を見直して再試行できます。')
         return response.text.strip()
 
-    def _chat_thinking_config(self):
-        """日常会話・整理とも安定性と低遅延を優先する。"""
+    def _chat_thinking_config(self, deep=False):
+        """日常会話は安定性と低遅延を優先する。deep は相談の回だけ。
+
+        雑談まで考えさせると、ただ反応の遅いアプリになる。逆に相談の回まで
+        考えずに書き始めると、当たり障りのない一般論が返る。分けて扱う。
+        """
         model = str(self.settings.gemini_model or '').lower()
         if 'gemini-3' in model:
             try:
-                return types.ThinkingConfig(thinking_level='low')
+                return types.ThinkingConfig(thinking_level='medium' if deep else 'low')
             except (TypeError, ValueError):
-                return types.ThinkingConfig(thinking_budget=1024)
+                return types.ThinkingConfig(thinking_budget=4096 if deep else 1024)
         if 'gemini-2.5-pro' in model:
-            return types.ThinkingConfig(thinking_budget=128)
+            return types.ThinkingConfig(thinking_budget=1024 if deep else 128)
         if 'gemini-2.5' in model:
-            return types.ThinkingConfig(thinking_budget=0)
+            return types.ThinkingConfig(thinking_budget=1024 if deep else 0)
         return None
 
     async def _generate(self, contents, config):
@@ -224,10 +231,14 @@ class Gemini:
             system += TOOL_GUIDANCE
         contents = [types.Content(role=item['role'], parts=[types.Part(text=item['text'])])
                     for item in conversation_context(history, text, system)]
+        deep = reply_hints.intent(text) == 'consult'
+        limit = max_tokens or self.settings.max_output_tokens
+        # 考えた分も出力上限を食う。相談の回だけ床を上げないと、考えるほど本文が
+        # 途中で切れて「出力上限に達した」になる。
         config = types.GenerateContentConfig(
             system_instruction=system,
-            max_output_tokens=max_tokens or self.settings.max_output_tokens,
-            thinking_config=self._chat_thinking_config(),
+            max_output_tokens=max(limit, CONSULT_MIN_TOKENS) if deep else limit,
+            thinking_config=self._chat_thinking_config(deep),
         )
         if not selected_tools and on_text is not None:
             return await self._stream(contents, config, on_text)

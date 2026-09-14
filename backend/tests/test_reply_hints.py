@@ -159,20 +159,22 @@ class CallbackTests(unittest.TestCase):
 class IntentTests(unittest.TestCase):
     """共感・相談・雑談で、返答の構成を切り替える。"""
 
-    def test_three_intents_change_the_plan(self):
+    def test_four_intents_change_the_plan(self):
         from app.persona import memory_prompt
         from app.reply_hints import RESPONSE_PLAN, intent
         for said, expected in [
-            ('疲れた', 'empathy'), ('しんどい、聞いてほしい', 'empathy'),
+            ('疲れた', 'empathy'), ('しんどい、聞いてほしい', 'listen'),
             ('どうしたらいい？', 'consult'), ('疲れたけど、どうすればいいかな', 'consult'),
             ('今日暑いね', 'chat'), ('', 'chat'),
         ]:
             with self.subTest(said=said):
                 self.assertEqual(intent(said), expected)
-        # 「疲れた」には助言を出さず、「どうしたらいい？」には具体案を求める。
-        self.assertIn('助言', RESPONSE_PLAN['empathy'])
+        # 弱音には小さな一歩を1つだけ、相談には具体案を、聞くだけの回には何も足さない。
+        self.assertIn('小さな一歩を1つだけ', RESPONSE_PLAN['empathy'])
         self.assertIn('具体案', RESPONSE_PLAN['consult'])
+        self.assertIn('助言・解決策・原因の掘り下げは出さない', RESPONSE_PLAN['listen'])
         self.assertIn(RESPONSE_PLAN['empathy'], memory_prompt(now=NOW, text='疲れた'))
+        self.assertIn(RESPONSE_PLAN['listen'], memory_prompt(now=NOW, text='ただ聞いてほしいだけ'))
         self.assertIn(RESPONSE_PLAN['chat'], memory_prompt(now=NOW, text='今日暑いね'))
 
     def test_indecision_alone_does_not_request_solutions(self):
@@ -183,7 +185,19 @@ class IntentTests(unittest.TestCase):
                 self.assertNotEqual(intent(said), 'consult')
         for said in ('どうすればいい？', '対処法を教えて', 'アドバイスがほしい'):
             self.assertEqual(intent(said), 'consult')
-        self.assertEqual(intent('アドバイスはいらない、どうしようって悩んでるだけ'), 'empathy')
+        self.assertEqual(intent('アドバイスはいらない、どうしようって悩んでるだけ'), 'listen')
+
+    def test_asking_for_an_opinion_counts_as_a_consultation(self):
+        """「どうしたら」と言わない限り助言が出ない、という取りこぼしを減らす。"""
+        from app.reply_hints import intent
+        for said in ('これどう思う？', '相談したいことがある', '何から手をつければいい',
+                     '整理してほしい', 'おすすめある？', 'AとBどっちがいい'):
+            with self.subTest(said=said):
+                self.assertEqual(intent(said), 'consult')
+        # 迷いの独り言は、広げたあとも相談にしない。
+        for said in ('どうしよう、決められない', '選べないんだよね'):
+            with self.subTest(said=said):
+                self.assertNotEqual(intent(said), 'consult')
 
 
 class ConversationContinuityTests(unittest.TestCase):

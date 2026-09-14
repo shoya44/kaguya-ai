@@ -116,6 +116,34 @@ class ForcedToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(config.tool_config)
 
 
+class ConsultRoomTests(unittest.IsolatedAsyncioTestCase):
+    """相談の回だけ、考える時間と書ける長さを増やす。"""
+
+    async def config_for(self, text):
+        llm = Gemini(SimpleNamespace(gemini_api_key=SecretStr(''), gemini_model='gemini-2.5-flash',
+                                     llm_timeout_seconds=5, max_output_tokens=1024))
+        seen = {}
+
+        async def stream(contents, config, on_text):
+            seen['config'] = config
+            return 'ok'
+
+        llm._stream = stream
+        await llm.reply([], text, {}, None, 1024, memory=None, on_text=lambda _text: None)
+        return seen['config']
+
+    async def test_a_consultation_can_think_and_write_more(self):
+        config = await self.config_for('どうすればいいかな')
+        self.assertEqual(config.thinking_config.thinking_budget, 1024)
+        # 考えた分も上限を食う。床を上げないと本文が途中で切れる。
+        self.assertEqual(config.max_output_tokens, 2048)
+
+    async def test_small_talk_stays_fast(self):
+        config = await self.config_for('今日暑いね')
+        self.assertEqual(config.thinking_config.thinking_budget, 0)
+        self.assertEqual(config.max_output_tokens, 1024)
+
+
 class ThinkingConfigTests(unittest.TestCase):
     @staticmethod
     def client_for(model):
@@ -138,6 +166,15 @@ class ThinkingConfigTests(unittest.TestCase):
     def test_gemini25_flash_disables_thinking(self):
         config = self.client_for('gemini-2.5-flash')._chat_thinking_config()
         self.assertEqual(self.dump(config).get('thinking_budget'), 0)
+
+    def test_a_consultation_gets_more_room_to_think(self):
+        """雑談は今までどおり速く、相談だけ考えさせる。"""
+        for model in ('gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'):
+            with self.subTest(model=model):
+                client = self.client_for(model)
+                plain = self.dump(client._chat_thinking_config())
+                deep = self.dump(client._chat_thinking_config(deep=True))
+                self.assertNotEqual(plain, deep)
 
 
 if __name__ == '__main__':
