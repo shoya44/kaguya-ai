@@ -47,16 +47,18 @@ function volumeHarness(stored = {}) {
   const data = new Map(Object.entries(stored));
   const elements = {};
   const element = () => ({
-    handlers: {}, attributes: {}, value: '', hidden: true, disabled: false, textContent: '',
+    handlers: {}, attributes: {}, dataset: {}, value: '', hidden: true, disabled: false, textContent: '',
     addEventListener(name, callback) { this.handlers[name] = callback; },
     setAttribute(name, value) { this.attributes[name] = value; },
   });
+  const visibility = {};
   const context = vm.createContext({
-    window: { isSecureContext: true, addEventListener() {} },
+    window: { isSecureContext: true, addEventListener() {}, clearTimeout() {}, clearInterval() {} },
+    WebSocket: { OPEN: 1 },
     navigator: { mediaDevices: { getUserMedia() {} } },
     document: {
       getElementById: id => elements[id] ??= element(),
-      addEventListener() {},
+      addEventListener(name, handler) { visibility[name] = handler; },
     },
     localStorage: {
       getItem: key => data.has(key) ? data.get(key) : null,
@@ -65,7 +67,7 @@ function volumeHarness(stored = {}) {
     Promise,
   });
   vm.runInContext(compiled + '\nvar chat = new VoiceChat("http://x", async () => ({sessionToken:"t"}), () => {});', context);
-  return { elements, data,
+  return { elements, data, context, visibility,
     slide: percent => { elements['voice-gain'].value = String(percent); elements['voice-gain'].handlers.input(); },
     mute: () => elements['voice-mute'].handlers.click() };
 }
@@ -94,7 +96,7 @@ test('消音は状態が見えるようにし、次の通話へ持ち越す', ()
   h.mute();
   assert.equal(h.elements['voice-volume'].attributes['data-muted'], 'true');
   assert.equal(h.elements['voice-mute'].attributes['aria-pressed'], 'true');
-  assert.equal(h.elements['voice-mute'].attributes['aria-label'], '消音を解除する');
+  assert.equal(h.elements['voice-mute'].attributes['aria-label'], 'かぐやの音声の消音を解除');
   assert.equal(h.data.get('kaguya.voiceMuted'), '1');
   const again = volumeHarness({ 'kaguya.voiceMuted': '1' });
   assert.equal(again.elements['voice-volume'].attributes['data-muted'], 'true');
@@ -107,6 +109,38 @@ test('つまみを動かしたら消音は解除する', () => {
   h.slide(60);
   assert.equal(h.elements['voice-volume'].attributes['data-muted'], 'false');
   assert.equal(h.data.get('kaguya.voiceMuted'), '0');
+});
+
+test('マイクミュートと相手の音量は独立し、終了時はマイクを解放する', () => {
+  const h = volumeHarness();
+  const track = { enabled: true, stop() { this.stopped = true; } };
+  h.context.chat.stream = { getAudioTracks: () => [track], getTracks: () => [track] };
+  h.context.chat.active = true;
+  h.mute();
+  assert.equal(track.enabled, true);
+  h.elements['voice-mic'].handlers.click();
+  assert.equal(track.enabled, false);
+  assert.equal(h.elements['voice-mic'].textContent, 'マイクを入れる');
+  h.slide(50);
+  assert.equal(track.enabled, false);
+  h.elements['voice-mic'].handlers.click();
+  assert.equal(track.enabled, true);
+  h.context.chat.stop('通話終了');
+  assert.equal(track.stopped, true);
+  assert.equal(h.elements['voice-mic'].hidden, true);
+});
+
+test('画面を離れた理由と再開ボタンが残り、残り時間は終了時に消える', () => {
+  const h = volumeHarness();
+  h.context.chat.active = true;
+  h.context.chat.deadline = Date.now() + 59000;
+  h.context.chat.updateRemaining();
+  assert.match(h.elements['voice-remaining'].textContent, /まもなく終了/);
+  h.context.document.hidden = true;
+  h.visibility.visibilitychange();
+  assert.match(h.elements['voice-status'].textContent, /画面を離れたため/);
+  assert.equal(h.elements['voice-reconnect'].hidden, false);
+  assert.equal(h.elements['voice-remaining'].textContent, '');
 });
 
 test('端末が保存を拒んでも通話は続けられる', () => {

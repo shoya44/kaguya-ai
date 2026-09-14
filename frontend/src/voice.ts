@@ -20,12 +20,17 @@ export class VoiceChat {
   private generation = 0;
   private active = false;
   private timer: number | undefined;
+  private remainingTimer: number | undefined;
+  private deadline = 0;
+  private micMuted = false;
   private volume = 1;
   private muted = false;
   private button = document.getElementById('voice-toggle') as HTMLButtonElement;
   private volumeBox = document.getElementById('voice-volume') as HTMLDivElement | null;
   private slider = document.getElementById('voice-gain') as HTMLInputElement | null;
   private muteButton = document.getElementById('voice-mute') as HTMLButtonElement | null;
+  private micButton = document.getElementById('voice-mic') as HTMLButtonElement | null;
+  private reconnectButton = document.getElementById('voice-reconnect') as HTMLButtonElement | null;
 
   constructor(private base: string, private session: () => Promise<Session>, private onActive: (active: boolean) => void) {
     const blocked = VoiceChat.unavailable();
@@ -37,9 +42,17 @@ export class VoiceChat {
       if (this.active) this.stop('通話終了');
       else void this.start();
     });
-    window.addEventListener('pagehide', () => this.stop('通話終了'));
+    this.reconnectButton?.addEventListener('click', () => void this.start());
+    this.micButton?.addEventListener('click', () => {
+      this.micMuted = !this.micMuted;
+      this.stream?.getAudioTracks().forEach(track => { track.enabled = !this.micMuted; });
+      this.showMic();
+    });
+    window.addEventListener('pagehide', () => {
+      if (this.active) this.stop('画面を離れたため通話を終了しました。');
+    });
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && this.active) this.stop('通話終了');
+      if (document.hidden && this.active) this.stop('画面を離れたため通話を終了しました。');
     });
     this.setupVolume();
   }
@@ -88,7 +101,7 @@ export class VoiceChat {
 
   private showMuted(): void {
     this.volumeBox?.setAttribute('data-muted', String(this.muted));
-    const text = this.muted ? '消音を解除する' : '消音する';
+    const text = this.muted ? 'かぐやの音声の消音を解除' : 'かぐやの音声を消音';
     this.muteButton?.setAttribute('aria-label', text);
     this.muteButton?.setAttribute('title', text);
     this.muteButton?.setAttribute('aria-pressed', String(this.muted));
@@ -102,6 +115,22 @@ export class VoiceChat {
   }
 
   private status(text: string): void { document.getElementById('voice-status')!.textContent = text; }
+
+  private showMic(): void {
+    if (!this.micButton) return;
+    this.micButton.textContent = this.micMuted ? 'マイクを入れる' : 'マイクを切る';
+    this.micButton.setAttribute('aria-pressed', String(this.micMuted));
+    this.micButton.setAttribute('aria-label', this.micMuted ? 'マイクはオフ。自分の声を送信する' : 'マイクはオン。自分の声を止める');
+  }
+
+  private updateRemaining(): void {
+    const seconds = Math.max(0, Math.ceil((this.deadline - Date.now()) / 1000));
+    const minutes = Math.ceil(seconds / 60);
+    const text = seconds <= 60
+      ? 'まもなく終了（残り1分以内）。終了後に再開できます。' : `残り約${minutes}分（最大10分）`;
+    const label = document.getElementById('voice-remaining')!;
+    if (label.textContent !== text) label.textContent = text;
+  }
 
   private label(text: string, active: boolean): void {
     this.button.setAttribute('aria-label', text);
@@ -120,6 +149,9 @@ export class VoiceChat {
     const blocked = VoiceChat.unavailable();
     if (blocked) { this.status(blocked); return; }
     this.active = true;
+    if (this.reconnectButton) this.reconnectButton.hidden = true;
+    this.micMuted = false;
+    this.showMic();
     this.onActive(true);
     const generation = ++this.generation;
     this.label('通話を終了', true);
@@ -138,6 +170,7 @@ export class VoiceChat {
       }});
       if (generation !== this.generation) { stream.getTracks().forEach(track => track.stop()); return; }
       this.stream = stream;
+      if (this.micButton) this.micButton.hidden = false;
       stream.getTracks().forEach(track => track.addEventListener('ended', () => {
         if (generation === this.generation) this.stop('マイク終了');
       }));
@@ -168,6 +201,9 @@ export class VoiceChat {
           const mute = context.createGain(); mute.gain.value = 0;
           context.createMediaStreamSource(stream).connect(this.capture).connect(mute).connect(context.destination);
           this.status('通話中');
+          this.deadline = Date.now() + 600000;
+          this.updateRemaining();
+          this.remainingTimer = window.setInterval(() => this.updateRemaining(), 1000);
           this.timer = window.setTimeout(() => this.stop('10分で通話を終了しました。'), 600000);
         } else if (message.type === 'interrupted') {
           this.clearPlayback();
@@ -179,7 +215,8 @@ export class VoiceChat {
       });
       socket.addEventListener('close', () => {
         window.clearTimeout(timeout);
-        if (generation === this.generation) this.stop('通話終了');
+        if (generation === this.generation) this.stop(this.deadline && Date.now() >= this.deadline - 2000
+          ? '10分で通話を終了しました。' : '音声接続が切れました。通話を再開できます。');
       });
       socket.addEventListener('error', () => {
         if (generation === this.generation) this.stop('音声接続に失敗しました。');
@@ -212,9 +249,15 @@ export class VoiceChat {
   }
 
   stop(message: string): void {
+    const wasActive = this.active;
     ++this.generation;
     this.active = false;
     window.clearTimeout(this.timer);
+    window.clearInterval(this.remainingTimer);
+    this.deadline = 0;
+    document.getElementById('voice-remaining')!.textContent = '';
+    if (this.micButton) this.micButton.hidden = true;
+    if (this.reconnectButton && wasActive) this.reconnectButton.hidden = !!VoiceChat.unavailable();
     this.maxLead = 10;
     this.stream?.getTracks().forEach(track => track.stop()); this.stream = null;
     this.capture?.disconnect(); this.capture = null;

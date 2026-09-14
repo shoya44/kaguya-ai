@@ -21,7 +21,7 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <p>設定は PostgreSQL の <code>app_settings</code> テーブル（<code>options</code> 行）に入っています。画面から変えられるのは一部だけなので、それ以外は<strong>キー名</strong>でこの行を直接編集します。変更はアプリの起動時に読み込まれます。</p>
 <p><strong>全16項目です。ここに無いキーを書くと設定が読めなくなり、既定値で起動します</strong>（壊れた設定は <code>options_bad</code> へ退避されます）。</p>
 <h3>声かけ・記憶</h3>
-<div class="scroll"><table><tr><th>キー</th><th>意味</th><th>範囲・既定</th></tr><tr><td><code>quiet</code></td><td>自発的な声かけを停止。ONでもユーザーからの会話には応答します</td><td>true / false、既定 false</td></tr><tr><td><code>proactive_minutes</code></td><td>声かけの間隔</td><td>60〜240分、既定60</td></tr><tr><td><code>auto_jobs</code></td><td>会話していない時間に記憶を自動整理する</td><td>true / false、既定 true</td></tr><tr><td><code>auto_call_limit</code></td><td>自動整理の1日上限。<strong>自動整理と週次更新だけ</strong>が使います。「今すぐ整理」は上限で止まりません</td><td>1〜10回、既定3</td></tr><tr><td><code>organize_min_rows</code></td><td>自動整理を始める下限。未処理がこの件数に届くまで自動整理は動きません。ただし24時間たった未整理は件数に関わらず整理します</td><td>1〜200件、既定30</td></tr><tr><td><code>mind_enabled</code></td><td>実験機能「Kaguya Mind」。ONにするとかぐや自身の感情・好み・気にかけていることが育ちます。新規の既定はON。設定画面に切替欄はありません</td><td>true / false、既定 true</td></tr></table></div>
+<div class="scroll"><table><tr><th>キー</th><th>意味</th><th>範囲・既定</th></tr><tr><td><code>quiet</code></td><td>自発的な声かけを停止。ONでもユーザーからの会話には応答します</td><td>true / false、既定 false</td></tr><tr><td><code>proactive_minutes</code></td><td>声かけの間隔</td><td>60〜240分、既定60</td></tr><tr><td><code>auto_jobs</code></td><td>会話していない時間に記憶を自動整理する</td><td>true / false、既定 true</td></tr><tr><td><code>auto_call_limit</code></td><td>自動整理の1日上限。<strong>自動整理と週次更新だけ</strong>が使います。「未処理の会話を記憶へ反映」は上限で止まりません</td><td>1〜10回、既定3</td></tr><tr><td><code>organize_min_rows</code></td><td>自動整理を始める下限。未処理がこの件数に届くまで自動整理は動きません。ただし24時間たった未整理は件数に関わらず整理します</td><td>1〜200件、既定30</td></tr><tr><td><code>mind_enabled</code></td><td>実験機能「Kaguya Mind」。ONにするとかぐや自身の感情・好み・気にかけていることが育ちます。新規の既定はON。設定画面に切替欄はありません</td><td>true / false、既定 true</td></tr></table></div>
 <p>Kaguya Mindの蓄積を消すのは設定画面から行います。育った感情・好み・気にかけていることだけを削除し、会話と記憶は消えません。</p>
 <h3>会話と画面</h3>
 <div class="scroll"><table><tr><th>キー</th><th>意味</th><th>範囲・既定</th></tr><tr><td><code>reply_tokens</code></td><td>回答の出力上限</td><td>256〜8,192トークン、既定1,024</td></tr><tr><td><code>font_size</code></td><td>文字サイズ</td><td>12〜22、既定14</td></tr><tr><td><code>always_on_top</code></td><td>最前面表示。PC/Tauri画面に適用（iPhoneでは表示しません）</td><td>true / false、既定 true</td></tr><tr><td><code>weather_location</code></td><td>天気の既定地点。会話からも変えられます</td><td>80文字まで、既定「東京」</td></tr></table></div>
@@ -71,7 +71,7 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <p>語の一覧は <code>backend/app/tools.py</code> の <code>PROJECT_WORDS</code> にあります。増やすときは、この表も一緒に直してください（ずれるとテストが落ちます）。</p>
 <h3>音声会話</h3>
 <p>「会話」画面の入力欄にある通話ボタンから、Gemini Liveと双方向に音声会話できます。通話中は同じボタンで終了できます。</p>
-<ul><li>1回最大10分</li><li>マイク音声は16kHz PCMとしてGemini Liveへ送信し、返答音声をその場で再生（1回最大10分・従量課金）</li><li>通話中は通話ボタンの左に音量のつまみと消音ボタンが出ます。読み上げがGeminiでもPCのエンジンでも同じつまみで効きます</li><li>音量と消音は<strong>端末ごと</strong>に覚えます。PCとiPhoneで別々に設定できます（サーバーには送りません）</li><li>通話中の字幕は画面に出しません。会話が終わると通常の会話履歴に残ります</li><li>現行のGemini Live設定はNO_INTERRUPTIONです。返答中の発話による自動割り込みは有効にしていません</li><li>読み上げは PCの [AivisSpeech](https://aivis-project.com/) か [VOICEVOX](https://voicevox.hiroshiba.jp/) に任せられます。使う場合は、通話の前にそのアプリを起動してください</li><li>繋がらない場合は Gemini の声で通話を続け、理由を画面に出します</li><li>PCの読み上げを使うと、文がそろってから合成するぶん、最初の一声までが少し遅くなります</li><li>現行設定では、PCの読み上げ中もGemini側は音声を生成します。生成音声は再生せず、出力字幕をローカルTTSへ渡します。ローカルTTSへ切り替えてもGeminiの音声生成は省略されません</li><li>キャラクターごとの利用規約・クレジット表記の条件は、各エンジンの配布元で確認してください</li><li>ユーザー発話と、かぐやの返答の字幕を通常の会話履歴へ保存します</li><li><strong>音声データ自体は保存しません</strong></li><li>通常の長期記憶・Relationship Memory・Kaguya Mindの文脈を会話開始時に参照します</li><li>音声通話中は文字チャットを同時実行できません</li><li>音声通話からも、指定時刻のリマインダー予約と「覚えておいて」は実行します</li><li>音声通話から天気・予定・ファイル検索・BAT等の外部操作は実行しません</li><li>PC/Tauri、またはTailscaleのHTTPS接続で利用します。同一LANのHTTP接続ではブラウザのマイク制約により利用できません</li><li>iPhoneから使うには、PCで <code>pc_setup.bat</code> を実行し、<code>1</code>（Tailscaleを導入）→ <code>2</code>（HTTPS接続を有効化）を選びます。 表示された <code>https://….ts.net</code> を、同じTailscaleアカウントでログインしたiPhoneのSafariで開きます</li><li>Gemini Liveの利用量はGemini API側の課金・利用枠に従います</li></ul>
+<ul><li>1回最大10分。残り時間と終了前の予告を表示し、終了後は「通話を再開」で接続し直せます。画面を離れた場合も終了理由を表示します</li><li>マイク音声は16kHz PCMとしてGemini Liveへ送信し、返答音声をその場で再生（1回最大10分・従量課金）</li><li>通話中は通話ボタンの左に音量のつまみと消音ボタンが出ます。読み上げがGeminiでもPCのエンジンでも同じつまみで効きます</li><li>音量・消音はかぐやの声だけに適用します。「マイクを切る／入れる」で自分の声の送信を別に切り替えられます。マイクは新しい通話ではオンになります。音量と消音は<strong>端末ごと</strong>に覚えます。PCとiPhoneで別々に設定できます（サーバーには送りません）</li><li>通話中の字幕は画面に出しません。会話が終わると通常の会話履歴に残ります</li><li>現行のGemini Live設定はNO_INTERRUPTIONです。返答中の発話による自動割り込みは有効にしていません</li><li>読み上げは PCの [AivisSpeech](https://aivis-project.com/) か [VOICEVOX](https://voicevox.hiroshiba.jp/) に任せられます。使う場合は、通話の前にそのアプリを起動してください</li><li>繋がらない場合は Gemini の声で通話を続け、理由を画面に出します</li><li>PCの読み上げを使うと、文がそろってから合成するぶん、最初の一声までが少し遅くなります</li><li>現行設定では、PCの読み上げ中もGemini側は音声を生成します。生成音声は再生せず、出力字幕をローカルTTSへ渡します。ローカルTTSへ切り替えてもGeminiの音声生成は省略されません</li><li>キャラクターごとの利用規約・クレジット表記の条件は、各エンジンの配布元で確認してください</li><li>ユーザー発話と、かぐやの返答の字幕を通常の会話履歴へ保存します</li><li><strong>音声データ自体は保存しません</strong></li><li>通常の長期記憶・Relationship Memory・Kaguya Mindの文脈を会話開始時に参照します</li><li>音声通話中は文字チャットを同時実行できません</li><li>音声通話からも、指定時刻のリマインダー予約と「覚えておいて」は実行します</li><li>音声通話から天気・予定・ファイル検索・BAT等の外部操作は実行しません</li><li>PC/Tauri、またはTailscaleのHTTPS接続で利用します。同一LANのHTTP接続ではブラウザのマイク制約により利用できません</li><li>iPhoneから使うには、PCで <code>pc_setup.bat</code> を実行し、<code>1</code>（Tailscaleを導入）→ <code>2</code>（HTTPS接続を有効化）を選びます。 表示された <code>https://….ts.net</code> を、同じTailscaleアカウントでログインしたiPhoneのSafariで開きます</li><li>Gemini Liveの利用量はGemini API側の課金・利用枠に従います</li></ul>
 <h3>進捗と接続状態</h3>
 <p>画面上部に接続状態（接続中… / 接続済み / 未接続）を常設し、生成中は「接続中」「回答を生成中」「保存中」を出します。実際には検索していないのに「記憶を探しているよ」のような演出は出しません。</p>
 <h3>終了</h3>
@@ -181,7 +181,7 @@ body{font:16px/1.8 'Yu Gothic UI',sans-serif;background:#191320;color:#f5effc;ma
 <p>例：</p>
 <pre><code>明日9時に薬って教えて
 30分後に声かけて</code></pre>
-<p>時刻になると、吹き出しとかぐやの呼びかけに加えて、PC版では画面が前に出ます。別のウィンドウを操作中で前に出せないときは、タスクバーのアイコンが点滅します。吹き出しの下の「通話に出る」を押すと、確認済みとして記録したうえで音声通話が始まります。通話できない接続（同一LANのHTTPなど）では、このボタンは出ません。</p>
+<p>時刻になると、設定・記憶画面でも共通の通知に期限と内容を表示します。PC版では画面が前に出ます。別のウィンドウを操作中で前に出せないときは、タスクバーのアイコンが点滅します。本文のタップでは確認済みにしません。「確認しました」で保存し、「かぐやと話す」は確認とは別に音声通話を始めます。通知は接続中のアプリ内表示で、iPhoneのロック画面には届きません。通話できない接続（同一LANのHTTPなど）では、このボタンは出ません。</p>
 <h3>カレンダー</h3>
 <p>例：</p>
 <pre><code>明日15時に歯医者の予定を入れて
@@ -218,7 +218,7 @@ READMEを確認してiPhone対応を教えて</code></pre>
 <h3>検索</h3>
 <p>記憶の呼び出しも、記憶タブの検索も、全角・半角と大文字・小文字を揃えてから部分一致で探します。いまの発言に一致した記憶を、直前の話題にだけ一致した記憶より優先します（直前の話題に引きずられないため）。「今回だけ詳しく」のような一度きりの指示は、長期的な好みとしては保存しません。</p>
 <h3>整理</h3>
-<p>「設定 → 今すぐ整理」で未処理の会話から長期的な情報を抽出します。</p>
+<p>「設定 → 未処理の会話を記憶へ反映」で未処理の会話から長期的な情報を抽出します。</p>
 <ul><li>Geminiへ送るのは入力上限内の未処理会話</li><li>結果はPydantic schemaで検証</li><li>根拠IDを検証してからDBへ保存</li><li>失敗時は未処理原文を保持</li><li>会話が始まったら整理を中断</li><li>1日のAPI上限あり</li></ul>
 <p>接し方（<code>persona_character</code>）の自動更新は従来どおり慎重で、週次かつ「明示された知恵」が3日以上の別々の日で確認できた場合だけ候補にします。手動で変更・保護した項目は上書きしません。</p>
 <p>自動整理の実行タイミングは「安定性優先の動作 → 記憶整理」を参照してください。</p>

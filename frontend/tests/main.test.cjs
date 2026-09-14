@@ -243,12 +243,14 @@ test('reminder survives duplicates and replies until acknowledgement succeeds', 
   const event = { type: 'reminder.due', id: 'reminder-one', text: 'take medicine' };
   h.sockets[0].emit(event); h.sockets[0].emit(event);
   h.run("showMiniReply('reply'); hideBubble()");
-  const bubble = h.elements['proactive-bubble'];
-  assert.equal(bubble.textContent, 'take medicine');
-  assert.equal(bubble.hidden, false);
-  bubble.handlers.click(); await h.flush();
+  const notice = h.elements['reminder-notice'];
+  assert.equal(h.elements['reminder-text'].textContent, 'take medicine');
+  assert.equal(notice.hidden, false);
+  h.elements['proactive-bubble'].handlers.click(); await h.flush();
+  assert.ok(!h.calls.some(call => call.url.endsWith('/ack')));
+  await h.elements['reminder-confirm'].handlers.click();
   assert.ok(h.calls.some(call => call.url.endsWith('/reminders/reminder-one/ack')));
-  assert.equal(bubble.hidden, true);
+  assert.equal(notice.hidden, true);
   assert.equal(h.run('reminderId'), null);
 });
 
@@ -268,16 +270,16 @@ test('予約の時刻は、画面を前に出して気づかせる', async () =>
   assert.ok(invoked.includes('alert_window'));
 });
 
-test('予約の時刻には、そのまま通話に出られる', async () => {
+test('通知から通話へ進んでも、確認済みにする操作は別に残る', async () => {
   const h = harness(); await connected(h);
+  h.run('globalThis.started = 0; voice = {start: () => { started++; }}');
   h.sockets[0].emit({ type: 'reminder.due', id: 'r-call', text: '休憩する' });
   const button = h.elements['reminder-call'];
   assert.equal(button.hidden, false);
   button.handlers.click(); await h.flush();
-  // 押した時点で気づいているので、確認済みとして送る。ボタンは出したままにしない。
-  assert.ok(h.calls.some(call => call.url.endsWith('/reminders/r-call/ack')));
-  assert.equal(button.hidden, true);
-  assert.equal(h.run('reminderId'), null);
+  assert.equal(h.run('started'), 1);
+  assert.ok(!h.calls.some(call => call.url.endsWith('/reminders/r-call/ack')));
+  assert.equal(h.run('reminderId'), 'r-call');
 });
 
 test('通話できない端末では、出るボタンを出さない', async () => {
@@ -286,7 +288,7 @@ test('通話できない端末では、出るボタンを出さない', async ()
   h.sockets[0].emit({ type: 'reminder.due', id: 'r-mute', text: '休憩する' });
   assert.equal(h.elements['reminder-call'].hidden, true);
   // 吹き出しは今までどおり出る。
-  assert.equal(h.elements['proactive-bubble'].hidden, false);
+  assert.equal(h.elements['reminder-notice'].hidden, false);
 });
 
 test('failed reminder acknowledgement leaves notification available to retry', async () => {
@@ -294,9 +296,29 @@ test('failed reminder acknowledgement leaves notification available to retry', a
     : response({ items: [], next_cursor: null }) });
   await connected(h);
   h.sockets[0].emit({ type: 'reminder.due', id: 'one', text: 'medicine' });
-  h.elements['proactive-bubble'].handlers.click(); await h.flush();
+  await h.elements['reminder-confirm'].handlers.click();
   assert.equal(h.run('reminderId'), 'one');
-  assert.equal(h.elements['proactive-bubble'].hidden, false);
+  assert.equal(h.elements['reminder-notice'].hidden, false);
+  assert.match(h.elements['reminder-error'].textContent, /もう一度/);
+  assert.equal(h.elements['reminder-confirm'].disabled, false);
+});
+
+test('確認保存中に別の通知が届いても、新しい通知を消さない', async () => {
+  let finish;
+  const h = harness({ fetch: async url => url.endsWith('/ack') ? new Promise(resolve => { finish = resolve; })
+    : response({ items: [], next_cursor: null }) });
+  await connected(h);
+  h.sockets[0].emit({ type: 'reminder.due', id: 'one', text: 'first' });
+  const pending = h.elements['reminder-confirm'].handlers.click();
+  await h.flush();
+  h.sockets[0].emit({ type: 'reminder.due', id: 'two', text: 'second', due_at: '2026-09-14T15:00:00+09:00' });
+  finish(response({ok:true}));
+  await pending;
+  assert.equal(h.run('reminderId'), 'two');
+  assert.equal(h.elements['reminder-notice'].hidden, false);
+  assert.equal(h.elements['reminder-text'].textContent, 'second');
+  h.sockets[0].emit({type:'reminder.ack',id:'two'});
+  assert.equal(h.elements['reminder-notice'].hidden, true);
 });
 
 test('streaming updates the pending answer in place and keeps one bubble', async () => {

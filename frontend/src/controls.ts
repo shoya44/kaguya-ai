@@ -55,7 +55,7 @@ export class Controls {
     document.getElementById('quiet-btn')!.addEventListener('click', () => this.toggleQuiet());
     document.getElementById('organize-btn')!.addEventListener('click', () => this.perform(async () => {
       await this.api('/jobs/run', { method: 'POST' });
-      this.message('記憶の整理を開始しました。完了すると結果を表示します。');
+      this.message('未処理の会話の反映を開始しました。完了すると結果を表示します。');
       await this.refreshSettings();
     }));
     document.getElementById('memory-filter')!.addEventListener('submit', event => {
@@ -186,6 +186,7 @@ export class Controls {
   async refreshMemories(): Promise<void> {
     const request = ++this.memoryRequest;
     const layer = this.layer;
+    document.getElementById('memory-add')!.hidden = layer !== 'persona';
     const offset = this.offset;
     const q = (document.getElementById('memory-search') as HTMLInputElement).value;
     const list = document.getElementById('memory-list')!;

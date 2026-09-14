@@ -148,11 +148,14 @@ def memory_prompt(recalled=None, proactive=None, now=None, text='', history=None
         values['Kaguya Mind'] = mind
     if proactive:
         values['直前の声かけ'] = proactive
-    tone = tone_hint(mind if mind_enabled else None, relationship)
+    consulting = reply_hints.intent(text, history) == 'consult'
+    tone = ('相談の内容を優先する。具体案と理由を伝え、必要な条件が不明なら確認する。'
+            '気分や時間帯を理由に説明を省略せず、相づちだけで終わらない。' if consulting else
+            tone_hint(mind if mind_enabled else None, relationship))
     if tone:
         values['今回の返し方'] = tone
     if text:
-        values['応答方針の参考'] = reply_hints.RESPONSE_PLAN[reply_hints.intent(text)]
+        values['応答方針の参考'] = reply_hints.RESPONSE_PLAN[reply_hints.intent(text, history)]
     look_back = reply_hints.callback(recalled, text, history, now)
     if look_back:
         values['前に話したこと'] = look_back

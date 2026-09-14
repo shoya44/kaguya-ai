@@ -109,6 +109,7 @@ class Jobs:
             # 同じ自動処理を何度も繰り返さないため、試行日は先に記録する。
             self.store.record(daily_attempt=daily, weekly_attempt=weekly, job_attempt_at=now.isoformat())
             processed = 0
+            updated = 0
             if manual:
                 # 手動は1日の上限で止めないが、1回押すたびに延々と呼び続けない。
                 # 足りなければもう一度押せばよい。押した瞬間に何十回も呼ぶ作りだと
@@ -144,6 +145,7 @@ class Jobs:
                     result = {'items': []}
                 saved = await self.memory.call('POST', '/organize/commit', json={'snapshot': snap, 'result': result})
                 processed += saved['processed']
+                updated += saved.get('updated', 0)
             if not self.controller.active and not self.controller.editing and weekly_due:
                 snap = await self.memory.call('GET', '/weekly/snapshot')
                 if not can_continue():
@@ -165,7 +167,14 @@ class Jobs:
             await self.memory.call('POST', '/cleanup')
             self.store.record(daily_done=daily)
             self.store.clear_failures(now.date().isoformat())
-            self.status = f'整理完了：{processed}件のユーザー発言を処理しました。'
+            # 反映済みの変更は戻さず、残件取得だけの失敗は結果表示に分ける。
+            remaining = None
+            try:
+                remaining = (await self.memory.call('GET', '/summary'))['pending']
+            except (ChatError, KeyError):
+                pass
+            rest = f'残り{remaining}件' if remaining is not None else '残件数は取得できませんでした'
+            self.status = f'今回の処理完了：会話{processed}件／記憶更新{updated}件（延べ）／{rest}。'
         except asyncio.CancelledError:
             # 会話を優先して止めただけ。失敗ではないので数えない。
             self.status = self.cancel_reason or '整理を中断しました。未処理の原文は保持しています。'

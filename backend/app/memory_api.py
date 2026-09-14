@@ -178,7 +178,7 @@ class MemoryClient:
                 if detail == 'memory_changed':
                     raise ChatError('memory_changed', '記憶が更新されました。再読み込みしてから操作してください。')
                 if detail == 'memory_full':
-                    raise ChatError('memory_full', '未整理の記憶が上限に達しました。設定画面の「今すぐ整理」を実行してください。')
+                    raise ChatError('memory_full', '未整理の記憶が上限に達しました。設定画面の「未処理の会話を記憶へ反映」を実行してください。')
                 raise ChatError('turn_conflict', '同じ会話IDに異なる内容は送信できません。')
             if result.status_code == 400:
                 detail = result.json().get('detail', '')

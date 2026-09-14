@@ -472,6 +472,44 @@ button:active:not(:disabled) {
 }
 
 /* --- タッチ端末：見た目は据え置き、当たり判定だけ44px以上を確保する --- */
+.memory-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.memory-heading h1 { margin: 0; }
+#memory-filter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+}
+#memory-layer { grid-column: 1 / -1; width: 100%; }
+#memory-search { min-width: 0; width: 100%; }
+#reminder-notice {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 35%;
+  overflow: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-l);
+  background: var(--panel);
+  overflow-wrap: anywhere;
+}
+#reminder-notice p { margin: var(--space-2) 0; white-space: pre-wrap; }
+#reminder-error:empty { display: none; }
+#reminder-notice button, #memory-add, #voice-mic, #voice-reconnect { min-height: 44px; }
+.voice-state { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.voice-state p { margin: 0; }
+#voice-remaining { color: var(--muted); }
+#voice-mic[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+body.keyboard-open #reminder-notice { padding: var(--space-1) var(--space-2); }
+body.keyboard-open #reminder-notice p { margin: var(--space-1) 0; }
+body.keyboard-open #app.mode-normal:has(#reminder-notice:not([hidden])) #history { min-height: 24px; }
+body.keyboard-open .voice-state { gap: var(--space-1); }
+#app.mode-mini #reminder-notice { max-height: 140px; }
+#app.mode-mini:has(#reminder-notice:not([hidden])):not(.calling) #input-form { display: none; }
+
 @media (hover: none) and (pointer: coarse) {
   .toolbar > .button-row button,
   #older-btn,

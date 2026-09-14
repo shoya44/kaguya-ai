@@ -231,7 +231,7 @@ class Gemini:
             system += TOOL_GUIDANCE
         contents = [types.Content(role=item['role'], parts=[types.Part(text=item['text'])])
                     for item in conversation_context(history, text, system)]
-        deep = reply_hints.intent(text) == 'consult'
+        deep = reply_hints.intent(text, history) == 'consult'
         limit = max_tokens or self.settings.max_output_tokens
         # 考えた分も出力上限を食う。相談の回だけ床を上げないと、考えるほど本文が
         # 途中で切れて「出力上限に達した」になる。

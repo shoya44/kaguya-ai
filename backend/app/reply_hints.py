@@ -132,6 +132,7 @@ _NO_ADVICE = re.compile(r'アドバイス(?:は)?いらない|聞いて(?:ほし
 _CONSULT = re.compile(r'どうしたら|どうすれば|どうやって|教えて|どう思う|どっちがいい|どれがいい'
                       r'|相談(?:したい|に乗って|できる|がある)|意見(?:を|が)?(?:ほしい|欲しい|聞かせ|ちょうだい)'
                       r'|何から|整理して|まとめて|おすすめ(?:は|を|が)?'
+                      r'|比較して|比較を(?:して|お願い)|判断材料(?:を|が)?(?:出して|ほしい|欲しい|教えて)'
                       r'|(?:アドバイス|解決策|具体案|対処法|提案|案)(?:を|が|は)?(?:ほしい|欲しい|ください|して|ある|教えて|出して)')
 _EMPATHY = re.compile(r'疲れた|つらい|しんど|きつい|悲しい|落ち込|不安|最悪|泣き')
 
@@ -150,7 +151,7 @@ RESPONSE_PLAN = {
 }
 
 
-def intent(text: str) -> str:
+def intent(text: str, history=None) -> str:
     """ユーザー発話の意図。'listen' / 'empathy' / 'consult' / 'chat' のいずれか。"""
     value = str(text or '')
     # 「聞いてほしい」が最優先。ここで相談側へ倒すと、望まれていない助言になる。
@@ -159,6 +160,11 @@ def intent(text: str) -> str:
     # 弱音と一緒に聞かれたときは、聞かれている側を採る（相談を共感で流さない）。
     if _CONSULT.search(value):
         return 'consult'
+    # 明示的な続き・条件の補足だけを引き継ぐ。新しい雑談や「聞くだけ」は巻き込まない。
+    if history and re.search(r'^(?:それなら|その場合|その案|さっきの|続き(?:を|は)|具体的には|例えば|予算は|期限は|条件は|優先したいのは|Aは|Bは)', value):
+        recent = list(history)[-3:]
+        if intent(str(recent[-1].get('text') or ''), recent[:-1]) == 'consult':
+            return 'consult'
     if _EMPATHY.search(value):
         return 'empathy'
     return 'chat'

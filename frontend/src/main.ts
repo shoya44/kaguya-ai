@@ -664,40 +664,46 @@ let miniReplyTimer: number | null = null;
 let reminderId: string | null = null;
 let voice: VoiceChat | null = null;
 
-/** 「通話に出る」ボタンの出し入れ。通話できない端末・状況では出さない。 */
+/** 通知から会話へ移る操作。確認済みにする操作とは分ける。 */
 function showReminderCall(show: boolean): void {
   const button = document.getElementById('reminder-call') as HTMLButtonElement;
   button.hidden = !show || !!VoiceChat.unavailable();
 }
 
 document.getElementById('reminder-call')!.addEventListener('click', () => {
-  showReminderCall(false);
-  // 押した時点で気づいているので、確認済みとして扱う。通話の開始が主で、
-  // 確認の保存が失敗しても通話は始める（吹き出しは残るので押し直せる）。
-  const id = reminderId;
+  controls?.open('chat');
   void voice?.start();
+});
+
+function clearReminder(id: string): void {
+  if (reminderId !== id) return;
+  reminderId = null;
+  document.getElementById('reminder-notice')!.hidden = true;
+  document.getElementById('reminder-error')!.textContent = '';
+}
+
+document.getElementById('reminder-confirm')!.addEventListener('click', async () => {
+  const id = reminderId;
   if (!id) return;
-  api(`/reminders/${encodeURIComponent(id)}/ack`, { method: 'POST' }).then(() => {
-    if (reminderId === id) { reminderId = null; hideBubble(); }
-  }).catch(() => showError('通知の確認を保存できませんでした。吹き出しをクリックしてください。', null));
+  const button = document.getElementById('reminder-confirm') as HTMLButtonElement;
+  if (button.disabled) return;
+  button.disabled = true;
+  document.getElementById('reminder-error')!.textContent = '';
+  try {
+    await api(`/reminders/${encodeURIComponent(id)}/ack`, { method: 'POST' });
+    clearReminder(id);
+  } catch {
+    if (reminderId === id) document.getElementById('reminder-error')!.textContent = '確認を保存できませんでした。もう一度「確認しました」を押してください。';
+  } finally { button.disabled = false; }
 });
 
 document.getElementById('proactive-bubble')!.addEventListener('click', () => {
-  if (reminderId) {
-    const id = reminderId;
-    api(`/reminders/${encodeURIComponent(id)}/ack`, { method: 'POST' }).then(() => {
-      if (reminderId === id) { reminderId = null; hideBubble(); }
-    }).catch(() => showError('通知の確認を保存できませんでした。もう一度クリックしてください。', null));
-    return;
-  }
   hideBubble();
 });
 
 function hideBubble(): void {
-  if (reminderId) return;
   if (miniReplyTimer !== null) { window.clearTimeout(miniReplyTimer); miniReplyTimer = null; }
   document.getElementById('proactive-bubble')!.hidden = true;
-  showReminderCall(false);
 }
 
 function showMiniReply(text: string): void {
@@ -850,12 +856,13 @@ function handleServerEvent(data: Record<string, unknown>): void {
       if (typeof data.id !== 'string') break;
       const repeated = reminderId === data.id;
       reminderId = data.id;
-      const bubble = document.getElementById('proactive-bubble')!;
-      bubble.textContent = data.text as string;
-      bubble.hidden = false;
-      if (miniReplyTimer !== null) window.clearTimeout(miniReplyTimer);
-      // 声かけと違い自動では消さない。クリックで閉じるまで残す。
-      miniReplyTimer = null;
+      hideBubble();
+      document.getElementById('reminder-text')!.textContent = data.text as string;
+      const due = new Date(data.due_at as string);
+      document.getElementById('reminder-time')!.textContent = Number.isNaN(due.getTime()) ? ''
+        : due.toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      document.getElementById('reminder-notice')!.hidden = false;
+      if (!repeated) document.getElementById('reminder-error')!.textContent = '';
       showReminderCall(true);
       if (repeated) break;
       talkingState = 'talking';
@@ -869,7 +876,7 @@ function handleServerEvent(data: Record<string, unknown>): void {
       break;
     }
     case 'reminder.ack':
-      if (reminderId === data.id) { reminderId = null; hideBubble(); }
+      clearReminder(data.id as string);
       break;
     case 'jobs.changed':
       organizing = data.running === true;

@@ -161,7 +161,8 @@ class Controller:
             # DBが一時的に落ちているだけなら、次の周回で拾えばよい。
             return
         for item in due['items']:
-            await self.broadcast({'type': 'reminder.due', 'id': str(item['id']), 'text': item['message']})
+            await self.broadcast({'type': 'reminder.due', 'id': str(item['id']), 'text': item['message'],
+                                  'due_at': str(item['due_at'])})
 
     def state(self):
         return {'type': 'state.changed', 'state': 'thinking' if self.active else 'idle',
