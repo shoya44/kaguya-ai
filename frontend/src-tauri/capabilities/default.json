@@ -21,7 +21,6 @@
     "core:window:allow-start-dragging",
     "core:window:allow-available-monitors",
     "core:window:allow-primary-monitor",
-    "core:menu:default",
-    "notification:default"
+    "core:menu:default"
   ]
 }

@@ -252,6 +252,22 @@ test('reminder survives duplicates and replies until acknowledgement succeeds', 
   assert.equal(h.run('reminderId'), null);
 });
 
+test('予約の時刻は、画面を前に出して気づかせる', async () => {
+  const invoked = [];
+  const h = harness({
+    tauri: true,
+    invoke: async name => { invoked.push(name); return 'owned'; },
+    // Tauriではバックエンドの持ち主を確かめてから繋ぐ。同じ識別子を返しておく。
+    fetch: async url => url.endsWith('/health')
+      ? response({ backend_instance: 'owned' }) : response({ items: [], next_cursor: null }),
+  });
+  await connected(h);
+  h.sockets[0].emit({ type: 'reminder.due', id: 'r-alert', text: '休憩する' });
+  await h.flush();
+  // 前に出せないときはタスクバーを点滅させる（Rust側のalert_window）。
+  assert.ok(invoked.includes('alert_window'));
+});
+
 test('予約の時刻には、そのまま通話に出られる', async () => {
   const h = harness(); await connected(h);
   h.sockets[0].emit({ type: 'reminder.due', id: 'r-call', text: '休憩する' });

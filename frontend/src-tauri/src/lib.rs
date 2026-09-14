@@ -34,6 +34,16 @@ fn show_window(app: AppHandle) {
     show_character(&app);
 }
 
+/// 予約の時刻に呼ぶ。画面を前に出し、前に出せないときはタスクバーを点滅させる。
+/// 別の作業中でも気づける必要があるが、作業中の入力を奪いたくはないため。
+#[tauri::command]
+fn alert_window(app: AppHandle) {
+    show_character(&app);
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.request_user_attention(Some(tauri::UserAttentionType::Informational));
+    }
+}
+
 #[tauri::command]
 fn window_topmost(app: AppHandle, enabled: bool) -> Result<(), String> {
     app.get_webview_window("main")
@@ -188,8 +198,6 @@ fn quit_app(app: &AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        // 予約の時刻をOSの通知でも知らせる。画面を見ていないと吹き出しに気づけない。
-        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if args.iter().any(|arg| arg == "--quit") { quit_app(app); }
             else { show_character(app); }
@@ -199,7 +207,7 @@ pub fn run() {
             instance: format!("{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()),
             error: None,
         })))
-        .invoke_handler(tauri::generate_handler![backend_status, app_quit, window_topmost, desktop_visible, start_mini, show_window])
+        .invoke_handler(tauri::generate_handler![backend_status, app_quit, window_topmost, desktop_visible, start_mini, show_window, alert_window])
         .setup(|app| {
             if std::env::args().any(|arg| arg == "--quit") {
                 app.handle().exit(0);

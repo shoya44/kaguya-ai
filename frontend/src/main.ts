@@ -664,23 +664,6 @@ let miniReplyTimer: number | null = null;
 let reminderId: string | null = null;
 let voice: VoiceChat | null = null;
 
-/** 予約の時刻になったことをOSの通知でも知らせる。PC（Tauri）だけ。
- * 画面を見ていないと吹き出しに気づけないため。出せなくても吹き出しは出ている。
- *
- * Rust側のプラグインが window.Notification をOSの通知へ差し替えるので、
- * 標準のAPIをそのまま呼ぶ。@tauri-apps/plugin-notification は同じ呼び出しを
- * 包んだだけなので入れない（起動時にパッケージを取りに行かない作りを崩さない）。 */
-async function notifyReminder(text: string): Promise<void> {
-  if (!isTauri() || typeof Notification === 'undefined') return;
-  try {
-    const permission = Notification.permission === 'default'
-      ? await Notification.requestPermission() : Notification.permission;
-    if (permission === 'granted') new Notification('かぐや', { body: text });
-  } catch {
-    // 通知が出せない環境でも、会話や吹き出しは止めない。
-  }
-}
-
 /** 「通話に出る」ボタンの出し入れ。通話できない端末・状況では出さない。 */
 function showReminderCall(show: boolean): void {
   const button = document.getElementById('reminder-call') as HTMLButtonElement;
@@ -875,13 +858,14 @@ function handleServerEvent(data: Record<string, unknown>): void {
       miniReplyTimer = null;
       showReminderCall(true);
       if (repeated) break;
-      void notifyReminder(data.text as string);
       talkingState = 'talking';
       talkingUntil = Date.now() + TALKING_MS;
       refreshAvatar();
       // 気づいてもらう必要がある知らせ。ほかの動きに飲まれない強さで呼ぶ。
       avatar.react('call');
-      if (isTauri()) invoke('show_window').catch(() => {});
+      // 画面を前に出し、前に出せないときはタスクバーを点滅させる。別の作業中でも
+      // 気づけるように。OSの通知は依存を増やすことになるので使っていない。
+      if (isTauri()) invoke('alert_window').catch(() => {});
       break;
     }
     case 'reminder.ack':
